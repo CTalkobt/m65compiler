@@ -1,0 +1,99 @@
+#pragma once
+#include <string>
+#include <vector>
+#include <memory>
+
+class ASTVisitor;
+
+class ASTNode {
+public:
+    virtual ~ASTNode() = default;
+    virtual void accept(ASTVisitor& visitor) = 0;
+};
+
+class Expression : public ASTNode {};
+class Statement : public ASTNode {};
+
+class IntegerLiteral : public Expression {
+public:
+    int value;
+    IntegerLiteral(int v) : value(v) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class StringLiteral : public Expression {
+public:
+    std::string value;
+    StringLiteral(const std::string& v) : value(v) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class VariableReference : public Expression {
+public:
+    std::string name;
+    VariableReference(const std::string& n) : name(n) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class FunctionCall : public Expression {
+public:
+    std::string name;
+    std::vector<std::unique_ptr<Expression>> arguments;
+    FunctionCall(const std::string& n) : name(n) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class ReturnStatement : public Statement {
+public:
+    std::unique_ptr<Expression> expression;
+    ReturnStatement(std::unique_ptr<Expression> e) : expression(std::move(e)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class ExpressionStatement : public Statement {
+public:
+    std::unique_ptr<Expression> expression;
+    ExpressionStatement(std::unique_ptr<Expression> e) : expression(std::move(e)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class CompoundStatement : public Statement {
+public:
+    std::vector<std::unique_ptr<Statement>> statements;
+    void accept(ASTVisitor& visitor) override;
+};
+
+struct Parameter {
+    std::string type;
+    std::string name;
+};
+
+class FunctionDeclaration : public ASTNode {
+public:
+    std::string name;
+    std::string returnType;
+    std::vector<Parameter> parameters;
+    std::unique_ptr<CompoundStatement> body;
+    FunctionDeclaration(const std::string& n, const std::string& rt) : name(n), returnType(rt) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class TranslationUnit : public ASTNode {
+public:
+    std::vector<std::unique_ptr<FunctionDeclaration>> functions;
+    void accept(ASTVisitor& visitor) override;
+};
+
+class ASTVisitor {
+public:
+    virtual ~ASTVisitor() = default;
+    virtual void visit(IntegerLiteral& node) = 0;
+    virtual void visit(StringLiteral& node) = 0;
+    virtual void visit(VariableReference& node) = 0;
+    virtual void visit(FunctionCall& node) = 0;
+    virtual void visit(ReturnStatement& node) = 0;
+    virtual void visit(ExpressionStatement& node) = 0;
+    virtual void visit(CompoundStatement& node) = 0;
+    virtual void visit(FunctionDeclaration& node) = 0;
+    virtual void visit(TranslationUnit& node) = 0;
+};
