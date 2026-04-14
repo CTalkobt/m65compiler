@@ -163,6 +163,26 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emit("LDA #$01");
         out << labelEnd << ":" << std::endl;
         emit("LDX #$00");
+    } else if (node.op == "*") {
+        // Multiplier using hardware math at $D770
+        emit("STA $D770"); // RHS low
+        emit("STX $D771"); // RHS high
+        emit("LDA 2, s");  // LHS low
+        emit("STA $D774");
+        emit("LDA 3, s");  // LHS high
+        emit("STA $D775");
+        emit("LDA $D778"); // Result low
+        emit("LDX $D779"); // Result high
+    } else if (node.op == "/") {
+        // Divider using hardware math at $D760
+        emit("STA $D764"); // Divisor low
+        emit("STX $D765"); // Divisor high
+        emit("LDA 2, s");  // Dividend low
+        emit("STA $D760");
+        emit("LDA 3, s");  // Dividend high
+        emit("STA $D761");
+        emit("LDA $D768"); // Quotient low
+        emit("LDX $D769"); // Quotient high
     } else if (node.op == "<") {
         // LHS < RHS? (Unsigned 16-bit)
         // RHS is in A/X, LHS is at 2,s / 3,s
@@ -360,6 +380,12 @@ void CodeGenerator::visit(IntegerLiteral& node) {
 }
 
 void CodeGenerator::visit(StringLiteral& node) {
+    if (stringPool.find(node.value) == stringPool.end()) {
+        stringPool[node.value] = "str" + std::to_string(stringCount++);
+    }
+    std::string label = stringPool[node.value];
+    emit("LDA #<" + label);
+    emit("LDX #>" + label);
 }
 
 void CodeGenerator::emitData() {
