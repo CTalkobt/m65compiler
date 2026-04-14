@@ -2,36 +2,11 @@
 #include <string>
 
 enum class AssemblerTokenType {
-    // Basic
-    IDENTIFIER,
-    INSTRUCTION,
-    DIRECTIVE,
-    
-    // Literals
-    HEX_LITERAL,     // $1234
-    DECIMAL_LITERAL, // 123
-    BINARY_LITERAL,  // %1010
-    STRING_LITERAL,  // "Hello"
-    CHAR_LITERAL,    // 'A'
-    
-    // Symbols
-    COLON,      // :
-    COMMA,      // ,
-    HASH,       // #
-    OPEN_PAREN, // (
-    CLOSE_PAREN,// )
-    EQUALS,     // =
-    PLUS,       // +
-    MINUS,      // -
-    STAR,       // *
-    SLASH,      // /
-    INCREMENT,  // ++
-    DECREMENT,  // --
-    
-    // Special
-    NEWLINE,
-    END_OF_FILE,
-    UNKNOWN
+    IDENTIFIER, INSTRUCTION, DIRECTIVE,
+    HEX_LITERAL, DECIMAL_LITERAL, BINARY_LITERAL, STRING_LITERAL, CHAR_LITERAL,
+    COLON, COMMA, HASH, OPEN_PAREN, CLOSE_PAREN, OPEN_BRACKET, CLOSE_BRACKET,
+    EQUALS, PLUS, MINUS, STAR, SLASH, INCREMENT, DECREMENT,
+    NEWLINE, END_OF_FILE, UNKNOWN
 };
 
 struct AssemblerToken {
@@ -55,6 +30,15 @@ struct AssemblerToken {
             case AssemblerTokenType::HASH: return "HASH";
             case AssemblerTokenType::OPEN_PAREN: return "OPEN_PAREN";
             case AssemblerTokenType::CLOSE_PAREN: return "CLOSE_PAREN";
+            case AssemblerTokenType::OPEN_BRACKET: return "OPEN_BRACKET";
+            case AssemblerTokenType::CLOSE_BRACKET: return "CLOSE_BRACKET";
+            case AssemblerTokenType::EQUALS: return "EQUALS";
+            case AssemblerTokenType::PLUS: return "PLUS";
+            case AssemblerTokenType::MINUS: return "MINUS";
+            case AssemblerTokenType::STAR: return "STAR";
+            case AssemblerTokenType::SLASH: return "SLASH";
+            case AssemblerTokenType::INCREMENT: return "INCREMENT";
+            case AssemblerTokenType::DECREMENT: return "DECREMENT";
             case AssemblerTokenType::NEWLINE: return "NEWLINE";
             case AssemblerTokenType::END_OF_FILE: return "EOF";
             default: return "UNKNOWN";

@@ -19,6 +19,11 @@ enum class TokenType {
     CLOSE_BRACE,   // }
     SEMICOLON,     // ;
     COMMA,         // ,
+    EQUALS,        // =
+    PLUS,          // +
+    MINUS,         // -
+    STAR,          // *
+    SLASH,         // /
     
     // Special
     END_OF_FILE,

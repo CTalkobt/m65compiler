@@ -43,6 +43,33 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class Assignment : public Expression {
+public:
+    std::string name;
+    std::unique_ptr<Expression> expression;
+    Assignment(const std::string& n, std::unique_ptr<Expression> e) : name(n), expression(std::move(e)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class BinaryOperation : public Expression {
+public:
+    std::string op;
+    std::unique_ptr<Expression> left;
+    std::unique_ptr<Expression> right;
+    BinaryOperation(const std::string& o, std::unique_ptr<Expression> l, std::unique_ptr<Expression> r) 
+        : op(o), left(std::move(l)), right(std::move(r)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class VariableDeclaration : public Statement {
+public:
+    std::string type;
+    std::string name;
+    std::unique_ptr<Expression> initializer;
+    VariableDeclaration(const std::string& t, const std::string& n) : type(t), name(n) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class ReturnStatement : public Statement {
 public:
     std::unique_ptr<Expression> expression;
@@ -90,7 +117,10 @@ public:
     virtual void visit(IntegerLiteral& node) = 0;
     virtual void visit(StringLiteral& node) = 0;
     virtual void visit(VariableReference& node) = 0;
+    virtual void visit(Assignment& node) = 0;
+    virtual void visit(BinaryOperation& node) = 0;
     virtual void visit(FunctionCall& node) = 0;
+    virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ReturnStatement& node) = 0;
     virtual void visit(ExpressionStatement& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;

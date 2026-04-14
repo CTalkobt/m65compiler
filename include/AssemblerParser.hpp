@@ -7,13 +7,28 @@
 
 enum class AddressingMode {
     IMPLIED,
+    ACCUMULATOR,
     IMMEDIATE,
+    IMMEDIATE16,
+    BASE_PAGE,
+    BASE_PAGE_X,
+    BASE_PAGE_Y,
     ABSOLUTE,
     ABSOLUTE_X,
     ABSOLUTE_Y,
-    RELATIVE,
     INDIRECT,
-    STACK_RELATIVE,
+    BASE_PAGE_X_INDIRECT,   // (bp,X)
+    BASE_PAGE_INDIRECT_Y,   // (bp),Y
+    BASE_PAGE_INDIRECT_Z,   // (bp),Z
+    BASE_PAGE_INDIRECT_SP_Y,// (bp,SP),Y
+    ABSOLUTE_INDIRECT,      // (abs)
+    ABSOLUTE_X_INDIRECT,    // (abs,X)
+    RELATIVE,
+    RELATIVE16,             // relfar
+    BASE_PAGE_RELATIVE,     // bp+rel8 (BBR/BBS)
+    FLAT_INDIRECT_Z,        // [bp],Z (EOM prefix)
+    QUAD_Q,                 // Q register (double NEG prefix)
+    STACK_RELATIVE,         // offset, s
 };
 
 struct Symbol {
@@ -33,6 +48,7 @@ struct Instruction {
     int size;
     int line;
     int procParamSize = 0; 
+    std::string bitNum; 
 };
 
 struct Directive {
@@ -43,7 +59,7 @@ struct Directive {
     int line;
     std::string varName; 
     enum VarType { NONE, ASSIGN, INC, DEC } varType = NONE;
-    int tokenIndex = -1; // Index of the token after the operator
+    int tokenIndex = -1; 
 };
 
 class AssemblerParser {
@@ -77,6 +93,7 @@ private:
     const AssemblerToken& peek() const;
     const AssemblerToken& advance();
     bool match(AssemblerTokenType type);
+    const AssemblerToken& expect(AssemblerTokenType type, const std::string& message);
     
     int calculateInstructionSize(const Instruction& instr);
     int calculateDirectiveSize(const Directive& dir);

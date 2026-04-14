@@ -109,6 +109,8 @@ AssemblerToken AssemblerLexer::nextToken() {
         case '/': return {AssemblerTokenType::SLASH, "/", startLine, startCol};
         case '(': return {AssemblerTokenType::OPEN_PAREN, "(", startLine, startCol};
         case ')': return {AssemblerTokenType::CLOSE_PAREN, ")", startLine, startCol};
+        case '[': return {AssemblerTokenType::OPEN_BRACKET, "[", startLine, startCol};
+        case ']': return {AssemblerTokenType::CLOSE_BRACKET, "]", startLine, startCol};
         default: return {AssemblerTokenType::UNKNOWN, std::string(1, c), startLine, startCol};
     }
 }
@@ -122,8 +124,12 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
     }
 
     static const std::set<std::string> instructions = {
-        "LDA", "LDX", "LDY", "STA", "STX", "STY", "JSR", "RTS", "BEQ", "BNE", "BRA", "INX", "INY", "DEX", "DEY", "CALL", "ENDCALL", "RTN", "PHW", "PROC", "ENDPROC"
-        // (Add more as needed)
+        "LDA", "LDX", "LDY", "LDZ", "STA", "STX", "STY", "STZ", "STQ", "LDQ",
+        "JSR", "RTS", "RTN", "PHW", "PHZ", "PLZ", "PHX", "PLX", "PHY", "PLY",
+        "BEQ", "BNE", "BRA", "BCC", "BCS", "BPL", "BMI", "BVC", "BVS", "BSR",
+        "INX", "INY", "INZ", "DEX", "DEY", "DEZ", "INW", "DEW", "ASW", "ROW",
+        "CLC", "SEC", "CLI", "SEI", "CLD", "SED", "CLE", "SEE",
+        "CALL", "ENDCALL", "PROC", "ENDPROC", "NEG", "ASR"
     };
 
     std::string upperValue = value;

@@ -89,6 +89,11 @@ Token Lexer::nextToken() {
         case '}': return {TokenType::CLOSE_BRACE, "}", startLine, startCol};
         case ';': return {TokenType::SEMICOLON, ";", startLine, startCol};
         case ',': return {TokenType::COMMA, ",", startLine, startCol};
+        case '=': return {TokenType::EQUALS, "=", startLine, startCol};
+        case '+': return {TokenType::PLUS, "+", startLine, startCol};
+        case '-': return {TokenType::MINUS, "-", startLine, startCol};
+        case '*': return {TokenType::STAR, "*", startLine, startCol};
+        case '/': return {TokenType::SLASH, "/", startLine, startCol};
         default: return {TokenType::UNKNOWN, std::string(1, c), startLine, startCol};
     }
 }

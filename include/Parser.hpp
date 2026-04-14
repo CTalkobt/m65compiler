@@ -22,5 +22,7 @@ private:
     std::unique_ptr<CompoundStatement> parseCompoundStatement();
     std::unique_ptr<Statement> parseStatement();
     std::unique_ptr<Expression> parseExpression();
+    std::unique_ptr<Expression> parseAdditive();
+    std::unique_ptr<Expression> parseMultiplicative();
     std::unique_ptr<Expression> parsePrimary();
 };

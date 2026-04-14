@@ -3,7 +3,10 @@
 void IntegerLiteral::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void StringLiteral::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void VariableReference::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void Assignment::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void BinaryOperation::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionCall::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void VariableDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ReturnStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ExpressionStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void CompoundStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }

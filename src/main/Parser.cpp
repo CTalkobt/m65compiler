@@ -69,6 +69,16 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
+    if (match(TokenType::INT)) {
+        std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
+        auto decl = std::make_unique<VariableDeclaration>("int", name);
+        if (match(TokenType::EQUALS)) {
+            decl->initializer = parseExpression();
+        }
+        expect(TokenType::SEMICOLON, "Expected ';'");
+        return decl;
+    }
+
     if (match(TokenType::RETURN)) {
         auto expr = parseExpression();
         expect(TokenType::SEMICOLON, "Expected ';'");
@@ -81,7 +91,33 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 }
 
 std::unique_ptr<Expression> Parser::parseExpression() {
-    return parsePrimary();
+    // Assignment has lowest precedence
+    if (peek().type == TokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::EQUALS) {
+        std::string name = advance().value;
+        advance(); // consume =
+        return std::make_unique<Assignment>(name, parseExpression());
+    }
+    return parseAdditive();
+}
+
+std::unique_ptr<Expression> Parser::parseAdditive() {
+    auto left = parseMultiplicative();
+    while (match(TokenType::PLUS) || match(TokenType::MINUS)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseMultiplicative();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expression> Parser::parseMultiplicative() {
+    auto left = parsePrimary();
+    while (match(TokenType::STAR) || match(TokenType::SLASH)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parsePrimary();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
 }
 
 std::unique_ptr<Expression> Parser::parsePrimary() {
@@ -106,6 +142,12 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
 
     if (peek().type == TokenType::STRING_LITERAL) {
         return std::make_unique<StringLiteral>(advance().value);
+    }
+
+    if (match(TokenType::OPEN_PAREN)) {
+        auto expr = parseExpression();
+        expect(TokenType::CLOSE_PAREN, "Expected ')'");
+        return expr;
     }
 
     throw std::runtime_error("Expected expression at " + std::to_string(peek().line) + ":" + std::to_string(peek().column));

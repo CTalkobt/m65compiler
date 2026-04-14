@@ -1,8 +1,9 @@
-int add_one(int val) {
-    return val;
+int add_stuff(int val) {
+    int x = 1;
+    return val + x + 2;
 }
 
 int main() {
-    printf("Result: %d", add_one(10));
+    printf("Result: %d", add_stuff(10));
     return 0;
 }

@@ -13,7 +13,10 @@ public:
     void visit(IntegerLiteral& node) override;
     void visit(StringLiteral& node) override;
     void visit(VariableReference& node) override;
+    void visit(Assignment& node) override;
+    void visit(BinaryOperation& node) override;
     void visit(FunctionCall& node) override;
+    void visit(VariableDeclaration& node) override;
     void visit(ReturnStatement& node) override;
     void visit(ExpressionStatement& node) override;
     void visit(CompoundStatement& node) override;

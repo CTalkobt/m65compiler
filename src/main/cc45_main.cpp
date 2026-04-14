@@ -16,11 +16,32 @@ public:
     void visit(IntegerLiteral& node) override { printIndent(); std::cout << "IntegerLiteral: " << node.value << std::endl; }
     void visit(StringLiteral& node) override { printIndent(); std::cout << "StringLiteral: \"" << node.value << "\"" << std::endl; }
     void visit(VariableReference& node) override { printIndent(); std::cout << "VariableReference: " << node.name << std::endl; }
+    void visit(Assignment& node) override {
+        printIndent(); std::cout << "Assignment: " << node.name << std::endl;
+        indent++;
+        node.expression->accept(*this);
+        indent--;
+    }
+    void visit(BinaryOperation& node) override {
+        printIndent(); std::cout << "BinaryOperation: " << node.op << std::endl;
+        indent++;
+        node.left->accept(*this);
+        node.right->accept(*this);
+        indent--;
+    }
     void visit(FunctionCall& node) override {
         printIndent(); std::cout << "FunctionCall: " << node.name << std::endl;
         indent++;
         for (auto& arg : node.arguments) arg->accept(*this);
         indent--;
+    }
+    void visit(VariableDeclaration& node) override {
+        printIndent(); std::cout << "VariableDeclaration: " << node.name << " (" << node.type << ")" << std::endl;
+        if (node.initializer) {
+            indent++;
+            node.initializer->accept(*this);
+            indent--;
+        }
     }
     void visit(ReturnStatement& node) override {
         printIndent(); std::cout << "ReturnStatement" << std::endl;
