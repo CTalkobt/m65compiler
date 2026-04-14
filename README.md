@@ -1,4 +1,5 @@
 # Mega65 C Compiler Suite (ca45, cc45)
+*CONSIDER YOURSELF WARNED: Undergoing heavy development*
 
 This project provides a modern, object-oriented development toolchain for the MEGA65 (45GS02) home computer. It consists of two primary tools: **cc45** (a C compiler) and **ca45** (a 45GS02-optimized assembler).
 
