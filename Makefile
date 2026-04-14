@@ -34,8 +34,8 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR)
+	rm -rf $(OBJ_DIR) $(BIN_DIR) build
 
-test:
+test: all
 	@echo "Running tests..."
-	# Placeholder for running tests
+	@bash src/test/test_compiler.sh

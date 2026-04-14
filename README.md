@@ -1,4 +1,4 @@
-# Mega65 C Compiler Suite
+# Mega65 C Compiler Suite (ca45, cc45)
 
 This project provides a modern, object-oriented development toolchain for the MEGA65 (45GS02) home computer. It consists of two primary tools: **cc45** (a C compiler) and **ca45** (a 45GS02-optimized assembler).
 
@@ -22,6 +22,13 @@ The tools are designed to work together seamlessly. A typical workflow involves 
 ```
 This command invokes `cc45` to generate `output.s`, and then automatically calls `ca45` to produce `output.s.bin`.
 
+## Testing & Regressions
+The suite includes a set of automated tests to verify the compiler and assembler. You can run all tests from the project root:
+```bash
+make test
+```
+This script compiles C source files from `src/test-resources/` and assembles them to ensure stability and correctness. Outputs are stored in the `build/test/` directory.
+
 For detailed information on each tool, refer to:
-- [README-cc45.md](README-cc45.md) — Compiler Usage and Features
-- [README-ca45.md](README-ca45.md) — Assembler Syntax and Reference
+- [doc/cc45.md](doc/cc45.md) — Compiler Usage and Features
+- [doc/ca45.md](doc/ca45.md) — Assembler Syntax and Reference

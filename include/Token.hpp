@@ -4,8 +4,13 @@
 enum class TokenType {
     // Keywords
     INT,
+    CHAR,
     RETURN,
     VOID,
+    IF,
+    ELSE,
+    WHILE,
+    FOR,
     
     // Literals
     IDENTIFIER,
@@ -24,6 +29,13 @@ enum class TokenType {
     MINUS,         // -
     STAR,          // *
     SLASH,         // /
+    LESS_THAN,     // <
+    GREATER_THAN,  // >
+    LESS_EQUAL,    // <=
+    GREATER_EQUAL, // >=
+    EQUALS_EQUALS, // ==
+    NOT_EQUALS,    // !=
+    BANG,          // !
     
     // Special
     END_OF_FILE,
@@ -39,8 +51,13 @@ struct Token {
     std::string typeToString() const {
         switch (type) {
             case TokenType::INT: return "INT";
+            case TokenType::CHAR: return "CHAR";
             case TokenType::RETURN: return "RETURN";
             case TokenType::VOID: return "VOID";
+            case TokenType::IF: return "IF";
+            case TokenType::ELSE: return "ELSE";
+            case TokenType::WHILE: return "WHILE";
+            case TokenType::FOR: return "FOR";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";
@@ -50,6 +67,18 @@ struct Token {
             case TokenType::CLOSE_BRACE: return "CLOSE_BRACE";
             case TokenType::SEMICOLON: return "SEMICOLON";
             case TokenType::COMMA: return "COMMA";
+            case TokenType::EQUALS: return "EQUALS";
+            case TokenType::PLUS: return "PLUS";
+            case TokenType::MINUS: return "MINUS";
+            case TokenType::STAR: return "STAR";
+            case TokenType::SLASH: return "SLASH";
+            case TokenType::LESS_THAN: return "LESS_THAN";
+            case TokenType::GREATER_THAN: return "GREATER_THAN";
+            case TokenType::LESS_EQUAL: return "LESS_EQUAL";
+            case TokenType::GREATER_EQUAL: return "GREATER_EQUAL";
+            case TokenType::EQUALS_EQUALS: return "EQUALS_EQUALS";
+            case TokenType::NOT_EQUALS: return "NOT_EQUALS";
+            case TokenType::BANG: return "BANG";
             case TokenType::END_OF_FILE: return "EOF";
             default: return "UNKNOWN";
         }

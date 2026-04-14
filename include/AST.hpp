@@ -84,6 +84,36 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class IfStatement : public Statement {
+public:
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Statement> thenBranch;
+    std::unique_ptr<Statement> elseBranch;
+    IfStatement(std::unique_ptr<Expression> c, std::unique_ptr<Statement> t, std::unique_ptr<Statement> e = nullptr)
+        : condition(std::move(c)), thenBranch(std::move(t)), elseBranch(std::move(e)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class WhileStatement : public Statement {
+public:
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Statement> body;
+    WhileStatement(std::unique_ptr<Expression> c, std::unique_ptr<Statement> b)
+        : condition(std::move(c)), body(std::move(b)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class ForStatement : public Statement {
+public:
+    std::unique_ptr<Statement> initializer;
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Expression> increment;
+    std::unique_ptr<Statement> body;
+    ForStatement(std::unique_ptr<Statement> i, std::unique_ptr<Expression> c, std::unique_ptr<Expression> inc, std::unique_ptr<Statement> b)
+        : initializer(std::move(i)), condition(std::move(c)), increment(std::move(inc)), body(std::move(b)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class CompoundStatement : public Statement {
 public:
     std::vector<std::unique_ptr<Statement>> statements;
@@ -123,6 +153,9 @@ public:
     virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ReturnStatement& node) = 0;
     virtual void visit(ExpressionStatement& node) = 0;
+    virtual void visit(IfStatement& node) = 0;
+    virtual void visit(WhileStatement& node) = 0;
+    virtual void visit(ForStatement& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;
     virtual void visit(FunctionDeclaration& node) = 0;
     virtual void visit(TranslationUnit& node) = 0;

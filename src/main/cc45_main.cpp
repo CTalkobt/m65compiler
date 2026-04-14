@@ -55,6 +55,65 @@ public:
         node.expression->accept(*this);
         indent--;
     }
+    void visit(IfStatement& node) override {
+        printIndent(); std::cout << "IfStatement" << std::endl;
+        indent++;
+        printIndent(); std::cout << "Condition:" << std::endl;
+        indent++;
+        node.condition->accept(*this);
+        indent--;
+        printIndent(); std::cout << "Then:" << std::endl;
+        indent++;
+        node.thenBranch->accept(*this);
+        indent--;
+        if (node.elseBranch) {
+            printIndent(); std::cout << "Else:" << std::endl;
+            indent++;
+            node.elseBranch->accept(*this);
+            indent--;
+        }
+        indent--;
+    }
+    void visit(WhileStatement& node) override {
+        printIndent(); std::cout << "WhileStatement" << std::endl;
+        indent++;
+        printIndent(); std::cout << "Condition:" << std::endl;
+        indent++;
+        node.condition->accept(*this);
+        indent--;
+        printIndent(); std::cout << "Body:" << std::endl;
+        indent++;
+        node.body->accept(*this);
+        indent--;
+        indent--;
+    }
+    void visit(ForStatement& node) override {
+        printIndent(); std::cout << "ForStatement" << std::endl;
+        indent++;
+        if (node.initializer) {
+            printIndent(); std::cout << "Initializer:" << std::endl;
+            indent++;
+            node.initializer->accept(*this);
+            indent--;
+        }
+        if (node.condition) {
+            printIndent(); std::cout << "Condition:" << std::endl;
+            indent++;
+            node.condition->accept(*this);
+            indent--;
+        }
+        if (node.increment) {
+            printIndent(); std::cout << "Increment:" << std::endl;
+            indent++;
+            node.increment->accept(*this);
+            indent--;
+        }
+        printIndent(); std::cout << "Body:" << std::endl;
+        indent++;
+        node.body->accept(*this);
+        indent--;
+        indent--;
+    }
     void visit(CompoundStatement& node) override {
         printIndent(); std::cout << "CompoundStatement" << std::endl;
         indent++;

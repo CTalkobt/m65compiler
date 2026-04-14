@@ -19,6 +19,9 @@ public:
     void visit(VariableDeclaration& node) override;
     void visit(ReturnStatement& node) override;
     void visit(ExpressionStatement& node) override;
+    void visit(IfStatement& node) override;
+    void visit(WhileStatement& node) override;
+    void visit(ForStatement& node) override;
     void visit(CompoundStatement& node) override;
     void visit(FunctionDeclaration& node) override;
     void visit(TranslationUnit& node) override;
@@ -26,8 +29,10 @@ public:
 private:
     std::ostream& out;
     int stringCount = 0;
+    int labelCount = 0;
     std::map<std::string, std::string> stringPool;
 
     void emit(const std::string& line);
     void emitData();
+    std::string newLabel();
 };

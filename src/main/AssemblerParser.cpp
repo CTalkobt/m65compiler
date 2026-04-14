@@ -336,11 +336,17 @@ int AssemblerParser::calculateInstructionSize(const Instruction& instr) {
     if (instr.mnemonic == "PHW") return 3;
     if (instr.mnemonic == "RTN") return 2;
     if (instr.mnemonic == "BSR") return 3;
-    if (instr.mnemonic == "BRA" || (instr.mnemonic[0] == 'B' && instr.mnemonic.size() == 3)) return 2;
+    if (instr.mnemonic == "BRA" || (instr.mnemonic[0] == 'B' && instr.mnemonic.size() == 3 && instr.mnemonic != "BIT" && instr.mnemonic != "BRK")) {
+        return (instr.mode == AddressingMode::RELATIVE16) ? 3 : 2; // pass1 defaults to RELATIVE, but we'll use 3 for safety in a multi-pass scenario if we want.
+        // For now, let's just make branches 3 bytes by default if they are relative, and pass2 can shrink them.
+        // Wait, pass1 is only once. Let's make it 3.
+        return 3; 
+    }
     if (instr.mnemonic == "LDQ" || instr.mnemonic == "STQ") return 4;
     switch (instr.mode) {
         case AddressingMode::IMPLIED: return 1;
         case AddressingMode::IMMEDIATE: case AddressingMode::RELATIVE: case AddressingMode::STACK_RELATIVE: return 2;
+        case AddressingMode::RELATIVE16: return 3;
         case AddressingMode::FLAT_INDIRECT_Z: return 3; 
         case AddressingMode::BASE_PAGE_X_INDIRECT:
         case AddressingMode::BASE_PAGE_INDIRECT_Y:
@@ -370,8 +376,19 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
         return 0x8D;
     }
     if (m == "JSR") return 0x20; if (m == "RTS") return 0x60;
-    if (m == "RTN") return 0x62; if (m == "PHW") return 0xF2; if (m == "BEQ") return 0xF0;
-    if (m == "BRA") return 0x80; if (m == "INX") return 0xE8; if (m == "INY") return 0xC8;
+    if (m == "RTN") return 0x62; if (m == "PHW") return 0xF2; 
+    if (m == "BEQ") return (mode == AddressingMode::RELATIVE16) ? 0xF3 : 0xF0;
+    if (m == "BNE") return (mode == AddressingMode::RELATIVE16) ? 0xD3 : 0xD0;
+    if (m == "BCS") return (mode == AddressingMode::RELATIVE16) ? 0xB3 : 0xB0;
+    if (m == "BCC") return (mode == AddressingMode::RELATIVE16) ? 0x93 : 0x90;
+    if (m == "BMI") return (mode == AddressingMode::RELATIVE16) ? 0x33 : 0x30;
+    if (m == "BPL") return (mode == AddressingMode::RELATIVE16) ? 0x13 : 0x10;
+    if (m == "BVS") return (mode == AddressingMode::RELATIVE16) ? 0x73 : 0x70;
+    if (m == "BVC") return (mode == AddressingMode::RELATIVE16) ? 0x53 : 0x50;
+    if (m == "BRA") return (mode == AddressingMode::RELATIVE16) ? 0x83 : 0x80;
+    if (m == "BSR") return 0x63; // BSR is always 16-bit rel on 45GS02
+    if (m == "JMP") return (mode == AddressingMode::ABSOLUTE) ? 0x4C : 0x6C;
+    if (m == "INX") return 0xE8; if (m == "INY") return 0xC8;
     if (m == "INZ") return 0x1B; if (m == "DEZ") return 0x3B;
     if (m == "PHZ") return 0xDB; if (m == "PLZ") return 0xFB;
     return 0;
@@ -411,63 +428,117 @@ void AssemblerParser::emitExpressionCode(std::vector<uint8_t>& binary, const std
 std::vector<uint8_t> AssemblerParser::pass2() {
     std::vector<uint8_t> binary;
     ProcContext* currentPass2Proc = nullptr;
+    bool isDeadCode = false;
     for (auto& [name, symbol] : symbolTable) if (symbol.isVariable) symbol.value = symbol.initialValue;
     for (const auto& stmt : statements) {
+        if (!stmt.label.empty()) isDeadCode = false;
+
         if (procedures.count(stmt.isInstruction ? stmt.instr.address : 0)) {
-             if (stmt.isInstruction && stmt.instr.mnemonic == "PROC") currentPass2Proc = &procedures[stmt.instr.address];
+             if (stmt.isInstruction && stmt.instr.mnemonic == "PROC") {
+                 currentPass2Proc = &procedures[stmt.instr.address];
+                 isDeadCode = false;
+             }
         }
+
         if (stmt.isExpr) {
-            emitExpressionCode(binary, stmt.exprTarget, stmt.exprTokenIndex);
+            if (!isDeadCode) emitExpressionCode(binary, stmt.exprTarget, stmt.exprTokenIndex);
             continue;
         }
+
         if (stmt.isInstruction) {
             if (stmt.instr.mnemonic == "PROC") continue;
             else if (stmt.instr.mnemonic == "ENDPROC") {
-                binary.push_back(0x62); binary.push_back((uint8_t)stmt.instr.procParamSize); currentPass2Proc = nullptr;
-            } else if (stmt.instr.mnemonic == "CALL") {
-                for (const auto& arg : stmt.instr.callArgs) {
-                    bool isByte = (arg.size() > 2 && arg.substr(0, 2) == "B#");
-                    std::string v = isByte ? arg.substr(2) : (arg.substr(0, 2) == "W#" ? arg.substr(2) : (arg[0] == '#' ? arg.substr(1) : arg));
-                    uint32_t val;
-                    if (currentPass2Proc && currentPass2Proc->localArgs.count(v)) val = currentPass2Proc->localArgs[v];
-                    else if (symbolTable.count(v)) val = symbolTable[v].value;
-                    else val = parseNumericLiteral(v);
-                    if (!isByte && arg[0] != '#' && arg.substr(0,2) != "W#" && symbolTable.count(v)) isByte = (symbolTable[v].size == 1);
-                    if (isByte) { binary.push_back(0xA9); binary.push_back(val & 0xFF); binary.push_back(0x48); }
-                    else { binary.push_back(0xF2); binary.push_back(val & 0xFF); binary.push_back((val >> 8) & 0xFF); }
+                if (!isDeadCode) {
+                    if (stmt.instr.procParamSize == 0) {
+                        binary.push_back(0x60); // RTS
+                    } else {
+                        binary.push_back(0x62); binary.push_back((uint8_t)stmt.instr.procParamSize); // RTN #n
+                    }
                 }
-                binary.push_back(0x20); uint32_t a = symbolTable[stmt.instr.operand].value;
-                binary.push_back(a & 0xFF); binary.push_back((a >> 8) & 0xFF);
-            } else {
-                if (stmt.instr.mode == AddressingMode::FLAT_INDIRECT_Z) binary.push_back(0xEA); 
-                binary.push_back(getOpcode(stmt.instr.mnemonic, stmt.instr.mode));
-                if (stmt.instr.mode == AddressingMode::IMMEDIATE || stmt.instr.mode == AddressingMode::STACK_RELATIVE || 
-                    stmt.instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Z || stmt.instr.mode == AddressingMode::FLAT_INDIRECT_Z ||
-                    stmt.instr.mode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || stmt.instr.mode == AddressingMode::BASE_PAGE_X_INDIRECT ||
-                    stmt.instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Y) {
-                    uint32_t v;
-                    if (currentPass2Proc && currentPass2Proc->localArgs.count(stmt.instr.operand)) v = currentPass2Proc->localArgs[stmt.instr.operand];
-                    else if (symbolTable.count(stmt.instr.operand)) v = symbolTable[stmt.instr.operand].value;
-                    else v = parseNumericLiteral(stmt.instr.operand);
-                    binary.push_back((uint8_t)v);
-                } else if (stmt.instr.mode == AddressingMode::ABSOLUTE || stmt.instr.mode == AddressingMode::ABSOLUTE_X || stmt.instr.mode == AddressingMode::ABSOLUTE_Y) {
-                    uint32_t a = symbolTable.count(stmt.instr.operand) ? symbolTable[stmt.instr.operand].value : parseNumericLiteral(stmt.instr.operand);
+                currentPass2Proc = nullptr;
+                isDeadCode = false;
+            } else if (stmt.instr.mnemonic == "CALL") {
+                if (!isDeadCode) {
+                    for (const auto& arg : stmt.instr.callArgs) {
+                        bool isByte = (arg.size() > 2 && arg.substr(0, 2) == "B#");
+                        std::string v = isByte ? arg.substr(2) : (arg.substr(0, 2) == "W#" ? arg.substr(2) : (arg[0] == '#' ? arg.substr(1) : arg));
+                        uint32_t val;
+                        if (currentPass2Proc && currentPass2Proc->localArgs.count(v)) val = currentPass2Proc->localArgs[v];
+                        else if (symbolTable.count(v)) val = symbolTable[v].value;
+                        else val = parseNumericLiteral(v);
+                        if (!isByte && arg[0] != '#' && arg.substr(0,2) != "W#" && symbolTable.count(v)) isByte = (symbolTable[v].size == 1);
+                        if (isByte) { binary.push_back(0xA9); binary.push_back(val & 0xFF); binary.push_back(0x48); }
+                        else { binary.push_back(0xF2); binary.push_back(val & 0xFF); binary.push_back((val >> 8) & 0xFF); }
+                    }
+                    binary.push_back(0x20); uint32_t a = symbolTable[stmt.instr.operand].value;
                     binary.push_back(a & 0xFF); binary.push_back((a >> 8) & 0xFF);
-                } else if (stmt.instr.mnemonic == "BEQ" || stmt.instr.mnemonic == "BRA" || stmt.instr.mnemonic == "BNE") {
-                    uint32_t t = symbolTable[stmt.instr.operand].value;
-                    binary.push_back((uint8_t)((int32_t)t - (int32_t)(stmt.instr.address + 2)));
+                }
+            } else {
+                if (!isDeadCode) {
+                    if (stmt.instr.mode == AddressingMode::FLAT_INDIRECT_Z) binary.push_back(0xEA); 
+                    binary.push_back(getOpcode(stmt.instr.mnemonic, stmt.instr.mode));
+                    if (stmt.instr.mode == AddressingMode::IMMEDIATE || stmt.instr.mode == AddressingMode::STACK_RELATIVE || 
+                        stmt.instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Z || stmt.instr.mode == AddressingMode::FLAT_INDIRECT_Z ||
+                        stmt.instr.mode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || stmt.instr.mode == AddressingMode::BASE_PAGE_X_INDIRECT ||
+                        stmt.instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Y) {
+                        uint32_t v;
+                        if (currentPass2Proc && currentPass2Proc->localArgs.count(stmt.instr.operand)) v = currentPass2Proc->localArgs[stmt.instr.operand];
+                        else if (symbolTable.count(stmt.instr.operand)) v = symbolTable[stmt.instr.operand].value;
+                        else v = parseNumericLiteral(stmt.instr.operand);
+                        binary.push_back((uint8_t)v);
+                    } else if (stmt.instr.mode == AddressingMode::ABSOLUTE || stmt.instr.mode == AddressingMode::ABSOLUTE_X || stmt.instr.mode == AddressingMode::ABSOLUTE_Y) {
+                        uint32_t a = symbolTable.count(stmt.instr.operand) ? symbolTable[stmt.instr.operand].value : parseNumericLiteral(stmt.instr.operand);
+                        binary.push_back(a & 0xFF); binary.push_back((a >> 8) & 0xFF);
+                    } else if (stmt.instr.mnemonic == "BEQ" || stmt.instr.mnemonic == "BNE" || stmt.instr.mnemonic == "BRA" ||
+                               stmt.instr.mnemonic == "BCC" || stmt.instr.mnemonic == "BCS" || stmt.instr.mnemonic == "BPL" ||
+                               stmt.instr.mnemonic == "BMI" || stmt.instr.mnemonic == "BVC" || stmt.instr.mnemonic == "BVS") {
+                        uint32_t t = symbolTable[stmt.instr.operand].value;
+                        int32_t offset = (int32_t)t - (int32_t)(stmt.instr.address + 2);
+                        if (offset >= -128 && offset <= 127) {
+                            binary.push_back(getOpcode(stmt.instr.mnemonic, AddressingMode::RELATIVE));
+                            binary.push_back((uint8_t)offset);
+                            if (stmt.instr.size == 3) binary.push_back(0xEA); // NOP/EOM placeholder to keep size
+                        } else {
+                            offset = (int32_t)t - (int32_t)(stmt.instr.address + 3);
+                            binary.push_back(getOpcode(stmt.instr.mnemonic, AddressingMode::RELATIVE16));
+                            binary.push_back(offset & 0xFF);
+                            binary.push_back((offset >> 8) & 0xFF);
+                        }
+                    } else if (stmt.instr.mnemonic == "BSR") {
+                        uint32_t t = symbolTable[stmt.instr.operand].value;
+                        int32_t offset = (int32_t)t - (int32_t)(stmt.instr.address + 3);
+                        binary.push_back(0x63);
+                        binary.push_back(offset & 0xFF);
+                        binary.push_back((offset >> 8) & 0xFF);
+                    } else if (stmt.instr.mnemonic == "RTN") {
+                        uint32_t v;
+                        if (currentPass2Proc && currentPass2Proc->localArgs.count(stmt.instr.operand)) v = currentPass2Proc->localArgs[stmt.instr.operand];
+                        else if (symbolTable.count(stmt.instr.operand)) v = symbolTable[stmt.instr.operand].value;
+                        else v = parseNumericLiteral(stmt.instr.operand);
+                        if (v == 0) {
+                            binary.push_back(0x60); // RTS
+                        } else {
+                            binary.push_back(0x62); // RTN
+                            binary.push_back((uint8_t)v);
+                        }
+                    }
+                }
+                if (stmt.instr.mnemonic == "RTS" || stmt.instr.mnemonic == "RTN" || stmt.instr.mnemonic == "RTI") {
+                    isDeadCode = true;
                 }
             }
         } else if (!stmt.dir.name.empty()) {
-            if (stmt.dir.name == "var") {
-                if (stmt.dir.varType == Directive::ASSIGN) symbolTable[stmt.dir.varName].value = evaluateExpressionAt(stmt.dir.tokenIndex);
-                else if (stmt.dir.varType == Directive::INC) symbolTable[stmt.dir.varName].value++;
-                else if (stmt.dir.varType == Directive::DEC) symbolTable[stmt.dir.varName].value--;
-            } else if (stmt.dir.name == "cleanup") {
-                if (currentPass2Proc) currentPass2Proc->totalParamSize += evaluateExpressionAt(stmt.dir.tokenIndex);
-            } else if (stmt.dir.name == "byte") for (const auto& a : stmt.dir.arguments) binary.push_back(parseNumericLiteral(a));
-            else if (stmt.dir.name == "text") for (char c : stmt.dir.arguments[0]) binary.push_back(toPetscii(c));
-            else if (stmt.dir.name == "ascii") for (char c : stmt.dir.arguments[0]) binary.push_back((uint8_t)c);
+            if (!isDeadCode || stmt.dir.name == "org") {
+                if (stmt.dir.name == "var") {
+                    if (stmt.dir.varType == Directive::ASSIGN) symbolTable[stmt.dir.varName].value = evaluateExpressionAt(stmt.dir.tokenIndex);
+                    else if (stmt.dir.varType == Directive::INC) symbolTable[stmt.dir.varName].value++;
+                    else if (stmt.dir.varType == Directive::DEC) symbolTable[stmt.dir.varName].value--;
+                } else if (stmt.dir.name == "cleanup") {
+                    if (currentPass2Proc) currentPass2Proc->totalParamSize += evaluateExpressionAt(stmt.dir.tokenIndex);
+                } else if (stmt.dir.name == "byte") for (const auto& a : stmt.dir.arguments) binary.push_back(parseNumericLiteral(a));
+                else if (stmt.dir.name == "text") for (char c : stmt.dir.arguments[0]) binary.push_back(toPetscii(c));
+                else if (stmt.dir.name == "ascii") for (char c : stmt.dir.arguments[0]) binary.push_back((uint8_t)c);
+            }
         }
     }
     return binary;

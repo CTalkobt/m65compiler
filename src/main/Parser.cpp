@@ -37,14 +37,21 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
 }
 
 std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
-    std::string returnType = expect(TokenType::INT, "Expected return type (int)").value;
+    std::string returnType;
+    if (match(TokenType::INT)) returnType = "int";
+    else if (match(TokenType::CHAR)) returnType = "char";
+    else returnType = expect(TokenType::VOID, "Expected return type").value;
+
     std::string name = expect(TokenType::IDENTIFIER, "Expected function name").value;
     
     expect(TokenType::OPEN_PAREN, "Expected '('");
     std::vector<Parameter> params;
     if (peek().type != TokenType::CLOSE_PAREN) {
         do {
-            std::string pType = expect(TokenType::INT, "Expected parameter type").value;
+            std::string pType;
+            if (match(TokenType::INT)) pType = "int";
+            else pType = expect(TokenType::CHAR, "Expected parameter type (int or char)").value;
+
             std::string pName = expect(TokenType::IDENTIFIER, "Expected parameter name").value;
             params.push_back({pType, pName});
         } while (match(TokenType::COMMA));
@@ -69,9 +76,10 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
-    if (match(TokenType::INT)) {
+    if (peek().type == TokenType::INT || peek().type == TokenType::CHAR) {
+        std::string type = (advance().type == TokenType::INT) ? "int" : "char";
         std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
-        auto decl = std::make_unique<VariableDeclaration>("int", name);
+        auto decl = std::make_unique<VariableDeclaration>(type, name);
         if (match(TokenType::EQUALS)) {
             decl->initializer = parseExpression();
         }
@@ -83,6 +91,50 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         auto expr = parseExpression();
         expect(TokenType::SEMICOLON, "Expected ';'");
         return std::make_unique<ReturnStatement>(std::move(expr));
+    }
+
+    if (match(TokenType::IF)) {
+        expect(TokenType::OPEN_PAREN, "Expected '(' after 'if'");
+        auto condition = parseExpression();
+        expect(TokenType::CLOSE_PAREN, "Expected ')' after if condition");
+        auto thenBranch = parseStatement();
+        std::unique_ptr<Statement> elseBranch = nullptr;
+        if (match(TokenType::ELSE)) {
+            elseBranch = parseStatement();
+        }
+        return std::make_unique<IfStatement>(std::move(condition), std::move(thenBranch), std::move(elseBranch));
+    }
+
+    if (match(TokenType::WHILE)) {
+        expect(TokenType::OPEN_PAREN, "Expected '(' after 'while'");
+        auto condition = parseExpression();
+        expect(TokenType::CLOSE_PAREN, "Expected ')' after while condition");
+        auto body = parseStatement();
+        return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
+    }
+
+    if (match(TokenType::FOR)) {
+        expect(TokenType::OPEN_PAREN, "Expected '(' after 'for'");
+        std::unique_ptr<Statement> initializer = nullptr;
+        if (!match(TokenType::SEMICOLON)) {
+            initializer = parseStatement(); // parseStatement handles its own semicolon for decls/exprs
+        }
+        std::unique_ptr<Expression> condition = nullptr;
+        if (!match(TokenType::SEMICOLON)) {
+            condition = parseExpression();
+            expect(TokenType::SEMICOLON, "Expected ';' after for condition");
+        }
+        std::unique_ptr<Expression> increment = nullptr;
+        if (!match(TokenType::CLOSE_PAREN)) {
+            increment = parseExpression();
+            expect(TokenType::CLOSE_PAREN, "Expected ')' after for increment");
+        }
+        auto body = parseStatement();
+        return std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body));
+    }
+
+    if (peek().type == TokenType::OPEN_BRACE) {
+        return parseCompoundStatement();
     }
     
     auto expr = parseExpression();
@@ -97,7 +149,28 @@ std::unique_ptr<Expression> Parser::parseExpression() {
         advance(); // consume =
         return std::make_unique<Assignment>(name, parseExpression());
     }
-    return parseAdditive();
+    return parseEquality();
+}
+
+std::unique_ptr<Expression> Parser::parseEquality() {
+    auto left = parseRelational();
+    while (match(TokenType::EQUALS_EQUALS) || match(TokenType::NOT_EQUALS)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseRelational();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expression> Parser::parseRelational() {
+    auto left = parseAdditive();
+    while (match(TokenType::LESS_THAN) || match(TokenType::GREATER_THAN) ||
+           match(TokenType::LESS_EQUAL) || match(TokenType::GREATER_EQUAL)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseAdditive();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
 }
 
 std::unique_ptr<Expression> Parser::parseAdditive() {

@@ -12,6 +12,10 @@ void CodeGenerator::emit(const std::string& line) {
     out << "    " << line << std::endl;
 }
 
+std::string CodeGenerator::newLabel() {
+    return "L" + std::to_string(labelCount++);
+}
+
 // Track variables in scope
 static std::vector<std::string> currentVars;
 
@@ -25,7 +29,11 @@ void CodeGenerator::visit(FunctionDeclaration& node) {
     std::string procLine = "PROC " + node.name;
     currentVars.clear();
     for (const auto& param : node.parameters) {
-        procLine += ", W#" + param.name;
+        if (param.type == "char") {
+            procLine += ", B#" + param.name;
+        } else {
+            procLine += ", W#" + param.name;
+        }
         currentVars.push_back(param.name);
     }
     out << procLine << std::endl;
@@ -39,45 +47,217 @@ void CodeGenerator::visit(CompoundStatement& node) {
 }
 
 void CodeGenerator::visit(VariableDeclaration& node) {
+    int size = (node.type == "char") ? 1 : 2;
     if (node.initializer) {
         node.initializer->accept(*this);
-        emit("PHX");
-        emit("PHA");
+        if (size == 2) {
+            emit("PHX");
+            emit("PHA");
+        } else {
+            emit("PHA");
+        }
     } else {
-        emit("PHW #$0000");
+        if (size == 2) emit("PHW #$0000");
+        else {
+            emit("LDA #$00");
+            emit("PHA");
+        }
     }
     for (const auto& varName : currentVars) {
-        emit(".var " + varName + " = " + varName + " + 2");
+        emit(".var " + varName + " = " + varName + " + " + std::to_string(size));
     }
-    emit(".var " + node.name + " = 2");
+    emit(".var " + node.name + " = " + std::to_string(size));
     currentVars.push_back(node.name);
-    emit(".cleanup 2");
+    emit(".cleanup " + std::to_string(size));
 }
 
 void CodeGenerator::visit(Assignment& node) {
     node.expression->accept(*this);
     emit("STA " + node.name + ", s");
+    emit("STX " + node.name + "+1, s");
 }
 
 void CodeGenerator::visit(BinaryOperation& node) {
-    // 1. Evaluate LHS and push result
+    // Check for +/- 1 optimization
+    bool isLiteralOne = false;
+    if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+        if (lit->value == 1) isLiteralOne = true;
+    }
+
+    if (isLiteralOne && (node.op == "+" || node.op == "-")) {
+        node.left->accept(*this); // Evaluates LHS into A/X
+        if (node.op == "+") {
+            std::string label = newLabel();
+            emit("INC A");
+            emit("BNE " + label);
+            emit("INX");
+            out << label << ":" << std::endl;
+        } else {
+            std::string label = newLabel();
+            emit("CMP #$00");
+            emit("BNE " + label);
+            emit("DEX");
+            out << label << ":" << std::endl;
+            emit("DEC A");
+        }
+        return;
+    }
+
+    // 1. Evaluate LHS and push result (16-bit)
     node.left->accept(*this);
     emit("PHX");
     emit("PHA");
     for (const auto& varName : currentVars) emit(".var " + varName + " = " + varName + " + 2");
     
-    // 2. Evaluate RHS into A/X
+    // 2. Evaluate RHS into A/X (16-bit)
     node.right->accept(*this);
     
     // 3. Perform operation using A/X and value at TOP of stack (offset 2)
     if (node.op == "+") {
+        emit("STA $02"); // RHS low
+        emit("STX $03"); // RHS high
+        emit("LDA 2, s"); // LHS low
         emit("CLC");
-        emit("ADC 2, s"); 
+        emit("ADC $02"); 
+        emit("PHA"); // Save Result low
+        emit("LDA 3, s"); // LHS high
+        emit("ADC $03");
+        emit("TAX"); // Result high in X
+        emit("PLA"); // Result low in A
     } else if (node.op == "-") {
-        emit("STA $02");
-        emit("LDA 2, s");
+        emit("STA $02"); // RHS low
+        emit("STX $03"); // RHS high
+        emit("LDA 2, s"); // LHS low
         emit("SEC");
         emit("SBC $02");
+        emit("PHA"); // Save Result low
+        emit("LDA 3, s"); // LHS high
+        emit("SBC $03");
+        emit("TAX"); // Result high in X
+        emit("PLA"); // Result low in A
+    } else if (node.op == "==") {
+        emit("CMP 2, s"); // compare low
+        std::string labelFalse = newLabel();
+        std::string labelEnd = newLabel();
+        emit("BNE " + labelFalse);
+        emit("TXA");
+        emit("CMP 3, s"); // compare high
+        emit("BNE " + labelFalse);
+        emit("LDA #$01");
+        emit("BRA " + labelEnd);
+        out << labelFalse << ":" << std::endl;
+        emit("LDA #$00");
+        out << labelEnd << ":" << std::endl;
+        emit("LDX #$00");
+    } else if (node.op == "!=") {
+        emit("CMP 2, s");
+        std::string labelTrue = newLabel();
+        std::string labelEnd = newLabel();
+        emit("BNE " + labelTrue);
+        emit("TXA");
+        emit("CMP 3, s");
+        emit("BNE " + labelTrue);
+        emit("LDA #$00");
+        emit("BRA " + labelEnd);
+        out << labelTrue << ":" << std::endl;
+        emit("LDA #$01");
+        out << labelEnd << ":" << std::endl;
+        emit("LDX #$00");
+    } else if (node.op == "<") {
+        // LHS < RHS? (Unsigned 16-bit)
+        // RHS is in A/X, LHS is at 2,s / 3,s
+        emit("STA $02"); // RHS low
+        emit("STX $03"); // RHS high
+        emit("LDA 3, s"); // LHS high
+        emit("CMP $03");
+        std::string labelTrue = newLabel();
+        std::string labelFalse = newLabel();
+        std::string labelEnd = newLabel();
+        emit("BCC " + labelTrue); // LHS_high < RHS_high
+        emit("BNE " + labelFalse); // LHS_high > RHS_high
+        emit("LDA 2, s"); // LHS low
+        emit("CMP $02");
+        emit("BCC " + labelTrue); // LHS_low < RHS_low
+        out << labelFalse << ":" << std::endl;
+        emit("LDA #$00");
+        emit("BRA " + labelEnd);
+        out << labelTrue << ":" << std::endl;
+        emit("LDA #$01");
+        out << labelEnd << ":" << std::endl;
+        emit("LDX #$00");
+    } else if (node.op == ">") {
+        // LHS > RHS? (Unsigned 16-bit)
+        emit("STA $02"); // RHS low
+        emit("STX $03"); // RHS high
+        emit("LDA $03"); // RHS high
+        emit("CMP 3, s"); // RHS_high vs LHS_high
+        std::string labelTrue = newLabel();
+        std::string labelFalse = newLabel();
+        std::string labelEnd = newLabel();
+        emit("BCC " + labelTrue); // RHS_high < LHS_high => LHS > RHS
+        emit("BNE " + labelFalse); // RHS_high > LHS_high => LHS < RHS
+        emit("LDA $02"); // RHS low
+        emit("CMP 2, s"); // RHS_low vs LHS_low
+        emit("BCC " + labelTrue); // RHS_low < LHS_low => LHS > RHS
+        out << labelFalse << ":" << std::endl;
+        emit("LDA #$00");
+        emit("BRA " + labelEnd);
+        out << labelTrue << ":" << std::endl;
+        emit("LDA #$01");
+        out << labelEnd << ":" << std::endl;
+        emit("LDX #$00");
+    } else if (node.op == "<=") {
+        // LHS <= RHS? (Unsigned 16-bit)
+        // implemented as !(RHS < LHS)
+        // actually let's just do direct logic
+        emit("STA $02"); // RHS low
+        emit("STX $03"); // RHS high
+        emit("LDA 3, s"); // LHS high
+        emit("CMP $03");
+        std::string labelTrue = newLabel();
+        std::string labelFalse = newLabel();
+        std::string labelEnd = newLabel();
+        emit("BCC " + labelTrue); // LHS_high < RHS_high
+        emit("BNE " + labelFalse); // LHS_high > RHS_high
+        emit("LDA 2, s"); // LHS low
+        emit("CMP $02");
+        emit("BCC " + labelTrue); // LHS_low < RHS_low
+        emit("BEQ " + labelTrue); // LHS_low == RHS_low
+        out << labelFalse << ":" << std::endl;
+        emit("LDA #$00");
+        emit("BRA " + labelEnd);
+        out << labelTrue << ":" << std::endl;
+        emit("LDA #$01");
+        out << labelEnd << ":" << std::endl;
+        emit("LDX #$00");
+    } else if (node.op == ">=") {
+        // LHS >= RHS? (Unsigned 16-bit)
+        emit("STA $02"); // RHS low
+        emit("STX $03"); // RHS high
+        emit("LDA 3, s"); // LHS high
+        emit("CMP $03");
+        std::string labelTrue = newLabel();
+        std::string labelFalse = newLabel();
+        std::string labelEnd = newLabel();
+        emit("BCS " + labelTrue); // LHS_high > RHS_high or equal high?
+        // Wait, BCS is >=. If LHS_high > RHS_high, it's definitely true.
+        // If LHS_high == RHS_high, we need to check low.
+        // BCS is true if Carry is set (A >= M).
+        // If LHS_high > RHS_high, Carry is set and BNE would be true.
+        // If LHS_high < RHS_high, Carry is clear.
+        // If LHS_high == RHS_high, Carry is set and BNE is false.
+        emit("BCC " + labelFalse);
+        emit("BNE " + labelTrue);
+        emit("LDA 2, s");
+        emit("CMP $02");
+        emit("BCS " + labelTrue);
+        out << labelFalse << ":" << std::endl;
+        emit("LDA #$00");
+        emit("BRA " + labelEnd);
+        out << labelTrue << ":" << std::endl;
+        emit("LDA #$01");
+        out << labelEnd << ":" << std::endl;
+        emit("LDX #$00");
     }
     
     // 4. Pop the LHS
@@ -92,6 +272,66 @@ void CodeGenerator::visit(ReturnStatement& node) {
 
 void CodeGenerator::visit(ExpressionStatement& node) {
     node.expression->accept(*this);
+}
+
+void CodeGenerator::visit(IfStatement& node) {
+    std::string labelElse = newLabel();
+    std::string labelEnd = newLabel();
+    
+    node.condition->accept(*this);
+    emit("CMP #$00");
+    emit("BEQ " + labelElse);
+    
+    node.thenBranch->accept(*this);
+    if (node.elseBranch) {
+        emit("BRA " + labelEnd);
+    }
+    
+    out << labelElse << ":" << std::endl;
+    if (node.elseBranch) {
+        node.elseBranch->accept(*this);
+        out << labelEnd << ":" << std::endl;
+    }
+}
+
+void CodeGenerator::visit(WhileStatement& node) {
+    std::string labelStart = newLabel();
+    std::string labelEnd = newLabel();
+    
+    out << labelStart << ":" << std::endl;
+    node.condition->accept(*this);
+    emit("CMP #$00");
+    emit("BEQ " + labelEnd);
+    
+    node.body->accept(*this);
+    emit("BRA " + labelStart);
+    
+    out << labelEnd << ":" << std::endl;
+}
+
+void CodeGenerator::visit(ForStatement& node) {
+    std::string labelStart = newLabel();
+    std::string labelEnd = newLabel();
+    
+    if (node.initializer) {
+        node.initializer->accept(*this);
+    }
+    
+    out << labelStart << ":" << std::endl;
+    if (node.condition) {
+        node.condition->accept(*this);
+        emit("CMP #$00");
+        emit("BEQ " + labelEnd);
+    }
+    
+    node.body->accept(*this);
+    
+    if (node.increment) {
+        node.increment->accept(*this);
+    }
+    
+    emit("BRA " + labelStart);
+    out << labelEnd << ":" << std::endl;
 }
 
 void CodeGenerator::visit(FunctionCall& node) {
@@ -111,11 +351,12 @@ void CodeGenerator::visit(FunctionCall& node) {
 
 void CodeGenerator::visit(VariableReference& node) {
     emit("LDA " + node.name + ", s");
+    emit("LDX " + node.name + "+1, s");
 }
 
 void CodeGenerator::visit(IntegerLiteral& node) {
-    emit("LDA #$" + std::to_string(node.value));
-    emit("LDX #$00");
+    emit("LDA #$" + std::to_string(node.value & 0xFF));
+    emit("LDX #$" + std::to_string((node.value >> 8) & 0xFF));
 }
 
 void CodeGenerator::visit(StringLiteral& node) {

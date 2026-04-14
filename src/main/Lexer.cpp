@@ -89,11 +89,22 @@ Token Lexer::nextToken() {
         case '}': return {TokenType::CLOSE_BRACE, "}", startLine, startCol};
         case ';': return {TokenType::SEMICOLON, ";", startLine, startCol};
         case ',': return {TokenType::COMMA, ",", startLine, startCol};
-        case '=': return {TokenType::EQUALS, "=", startLine, startCol};
+        case '=': 
+            if (peek() == '=') { get(); return {TokenType::EQUALS_EQUALS, "==", startLine, startCol}; }
+            return {TokenType::EQUALS, "=", startLine, startCol};
         case '+': return {TokenType::PLUS, "+", startLine, startCol};
         case '-': return {TokenType::MINUS, "-", startLine, startCol};
         case '*': return {TokenType::STAR, "*", startLine, startCol};
         case '/': return {TokenType::SLASH, "/", startLine, startCol};
+        case '<':
+            if (peek() == '=') { get(); return {TokenType::LESS_EQUAL, "<=", startLine, startCol}; }
+            return {TokenType::LESS_THAN, "<", startLine, startCol};
+        case '>':
+            if (peek() == '=') { get(); return {TokenType::GREATER_EQUAL, ">=", startLine, startCol}; }
+            return {TokenType::GREATER_THAN, ">", startLine, startCol};
+        case '!':
+            if (peek() == '=') { get(); return {TokenType::NOT_EQUALS, "!=", startLine, startCol}; }
+            return {TokenType::BANG, "!", startLine, startCol};
         default: return {TokenType::UNKNOWN, std::string(1, c), startLine, startCol};
     }
 }
@@ -108,8 +119,13 @@ Token Lexer::lexIdentifierOrKeyword() {
 
     static const std::map<std::string, TokenType> keywords = {
         {"int", TokenType::INT},
+        {"char", TokenType::CHAR},
         {"return", TokenType::RETURN},
-        {"void", TokenType::VOID}
+        {"void", TokenType::VOID},
+        {"if", TokenType::IF},
+        {"else", TokenType::ELSE},
+        {"while", TokenType::WHILE},
+        {"for", TokenType::FOR}
     };
 
     auto it = keywords.find(value);
