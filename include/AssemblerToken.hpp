@@ -2,7 +2,7 @@
 #include <string>
 
 enum class AssemblerTokenType {
-    IDENTIFIER, INSTRUCTION, DIRECTIVE,
+    IDENTIFIER, INSTRUCTION, DIRECTIVE, REGISTER, FLAG,
     HEX_LITERAL, DECIMAL_LITERAL, BINARY_LITERAL, STRING_LITERAL, CHAR_LITERAL,
     COLON, COMMA, HASH, OPEN_PAREN, CLOSE_PAREN, OPEN_BRACKET, CLOSE_BRACKET,
     EQUALS, PLUS, MINUS, STAR, SLASH, INCREMENT, DECREMENT,
@@ -20,6 +20,8 @@ struct AssemblerToken {
             case AssemblerTokenType::IDENTIFIER: return "IDENTIFIER";
             case AssemblerTokenType::INSTRUCTION: return "INSTRUCTION";
             case AssemblerTokenType::DIRECTIVE: return "DIRECTIVE";
+            case AssemblerTokenType::REGISTER: return "REGISTER";
+            case AssemblerTokenType::FLAG: return "FLAG";
             case AssemblerTokenType::HEX_LITERAL: return "HEX_LITERAL";
             case AssemblerTokenType::DECIMAL_LITERAL: return "DECIMAL_LITERAL";
             case AssemblerTokenType::BINARY_LITERAL: return "BINARY_LITERAL";

@@ -87,6 +87,9 @@ private:
         Instruction instr;
         Directive dir;
         std::string label;
+        bool isExpr = false;
+        std::string exprTarget;
+        int exprTokenIndex = -1;
     };
     std::vector<Statement> statements;
 
@@ -97,7 +100,9 @@ private:
     
     int calculateInstructionSize(const Instruction& instr);
     int calculateDirectiveSize(const Directive& dir);
+    int calculateExprSize(int tokenIndex);
     uint8_t getOpcode(const std::string& mnemonic, AddressingMode mode);
     uint32_t parseNumericLiteral(const std::string& literal);
     uint32_t evaluateExpressionAt(int index);
+    void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex);
 };

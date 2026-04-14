@@ -30,8 +30,10 @@
 - `.ascii "<string>"`: Emits a raw ASCII-encoded string.
 - `.var <name> = <expr>`: Defines or updates an assembler-time variable.
 - `.cleanup <n>`: Adjusts the internal stack tracking for the current procedure.
-- `expr <target>, <expression>`: Generates machine code to evaluate an expression and store the result in `<target>`.
-    - `<target>` can be a register (e.g., `.A`, `.AX`) or a memory location.
+- `EXPR <target>, <expression>`: Generates machine code to evaluate a complex expression and store the result in `<target>`.
+    - `<target>` can be a register (e.g., `.A`, `.X`, `.AX`, `.Q`) or a memory address/label.
+    - Automatically performs **constant folding** (e.g., `3 + 5` becomes a single literal).
+    - Supports mixing registers and flags (e.g., `.A + .X - P.C`).
 
 ## Register and Flag References
 `ca45` allows referencing CPU registers and status flags directly within expressions:

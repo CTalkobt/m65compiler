@@ -12,7 +12,7 @@ The compilation process follows a multi-pass pipeline:
 
 ## Design Philosophy
 - **Procedural Abstraction**: Function calls are treated as first-class citizens with named parameters and automated stack cleanup.
-- **MEGA65 First**: Special emphasis is placed on supporting the 45GS02 instruction set enhancements over the standard 6502/65CE02.
+- **MEGA65 First**: Special emphasis is placed on supporting the 45GS02 instruction set enhancements, including a high-level expression engine (`EXPR`) that handles constant folding and register arithmetic.
 - **Extensibility**: The toolchain uses a visitor-based architecture in C++, making it easy to add new optimizations, language features, or hardware targets.
 
 ## General Usage

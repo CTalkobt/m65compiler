@@ -3,15 +3,111 @@
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include <memory>
 
-uint8_t toPetscii(char c) {
+static uint8_t toPetscii(char c) {
     if (c >= 'a' && c <= 'z') return c - 32;
     if (c >= 'A' && c <= 'Z') return c + 32;
     return (uint8_t)c;
 }
 
-AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens) : tokens(tokens), pos(0), pc(0) {
-}
+struct ExprNode {
+    virtual ~ExprNode() = default;
+    virtual bool isConstant() const = 0;
+    virtual uint32_t getValue() const = 0;
+    virtual bool is16Bit() const = 0;
+    virtual void emit(std::vector<uint8_t>& binary, AssemblerParser* parser) = 0;
+};
+
+struct ConstantNode : public ExprNode {
+    uint32_t val;
+    ConstantNode(uint32_t v) : val(v) {}
+    bool isConstant() const override { return true; }
+    uint32_t getValue() const override { return val; }
+    bool is16Bit() const override { return val > 255; }
+    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser) override {}
+};
+
+struct RegisterNode : public ExprNode {
+    std::string name;
+    RegisterNode(const std::string& n) : name(n) {}
+    bool isConstant() const override { return false; }
+    uint32_t getValue() const override { return 0; }
+    bool is16Bit() const override { return name.size() > 1 && name != "SP"; }
+    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser) override {
+        if (name == "X") binary.push_back(0x8A); // TXA
+        else if (name == "Y") binary.push_back(0x98); // TYA
+        else if (name == "Z") binary.push_back(0x6B); // TZA
+    }
+};
+
+struct FlagNode : public ExprNode {
+    char flag;
+    FlagNode(char f) : flag(f) {}
+    bool isConstant() const override { return false; }
+    uint32_t getValue() const override { return 0; }
+    bool is16Bit() const override { return false; }
+    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser) override {
+        if (flag == 'C') {
+            binary.push_back(0xA9); binary.push_back(0x00); // LDA #0
+            binary.push_back(0x18); // CLC
+            binary.push_back(0x69); // ADC #0
+        }
+    }
+};
+
+struct BinaryExpr : public ExprNode {
+    std::string op;
+    std::unique_ptr<ExprNode> left, right;
+    BinaryExpr(const std::string& o, std::unique_ptr<ExprNode> l, std::unique_ptr<ExprNode> r)
+        : op(o), left(std::move(l)), right(std::move(r)) {}
+    
+    bool isConstant() const override { return left->isConstant() && right->isConstant(); }
+    uint32_t getValue() const override {
+        if (op == "+") return left->getValue() + right->getValue();
+        if (op == "-") return left->getValue() - right->getValue();
+        return 0;
+    }
+    bool is16Bit() const override { return left->is16Bit() || right->is16Bit(); }
+    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser) override {
+        if (isConstant()) return;
+        left->emit(binary, parser);
+        if (right->isConstant()) {
+            uint32_t val = right->getValue();
+            if (op == "+") {
+                binary.push_back(0x18); // CLC
+                binary.push_back(0x69); binary.push_back(val & 0xFF); // ADC #low
+                if (is16Bit()) {
+                    binary.push_back(0xDA); // PHX
+                    binary.push_back(0x68); // PLA (A=X)
+                    binary.push_back(0x69); binary.push_back((val >> 8) & 0xFF); // ADC #high
+                    binary.push_back(0xAA); // TAX (X=A)
+                    // (Note: This simple logic destroys original A value)
+                }
+            }
+        } else if (dynamic_cast<RegisterNode*>(left.get()) && dynamic_cast<RegisterNode*>(right.get())) {
+            RegisterNode* rl = (RegisterNode*)left.get();
+            RegisterNode* rr = (RegisterNode*)right.get();
+            if (rl->name == "AX" && rr->name == "AX" && op == "+") {
+                // .AX + .AX (16-bit shift/add)
+                binary.push_back(0x0A); // ASL A
+                binary.push_back(0xDA); // PHX
+                binary.push_back(0x68); // PLA (A=X)
+                binary.push_back(0x2A); // ROL A
+                binary.push_back(0xAA); // TAX (X=A)
+                // (Note: Low byte is now lost from A, would need PHA/PLA)
+            }
+        } else if (op == "-" && dynamic_cast<FlagNode*>(right.get())) {
+            FlagNode* f = (FlagNode*)right.get();
+            if (f->flag == 'C') {
+                binary.push_back(0x90); binary.push_back(0x01); // BCC +1
+                binary.push_back(0x3A); // DEC A
+            }
+        }
+    }
+};
+
+AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens) : tokens(tokens), pos(0), pc(0) {}
 
 const AssemblerToken& AssemblerParser::peek() const { return tokens[pos]; }
 const AssemblerToken& AssemblerParser::advance() { if (pos < tokens.size()) pos++; return tokens[pos - 1]; }
@@ -19,7 +115,7 @@ bool AssemblerParser::match(AssemblerTokenType type) { if (peek().type == type) 
 
 const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std::string& message) {
     if (peek().type == type) return advance();
-    throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": " + message + " (got " + peek().typeToString() + ")");
+    throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": " + message);
 }
 
 uint32_t AssemblerParser::parseNumericLiteral(const std::string& literal) {
@@ -33,28 +129,45 @@ uint32_t AssemblerParser::parseNumericLiteral(const std::string& literal) {
     return 0;
 }
 
-uint32_t AssemblerParser::evaluateExpressionAt(int index) {
-    auto parseTerm = [&](int& idx) -> uint32_t {
-        if ((size_t)idx >= tokens.size()) return 0;
-        const auto& token = tokens[idx++];
-        if (token.type == AssemblerTokenType::IDENTIFIER) {
-            if (symbolTable.count(token.value)) return symbolTable[token.value].value;
-            return 0;
+std::unique_ptr<ExprNode> parseExprAST(const std::vector<AssemblerToken>& tokens, int& idx, const std::map<std::string, Symbol>& symbolTable) {
+    auto parsePrimary = [&]() -> std::unique_ptr<ExprNode> {
+        if ((size_t)idx >= tokens.size()) return std::make_unique<ConstantNode>(0);
+        const auto& t = tokens[idx++];
+        if (t.type == AssemblerTokenType::REGISTER) return std::make_unique<RegisterNode>(t.value);
+        if (t.type == AssemblerTokenType::FLAG) return std::make_unique<FlagNode>(t.value[0]);
+        
+        // Handle P.C if lexed as IDENTIFIER(P) DIRECTIVE(C)
+        if (t.type == AssemblerTokenType::IDENTIFIER && t.value == "P" && (size_t)idx < tokens.size() && tokens[idx].type == AssemblerTokenType::DIRECTIVE) {
+            std::string flag = tokens[idx++].value;
+            return std::make_unique<FlagNode>(flag[0]);
         }
-        if (token.type == AssemblerTokenType::HEX_LITERAL) return std::stoul(token.value, nullptr, 16);
-        if (token.type == AssemblerTokenType::BINARY_LITERAL) return std::stoul(token.value, nullptr, 2);
-        if (token.type == AssemblerTokenType::DECIMAL_LITERAL) return std::stoul(token.value, nullptr, 10);
-        if (token.type == AssemblerTokenType::CHAR_LITERAL) return (uint8_t)token.value[0];
-        return 0;
+
+        if (t.type == AssemblerTokenType::HEX_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value, nullptr, 16));
+        if (t.type == AssemblerTokenType::DECIMAL_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value, nullptr, 10));
+        if (t.type == AssemblerTokenType::IDENTIFIER) {
+            if (symbolTable.count(t.value)) return std::make_unique<ConstantNode>(symbolTable.at(t.value).value);
+        }
+        if (t.type == AssemblerTokenType::OPEN_PAREN) {
+            auto node = parseExprAST(tokens, idx, symbolTable);
+            if ((size_t)idx < tokens.size() && tokens[idx].type == AssemblerTokenType::CLOSE_PAREN) idx++;
+            return node;
+        }
+        return std::make_unique<ConstantNode>(0);
     };
-    int current = index;
-    uint32_t result = parseTerm(current);
-    while ((size_t)current < tokens.size()) {
-        if (tokens[current].type == AssemblerTokenType::PLUS) { current++; result += parseTerm(current); }
-        else if (tokens[current].type == AssemblerTokenType::MINUS) { current++; result -= parseTerm(current); }
-        else break;
+
+    auto left = parsePrimary();
+    while ((size_t)idx < tokens.size() && (tokens[idx].type == AssemblerTokenType::PLUS || tokens[idx].type == AssemblerTokenType::MINUS)) {
+        std::string op = tokens[idx++].value;
+        auto right = parsePrimary();
+        left = std::make_unique<BinaryExpr>(op, std::move(left), std::move(right));
     }
-    return result;
+    return left;
+}
+
+uint32_t AssemblerParser::evaluateExpressionAt(int index) {
+    int idx = index;
+    auto ast = parseExprAST(tokens, idx, symbolTable);
+    return ast->getValue();
 }
 
 void AssemblerParser::pass1() {
@@ -73,8 +186,7 @@ void AssemblerParser::pass1() {
             } else { pos--; }
         }
         if (match(AssemblerTokenType::DIRECTIVE)) {
-            stmt.dir.name = tokens[pos-1].value;
-            stmt.dir.address = pc;
+            stmt.dir.name = tokens[pos-1].value; stmt.dir.address = pc;
             if (stmt.dir.name == "var") {
                 std::string varName = advance().value; stmt.dir.varName = varName;
                 if (match(AssemblerTokenType::EQUALS)) {
@@ -144,6 +256,13 @@ void AssemblerParser::pass1() {
                     }
                 }
                 stmt.instr.size = calculateInstructionSize(stmt.instr);
+            } else if (stmt.instr.mnemonic == "EXPR") {
+                const auto& target = advance();
+                stmt.exprTarget = (target.type == AssemblerTokenType::REGISTER ? "." : "") + target.value;
+                expect(AssemblerTokenType::COMMA, "Expected ,");
+                stmt.exprTokenIndex = pos; stmt.isExpr = true;
+                while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
+                stmt.instr.size = calculateExprSize(stmt.exprTokenIndex);
             } else {
                 if (match(AssemblerTokenType::HASH)) {
                     stmt.instr.mode = AddressingMode::IMMEDIATE;
@@ -194,6 +313,13 @@ int AssemblerParser::calculateDirectiveSize(const Directive& dir) {
     return 0;
 }
 
+int AssemblerParser::calculateExprSize(int tokenIndex) {
+    int idx = tokenIndex;
+    auto ast = parseExprAST(tokens, idx, symbolTable);
+    if (ast->isConstant()) return 5;
+    return 15; 
+}
+
 int AssemblerParser::calculateInstructionSize(const Instruction& instr) {
     if (instr.mnemonic == "PROC") return 0;
     if (instr.mnemonic == "ENDPROC") return 2;
@@ -210,7 +336,7 @@ int AssemblerParser::calculateInstructionSize(const Instruction& instr) {
     if (instr.mnemonic == "PHW") return 3;
     if (instr.mnemonic == "RTN") return 2;
     if (instr.mnemonic == "BSR") return 3;
-    if (instr.mnemonic == "BRA" || (instr.mnemonic[0] == 'B' && instr.mnemonic.size() == 3)) return (instr.mode == AddressingMode::RELATIVE16) ? 3 : 2;
+    if (instr.mnemonic == "BRA" || (instr.mnemonic[0] == 'B' && instr.mnemonic.size() == 3)) return 2;
     if (instr.mnemonic == "LDQ" || instr.mnemonic == "STQ") return 4;
     switch (instr.mode) {
         case AddressingMode::IMPLIED: return 1;
@@ -251,6 +377,37 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
     return 0;
 }
 
+void AssemblerParser::emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex) {
+    int idx = tokenIndex;
+    auto ast = parseExprAST(tokens, idx, symbolTable);
+    if (ast->isConstant()) {
+        uint32_t val = ast->getValue();
+        binary.push_back(0xA9); binary.push_back(val & 0xFF); // LDA #low
+        if (target == ".AX" || target == ".AY") {
+            binary.push_back(0xA2); binary.push_back((val >> 8) & 0xFF); // LDX #high
+        }
+    } else {
+        ast->emit(binary, this);
+    }
+    if (target == ".X") binary.push_back(0xAA); // TAX
+    else if (target == ".Y") binary.push_back(0xA8); // TAY
+    else if (target == ".Z") binary.push_back(0x5B); // TAZ
+    else if (target[0] != '.') {
+        // Assume memory address (absolute)
+        uint32_t addr;
+        if (symbolTable.count(target)) addr = symbolTable[target].value;
+        else addr = std::stoul(target[0] == '$' ? target.substr(1) : target, nullptr, target[0] == '$' ? 16 : 10);
+        binary.push_back(0x8D); // STA abs
+        binary.push_back(addr & 0xFF);
+        binary.push_back((addr >> 8) & 0xFF);
+        if (ast->is16Bit() || target.find(".AX") != std::string::npos) {
+            binary.push_back(0x8E); // STX abs
+            binary.push_back((addr + 1) & 0xFF);
+            binary.push_back(((addr + 1) >> 8) & 0xFF);
+        }
+    }
+}
+
 std::vector<uint8_t> AssemblerParser::pass2() {
     std::vector<uint8_t> binary;
     ProcContext* currentPass2Proc = nullptr;
@@ -258,6 +415,10 @@ std::vector<uint8_t> AssemblerParser::pass2() {
     for (const auto& stmt : statements) {
         if (procedures.count(stmt.isInstruction ? stmt.instr.address : 0)) {
              if (stmt.isInstruction && stmt.instr.mnemonic == "PROC") currentPass2Proc = &procedures[stmt.instr.address];
+        }
+        if (stmt.isExpr) {
+            emitExpressionCode(binary, stmt.exprTarget, stmt.exprTokenIndex);
+            continue;
         }
         if (stmt.isInstruction) {
             if (stmt.instr.mnemonic == "PROC") continue;

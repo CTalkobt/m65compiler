@@ -40,7 +40,6 @@ void AssemblerLexer::skipWhitespaceAndComments() {
         if (peek() == ' ' || peek() == '\t' || peek() == '\r') {
             get();
         } else if (peek() == ';') {
-            // Comment
             while (peek() != '\n' && peek() != '\0') {
                 get();
             }
@@ -63,23 +62,36 @@ AssemblerToken AssemblerLexer::nextToken() {
         return {AssemblerTokenType::NEWLINE, "\\n", startLine, startCol};
     }
 
-    if (std::isalpha(c) || c == '_') {
-        return lexIdentifierOrInstruction();
-    }
-
     if (c == '.') {
         int startLine = line;
         int startCol = column;
         get();
-        std::string directive;
+        std::string name;
         while (std::isalnum(peek()) || peek() == '_') {
-            directive += get();
+            name += get();
         }
-        return {AssemblerTokenType::DIRECTIVE, directive, startLine, startCol};
+        std::string upper = name;
+        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+        static const std::set<std::string> regs = {"A", "X", "Y", "Z", "SP", "AX", "AY", "AZ", "XY", "Q"};
+        if (regs.count(upper)) return {AssemblerTokenType::REGISTER, upper, startLine, startCol};
+        return {AssemblerTokenType::DIRECTIVE, name, startLine, startCol};
+    }
+
+    if (c == 'P' && pos < source.length() && source[pos] == '.') {
+        int startLine = line;
+        int startCol = column;
+        get(); // consume P
+        get(); // consume .
+        char flag = (char)std::toupper(get());
+        return {AssemblerTokenType::FLAG, std::string(1, flag), startLine, startCol};
     }
 
     if (std::isdigit(c) || c == '$' || c == '%') {
         return lexNumber();
+    }
+
+    if (std::isalpha(c) || c == '_') {
+        return lexIdentifierOrInstruction();
     }
 
     if (c == '"') {
@@ -129,7 +141,7 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
         "BEQ", "BNE", "BRA", "BCC", "BCS", "BPL", "BMI", "BVC", "BVS", "BSR",
         "INX", "INY", "INZ", "DEX", "DEY", "DEZ", "INW", "DEW", "ASW", "ROW",
         "CLC", "SEC", "CLI", "SEI", "CLD", "SED", "CLE", "SEE",
-        "CALL", "ENDCALL", "PROC", "ENDPROC", "NEG", "ASR"
+        "CALL", "ENDCALL", "PROC", "ENDPROC", "NEG", "ASR", "EXPR"
     };
 
     std::string upperValue = value;
@@ -146,20 +158,19 @@ AssemblerToken AssemblerLexer::lexNumber() {
     int startLine = line;
     int startCol = column;
     std::string value;
-    char prefix = peek();
+    char prefix = get(); // consume $, %, or first digit
     
     if (prefix == '$') {
-        get();
         while (std::isxdigit(peek())) value += get();
         return {AssemblerTokenType::HEX_LITERAL, value, startLine, startCol};
     }
     
     if (prefix == '%') {
-        get();
         while (peek() == '0' || peek() == '1') value += get();
         return {AssemblerTokenType::BINARY_LITERAL, value, startLine, startCol};
     }
 
+    value += prefix;
     while (std::isdigit(peek())) value += get();
     return {AssemblerTokenType::DECIMAL_LITERAL, value, startLine, startCol};
 }
