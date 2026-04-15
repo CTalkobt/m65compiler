@@ -3,3 +3,7 @@ refs/
 obj/
 bin/
 
+.idea/
+.tmp/
+
+
