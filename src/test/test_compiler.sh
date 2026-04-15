@@ -10,6 +10,7 @@ TEST_FILES=(
     "src/test-resources/test_proc.c"
     "src/test-resources/test_control_flow.c"
     "src/test-resources/test_for.c"
+    "src/test-resources/test_do_while.c"
     "src/test-resources/test_char.c"
     "src/test-resources/primes.c"
     "src/test-resources/hanoi.c"

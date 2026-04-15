@@ -21,7 +21,7 @@ Legend:
 Steps required to bring the C compiler closer to C11 standards.
 
 ### 1. Keyword & Syntax Support
-- [X] **Control Flow**: Implement `if`, `else`, `while`, and `for` statements.
+- [X] **Control Flow**: Implement `if`, `else`, `while`, `do-while`, and `for` statements.
 - [X] **Comparison Operators**: Support `==`, `!=`, `<`, `>`, `<=`, `>=`.
 - [X] **Regression Testing**: Implement automated build and test runner (`test_compiler.sh`).
 - [ ] **Static Assertions**: Implement `_Static_assert(const-expr, string)` parsing and validation.

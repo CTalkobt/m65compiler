@@ -126,6 +126,7 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"else", TokenType::ELSE},
         {"while", TokenType::WHILE},
         {"for", TokenType::FOR},
+        {"do", TokenType::DO},
         {"asm", TokenType::ASM},
         {"__asm__", TokenType::ASM}
     };

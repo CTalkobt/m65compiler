@@ -89,6 +89,19 @@ public:
         indent--;
         indent--;
     }
+    void visit(DoWhileStatement& node) override {
+        printIndent(); std::cout << "DoWhileStatement" << std::endl;
+        indent++;
+        printIndent(); std::cout << "Body:" << std::endl;
+        indent++;
+        node.body->accept(*this);
+        indent--;
+        printIndent(); std::cout << "Condition:" << std::endl;
+        indent++;
+        node.condition->accept(*this);
+        indent--;
+        indent--;
+    }
     void visit(ForStatement& node) override {
         printIndent(); std::cout << "ForStatement" << std::endl;
         indent++;

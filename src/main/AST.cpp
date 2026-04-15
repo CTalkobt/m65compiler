@@ -11,6 +11,7 @@ void ReturnStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ExpressionStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void IfStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void WhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void DoWhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ForStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AsmStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void CompoundStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }

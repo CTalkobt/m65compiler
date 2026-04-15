@@ -104,6 +104,15 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class DoWhileStatement : public Statement {
+public:
+    std::unique_ptr<Statement> body;
+    std::unique_ptr<Expression> condition;
+    DoWhileStatement(std::unique_ptr<Statement> b, std::unique_ptr<Expression> c)
+        : body(std::move(b)), condition(std::move(c)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class ForStatement : public Statement {
 public:
     std::unique_ptr<Statement> initializer;
@@ -164,6 +173,7 @@ public:
     virtual void visit(ExpressionStatement& node) = 0;
     virtual void visit(IfStatement& node) = 0;
     virtual void visit(WhileStatement& node) = 0;
+    virtual void visit(DoWhileStatement& node) = 0;
     virtual void visit(ForStatement& node) = 0;
     virtual void visit(AsmStatement& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;

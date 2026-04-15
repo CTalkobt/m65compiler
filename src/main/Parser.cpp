@@ -124,6 +124,16 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
     }
 
+    if (match(TokenType::DO)) {
+        auto body = parseStatement();
+        expect(TokenType::WHILE, "Expected 'while' after 'do' body");
+        expect(TokenType::OPEN_PAREN, "Expected '(' after 'while'");
+        auto condition = parseExpression();
+        expect(TokenType::CLOSE_PAREN, "Expected ')' after while condition");
+        expect(TokenType::SEMICOLON, "Expected ';' after do-while");
+        return std::make_unique<DoWhileStatement>(std::move(body), std::move(condition));
+    }
+
     if (match(TokenType::FOR)) {
         expect(TokenType::OPEN_PAREN, "Expected '(' after 'for'");
         std::unique_ptr<Statement> initializer = nullptr;

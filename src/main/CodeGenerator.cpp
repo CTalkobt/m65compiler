@@ -336,6 +336,17 @@ void CodeGenerator::visit(WhileStatement& node) {
     out << labelEnd << ":" << std::endl;
 }
 
+void CodeGenerator::visit(DoWhileStatement& node) {
+    std::string labelStart = newLabel();
+    
+    out << labelStart << ":" << std::endl;
+    node.body->accept(*this);
+    
+    node.condition->accept(*this);
+    emit("CMP #$00");
+    emit("BNE " + labelStart);
+}
+
 void CodeGenerator::visit(ForStatement& node) {
     std::string labelStart = newLabel();
     std::string labelEnd = newLabel();
