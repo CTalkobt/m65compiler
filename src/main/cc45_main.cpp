@@ -45,9 +45,11 @@ public:
     }
     void visit(ReturnStatement& node) override {
         printIndent(); std::cout << "ReturnStatement" << std::endl;
-        indent++;
-        node.expression->accept(*this);
-        indent--;
+        if (node.expression) {
+            indent++;
+            node.expression->accept(*this);
+            indent--;
+        }
     }
     void visit(ExpressionStatement& node) override {
         printIndent(); std::cout << "ExpressionStatement" << std::endl;
@@ -124,7 +126,7 @@ public:
         printIndent(); std::cout << "FunctionDeclaration: " << node.name << " (" << node.returnType << ")" << std::endl;
         indent++;
         for (const auto& param : node.parameters) {
-            printIndent(); std::cout << "Parameter: " << param.name << " (" << param.type << ")" << std::endl;
+            printIndent(); std::cout << "Parameter: " << param.name << " (" << param.type << (param.isPointer ? "*" : "") << ")" << std::endl;
         }
         node.body->accept(*this);
         indent--;

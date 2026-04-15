@@ -64,9 +64,10 @@ public:
 class VariableDeclaration : public Statement {
 public:
     std::string type;
+    bool isPointer;
     std::string name;
     std::unique_ptr<Expression> initializer;
-    VariableDeclaration(const std::string& t, const std::string& n) : type(t), name(n) {}
+    VariableDeclaration(const std::string& t, const std::string& n, bool p = false) : type(t), isPointer(p), name(n) {}
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -122,6 +123,7 @@ public:
 
 struct Parameter {
     std::string type;
+    bool isPointer;
     std::string name;
 };
 

@@ -39,3 +39,8 @@ clean:
 test: all
 	@echo "Running tests..."
 	@bash src/test/test_compiler.sh
+	@$(MAKE) test-opcodes
+
+test-opcodes: all
+	@echo "Validating opcodes and addressing modes..."
+	@bash src/test/test_opcodes.sh

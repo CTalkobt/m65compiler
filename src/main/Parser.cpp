@@ -5,6 +5,7 @@
 Parser::Parser(const std::vector<Token>& tokens) : tokens(tokens), pos(0) {}
 
 const Token& Parser::peek() const {
+    if (pos >= tokens.size()) return tokens.back();
     return tokens[pos];
 }
 
@@ -40,7 +41,10 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     std::string returnType;
     if (match(TokenType::INT)) returnType = "int";
     else if (match(TokenType::CHAR)) returnType = "char";
-    else returnType = expect(TokenType::VOID, "Expected return type").value;
+    else if (match(TokenType::VOID)) returnType = "void";
+    else throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type");
+
+    match(TokenType::STAR); // return pointer (optional)
 
     std::string name = expect(TokenType::IDENTIFIER, "Expected function name").value;
     
@@ -50,10 +54,13 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
         do {
             std::string pType;
             if (match(TokenType::INT)) pType = "int";
-            else pType = expect(TokenType::CHAR, "Expected parameter type (int or char)").value;
+            else if (match(TokenType::CHAR)) pType = "char";
+            else throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type");
+
+            bool pIsPtr = match(TokenType::STAR);
 
             std::string pName = expect(TokenType::IDENTIFIER, "Expected parameter name").value;
-            params.push_back({pType, pName});
+            params.push_back({pType, pIsPtr, pName});
         } while (match(TokenType::COMMA));
     }
     expect(TokenType::CLOSE_PAREN, "Expected ')'");
@@ -78,8 +85,9 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 std::unique_ptr<Statement> Parser::parseStatement() {
     if (peek().type == TokenType::INT || peek().type == TokenType::CHAR) {
         std::string type = (advance().type == TokenType::INT) ? "int" : "char";
+        bool isPtr = match(TokenType::STAR);
         std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
-        auto decl = std::make_unique<VariableDeclaration>(type, name);
+        auto decl = std::make_unique<VariableDeclaration>(type, name, isPtr);
         if (match(TokenType::EQUALS)) {
             decl->initializer = parseExpression();
         }
@@ -88,7 +96,10 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     }
 
     if (match(TokenType::RETURN)) {
-        auto expr = parseExpression();
+        std::unique_ptr<Expression> expr = nullptr;
+        if (peek().type != TokenType::SEMICOLON) {
+            expr = parseExpression();
+        }
         expect(TokenType::SEMICOLON, "Expected ';'");
         return std::make_unique<ReturnStatement>(std::move(expr));
     }

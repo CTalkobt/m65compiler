@@ -136,12 +136,20 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
     }
 
     static const std::set<std::string> instructions = {
-        "LDA", "LDX", "LDY", "LDZ", "STA", "STX", "STY", "STZ", "STQ", "LDQ",
-        "JSR", "RTS", "RTN", "PHW", "PHZ", "PLZ", "PHX", "PLX", "PHY", "PLY",
-        "BEQ", "BNE", "BRA", "BCC", "BCS", "BPL", "BMI", "BVC", "BVS", "BSR",
-        "INX", "INY", "INZ", "DEX", "DEY", "DEZ", "INW", "DEW", "ASW", "ROW",
-        "CLC", "SEC", "CLI", "SEI", "CLD", "SED", "CLE", "SEE",
-        "CALL", "ENDCALL", "PROC", "ENDPROC", "NEG", "ASR", "EXPR"
+        "ADC", "AND", "ASL", "ASR", "ASW", "BCC", "BCS", "BEQ", "BIT", "BMI",
+        "BNE", "BPL", "BRA", "BRK", "BSR", "BVC", "BVS", "BBR0", "BBR1", "BBR2",
+        "BBR3", "BBR4", "BBR5", "BBR6", "BBR7", "BBS0", "BBS1", "BBS2", "BBS3",
+        "BBS4", "BBS5", "BBS6", "BBS7", "CLC", "CLD", "CLE", "CLI", "CLV", "CMP",
+        "CPX", "CPY", "CPZ", "DEC", "DEW", "DEX", "DEY", "DEZ", "EOM", "EOR",
+        "INC", "INW", "INX", "INY", "INZ", "JMP", "JSR", "LDA", "LDQ", "LDX",
+        "LDY", "LDZ", "LSR", "MAP", "NEG", "NOP", "ORA", "PHA", "PHP", "PHX",
+        "PHY", "PHZ", "PHW", "PLA", "PLP", "PLX", "PLY", "PLZ", "RMB0", "RMB1",
+        "RMB2", "RMB3", "RMB4", "RMB5", "RMB6", "RMB7", "ROL", "ROR", "ROW",
+        "RTI", "RTS", "SBC", "SEC", "SED", "SEE", "SEI", "SMB0", "SMB1", "SMB2",
+        "SMB3", "SMB4", "SMB5", "SMB6", "SMB7", "STA", "STQ", "STX", "STY",
+        "STZ", "TAB", "TAY", "TAZ", "TBA", "TAX", "TAY", "TSX", "TSY", "TXA",
+        "TXS", "TYA", "TYS", "TZA", "TRB", "TSB",
+        "CALL", "ENDCALL", "PROC", "ENDPROC", "EXPR"
     };
 
     std::string upperValue = value;

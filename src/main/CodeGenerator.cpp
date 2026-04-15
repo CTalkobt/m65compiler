@@ -29,7 +29,9 @@ void CodeGenerator::visit(FunctionDeclaration& node) {
     std::string procLine = "PROC " + node.name;
     currentVars.clear();
     for (const auto& param : node.parameters) {
-        if (param.type == "char") {
+        if (param.isPointer) {
+            procLine += ", W#" + param.name;
+        } else if (param.type == "char") {
             procLine += ", B#" + param.name;
         } else {
             procLine += ", W#" + param.name;
@@ -47,7 +49,7 @@ void CodeGenerator::visit(CompoundStatement& node) {
 }
 
 void CodeGenerator::visit(VariableDeclaration& node) {
-    int size = (node.type == "char") ? 1 : 2;
+    int size = (node.isPointer) ? 2 : ((node.type == "char") ? 1 : 2);
     if (node.initializer) {
         node.initializer->accept(*this);
         if (size == 2) {
@@ -286,7 +288,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
 }
 
 void CodeGenerator::visit(ReturnStatement& node) {
-    node.expression->accept(*this);
+    if (node.expression) node.expression->accept(*this);
     emit("ENDPROC");
 }
 

@@ -43,6 +43,7 @@ struct Instruction {
     std::string mnemonic;
     AddressingMode mode;
     std::string operand;
+    std::string bitBranchTarget;
     std::vector<std::string> callArgs;
     uint32_t address;
     int size;

@@ -11,6 +11,10 @@ TEST_FILES=(
     "src/test-resources/test_control_flow.c"
     "src/test-resources/test_for.c"
     "src/test-resources/test_char.c"
+    "src/test-resources/primes.c"
+    "src/test-resources/hanoi.c"
+    "src/test-resources/guess.c"
+    "src/test-resources/hello_world.c"
 )
 
 mkdir -p build/test
