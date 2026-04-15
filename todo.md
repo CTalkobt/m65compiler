@@ -69,6 +69,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **CPU Selection**: Support `.cpu _45gs02` directive.
 - [X] **Comments**: Support `//` and `/* ... */` style comments.
 - [X] **ORG Syntax**: Support `* = $addr` for compatibility.
+- [X] **BasicUpstart**: Implement `.basicUpstart <addr>` for C64 BASIC stubs.
 - [ ] **Binary Import**: Implement `.import binary "file.bin"`.
 
 ### 7. Missing Syntax & Instructions

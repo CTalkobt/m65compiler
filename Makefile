@@ -37,9 +37,14 @@ clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR) build
 
 test: all
-	@echo "Running tests..."
+	@echo "Running compiler tests..."
 	@bash src/test/test_compiler.sh
+	@echo "Running assembler feature tests..."
+	@bash src/test/test_assembler.sh
 	@$(MAKE) test-opcodes
+
+test-assembler: all
+	@bash src/test/test_assembler.sh
 
 test-opcodes: all
 	@echo "Validating opcodes and addressing modes..."

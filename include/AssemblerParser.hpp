@@ -45,19 +45,12 @@ struct Instruction {
     std::string operand;
     std::string bitBranchTarget;
     std::vector<std::string> callArgs;
-    uint32_t address;
-    int size;
-    int line;
     int procParamSize = 0; 
-    std::string bitNum; 
 };
 
 struct Directive {
     std::string name;
     std::vector<std::string> arguments;
-    uint32_t address;
-    int size;
-    int line;
     std::string varName; 
     enum VarType { NONE, ASSIGN, INC, DEC } varType = NONE;
     int tokenIndex = -1; 
@@ -84,13 +77,20 @@ private:
     std::map<uint32_t, ProcContext> procedures; 
 
     struct Statement {
-        bool isInstruction;
+        enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART } type = NONE;
         Instruction instr;
         Directive dir;
         std::string label;
-        bool isExpr = false;
+        uint32_t address = 0;
+        int size = 0;
+        int line = 0;
+        
+        // EXPR specific
         std::string exprTarget;
         int exprTokenIndex = -1;
+        
+        // BASIC_UPSTART specific
+        int basicUpstartTokenIndex = -1;
     };
     std::vector<Statement> statements;
 
