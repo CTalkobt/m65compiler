@@ -116,6 +116,9 @@ public:
         indent--;
         indent--;
     }
+    void visit(AsmStatement& node) override {
+        printIndent(); std::cout << "AsmStatement: " << node.code << std::endl;
+    }
     void visit(CompoundStatement& node) override {
         printIndent(); std::cout << "CompoundStatement" << std::endl;
         indent++;

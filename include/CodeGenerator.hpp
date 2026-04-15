@@ -22,6 +22,7 @@ public:
     void visit(IfStatement& node) override;
     void visit(WhileStatement& node) override;
     void visit(ForStatement& node) override;
+    void visit(AsmStatement& node) override;
     void visit(CompoundStatement& node) override;
     void visit(FunctionDeclaration& node) override;
     void visit(TranslationUnit& node) override;

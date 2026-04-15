@@ -28,6 +28,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **Generic Selections**: Implement `_Generic` expressions for type-based dispatch.
 - [ ] **Function Specifiers**: Support `_Noreturn` (enabling optimization to skip return opcodes).
 - [ ] **Alignment**: Implement `_Alignas` and `_Alignof` to manage data alignment.
+- [X] **Inline Assembly**: Support `asm("...")` or `__asm__("...")` for direct assembly insertion.
 
 ### 2. Type System Enhancements
 - [ ] **Anonymous Structures & Unions**: Support nested structs/unions without names.
@@ -53,7 +54,7 @@ Steps required to bring the C compiler closer to C11 standards.
       Also, allow anonymous segments where scope is merely defined. 
 - [ ] **Segment Address**: For named segments, allow mapping to various regions of memory. (eg: .segment "READONLY", .segment "CODE", etc. ). Have certain built-in segments pre-defined. Allow usage of other custom segments however. 
 
-### 2. Memory & Alignment
+### 3. Memory & Alignment
 - [ ] **Alignment Directive**: Implement `.align <n>` or `.balign <n>` to support C11 `_Alignas`.
 - [ ] **Segment Management**: Implement `.section` or `.segment` to support `_Thread_local` storage and separate data/text areas.
 
@@ -63,3 +64,16 @@ Steps required to bring the C compiler closer to C11 standards.
 
 ### 5. Atomic Primitives
 - [ ] **Synchronization Macros**: Provide built-in macros for atomic exchange or compare-and-swap if targeting multi-core or interrupt-safe code.
+
+### 6. KickAssembler Compatibility
+- [X] **CPU Selection**: Support `.cpu _45gs02` directive.
+- [X] **Comments**: Support `//` and `/* ... */` style comments.
+- [X] **ORG Syntax**: Support `* = $addr` for compatibility.
+- [ ] **Binary Import**: Implement `.import binary "file.bin"`.
+
+### 7. Missing Syntax & Instructions
+- [W] **Addressing Modes**: Support Absolute Indirect Indexed `($1234),y` (Not supported by 45GS02 hardware).
+- [ ] **Native Quad Mode**: Add full native support for `adcq`, `sbcq` etc. (currently prefixed).
+- [ ] **Macros**: Implement `.macro` system.
+- [ ] **Preprocessor**: Implement `#define`, `#if`, `#else`, `#endif`.
+- [ ] **Standard Library**: Add built-in functions like `sin()`, `cos()`, `round()`.

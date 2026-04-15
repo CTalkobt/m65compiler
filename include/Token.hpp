@@ -11,6 +11,7 @@ enum class TokenType {
     ELSE,
     WHILE,
     FOR,
+    ASM,
     
     // Literals
     IDENTIFIER,
@@ -58,6 +59,7 @@ struct Token {
             case TokenType::ELSE: return "ELSE";
             case TokenType::WHILE: return "WHILE";
             case TokenType::FOR: return "FOR";
+            case TokenType::ASM: return "ASM";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";

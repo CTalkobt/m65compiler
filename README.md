@@ -14,6 +14,8 @@ The compilation process follows a multi-pass pipeline:
 ## Design Philosophy
 - **Procedural Abstraction**: Function calls are treated as first-class citizens with named parameters and automated stack cleanup.
 - **MEGA65 First**: Special emphasis is placed on supporting the 45GS02 instruction set enhancements, including a high-level expression engine (`EXPR`) that handles constant folding and register arithmetic.
+- **Compatibility**: Supports KickAssembler-style syntax (comments, `* =`, `.cpu`) for easier porting of existing MEGA65 codebases.
+- **Inline Assembly**: Standard C `asm()` and `__asm__()` support for direct hardware control from C source.
 - **Extensibility**: The toolchain uses a visitor-based architecture in C++, making it easy to add new optimizations, language features, or hardware targets.
 
 ## General Usage

@@ -43,6 +43,27 @@ void AssemblerLexer::skipWhitespaceAndComments() {
             while (peek() != '\n' && peek() != '\0') {
                 get();
             }
+        } else if (peek() == '/') {
+            if (pos + 1 < source.length()) {
+                if (source[pos + 1] == '/') {
+                    while (peek() != '\n' && peek() != '\0') {
+                        get();
+                    }
+                } else if (source[pos + 1] == '*') {
+                    get(); get(); // consume /*
+                    while (peek() != '\0') {
+                        if (peek() == '*' && pos + 1 < source.length() && source[pos + 1] == '/') {
+                            get(); get(); // consume */
+                            break;
+                        }
+                        get();
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
         } else {
             break;
         }
@@ -169,11 +190,13 @@ AssemblerToken AssemblerLexer::lexNumber() {
     char prefix = get(); // consume $, %, or first digit
     
     if (prefix == '$') {
+        value += prefix;
         while (std::isxdigit(peek())) value += get();
         return {AssemblerTokenType::HEX_LITERAL, value, startLine, startCol};
     }
     
     if (prefix == '%') {
+        value += prefix;
         while (peek() == '0' || peek() == '1') value += get();
         return {AssemblerTokenType::BINARY_LITERAL, value, startLine, startCol};
     }

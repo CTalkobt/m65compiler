@@ -144,6 +144,14 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body));
     }
 
+    if (match(TokenType::ASM)) {
+        expect(TokenType::OPEN_PAREN, "Expected '(' after asm");
+        std::string code = expect(TokenType::STRING_LITERAL, "Expected string literal for asm code").value;
+        expect(TokenType::CLOSE_PAREN, "Expected ')' after asm code");
+        expect(TokenType::SEMICOLON, "Expected ';'");
+        return std::make_unique<AsmStatement>(code);
+    }
+
     if (peek().type == TokenType::OPEN_BRACE) {
         return parseCompoundStatement();
     }

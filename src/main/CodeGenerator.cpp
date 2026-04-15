@@ -44,6 +44,11 @@ void CodeGenerator::visit(FunctionDeclaration& node) {
     out << std::endl;
 }
 
+void CodeGenerator::visit(AsmStatement& node) {
+    out << "; Inline Assembly" << std::endl;
+    out << node.code << std::endl;
+}
+
 void CodeGenerator::visit(CompoundStatement& node) {
     for (auto& stmt : node.statements) stmt->accept(*this);
 }

@@ -87,7 +87,7 @@ const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std
     throw std::runtime_error(message + " at " + std::to_string(peek().line) + ":" + std::to_string(peek().column));
 }
 
-uint32_t AssemblerParser::parseNumericLiteral(const std::string& literal) {
+static uint32_t parseNumericLiteral(const std::string& literal) {
     if (literal.empty()) return 0;
     try {
         if (literal[0] == '$') return std::stoul(literal.substr(1), nullptr, 16);
@@ -101,7 +101,8 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
         if (idx >= (int)tokens.size()) return nullptr;
         const auto& t = tokens[idx++];
         if (t.type == AssemblerTokenType::DECIMAL_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value));
-        if (t.type == AssemblerTokenType::HEX_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value, nullptr, 16));
+        if (t.type == AssemblerTokenType::HEX_LITERAL) return std::make_unique<ConstantNode>(parseNumericLiteral(t.value));
+        if (t.type == AssemblerTokenType::BINARY_LITERAL) return std::make_unique<ConstantNode>(parseNumericLiteral(t.value));
         if (t.type == AssemblerTokenType::REGISTER) return std::make_unique<RegisterNode>(t.value);
         if (t.type == AssemblerTokenType::FLAG) return std::make_unique<FlagNode>(t.value[0]);
         if (t.type == AssemblerTokenType::IDENTIFIER) {
@@ -166,8 +167,25 @@ void AssemblerParser::pass1() {
                 }
                 if (stmt.dir.name == "org") {
                     if (!stmt.dir.arguments.empty()) pc = parseNumericLiteral(stmt.dir.arguments[0]);
+                } else if (stmt.dir.name == "cpu") {
+                    if (!stmt.dir.arguments.empty()) {
+                        std::string cpu = stmt.dir.arguments[0];
+                        std::transform(cpu.begin(), cpu.end(), cpu.begin(), ::tolower);
+                        if (cpu != "_45gs02" && cpu != "45gs02") {
+                            std::cerr << "Warning: CPU '" << stmt.dir.arguments[0] << "' not supported. Defaulting to 45GS02." << std::endl;
+                        }
+                    }
                 } else { stmt.dir.size = calculateDirectiveSize(stmt.dir); pc += stmt.dir.size; }
             }
+            statements.push_back(stmt);
+        } else if (match(AssemblerTokenType::STAR)) {
+            expect(AssemblerTokenType::EQUALS, "Expected = after *");
+            stmt.dir.name = "org"; stmt.dir.address = pc;
+            while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
+                if (match(AssemblerTokenType::COMMA)) continue;
+                stmt.dir.arguments.push_back(advance().value);
+            }
+            if (!stmt.dir.arguments.empty()) pc = parseNumericLiteral(stmt.dir.arguments[0]);
             statements.push_back(stmt);
         } else if (match(AssemblerTokenType::INSTRUCTION)) {
             stmt.isInstruction = true; stmt.instr.mnemonic = tokens[pos-1].value; stmt.instr.address = pc;
@@ -199,12 +217,12 @@ void AssemblerParser::pass1() {
                 stmt.instr.operand = advance().value;
                 while (match(AssemblerTokenType::COMMA)) {
                     if (match(AssemblerTokenType::HASH)) {
-                        const auto& v = advance(); stmt.instr.callArgs.push_back(std::string("#") + (v.type == AssemblerTokenType::HEX_LITERAL ? "$" : "") + v.value);
+                        const auto& v = advance(); stmt.instr.callArgs.push_back(std::string("#") + v.value);
                     } else if (peek().type == AssemblerTokenType::IDENTIFIER && (peek().value == "B" || peek().value == "W")) {
                         std::string p = advance().value; match(AssemblerTokenType::HASH);
-                        const auto& v = advance(); stmt.instr.callArgs.push_back(p + "#" + (v.type == AssemblerTokenType::HEX_LITERAL ? "$" : "") + v.value);
+                        const auto& v = advance(); stmt.instr.callArgs.push_back(p + "#" + v.value);
                     } else {
-                        const auto& v = advance(); stmt.instr.callArgs.push_back(std::string(v.type == AssemblerTokenType::HEX_LITERAL ? "$" : "") + v.value);
+                        const auto& v = advance(); stmt.instr.callArgs.push_back(v.value);
                     }
                 }
                 stmt.instr.size = calculateInstructionSize(stmt.instr);
@@ -218,11 +236,11 @@ void AssemblerParser::pass1() {
             } else {
                 if (match(AssemblerTokenType::HASH)) {
                     const auto& v = advance();
-                    stmt.instr.operand = (v.type == AssemblerTokenType::HEX_LITERAL ? "$" : "") + v.value;
+                    stmt.instr.operand = v.value;
                     if (stmt.instr.mnemonic == "PHW") stmt.instr.mode = AddressingMode::IMMEDIATE16;
                     else stmt.instr.mode = AddressingMode::IMMEDIATE;
                 } else if (match(AssemblerTokenType::OPEN_PAREN)) {
-                    const auto& v = advance(); stmt.instr.operand = (v.type == AssemblerTokenType::HEX_LITERAL ? "$" : "") + v.value;
+                    const auto& v = advance(); stmt.instr.operand = v.value;
                     if (match(AssemblerTokenType::COMMA)) {
                         std::string r = advance().value;
                         if (r == "X" || r == "X" || r == "x") { 
@@ -249,13 +267,13 @@ void AssemblerParser::pass1() {
                         }
                     }
                 } else if (match(AssemblerTokenType::OPEN_BRACKET)) {
-                    const auto& v = advance(); stmt.instr.operand = (v.type == AssemblerTokenType::HEX_LITERAL ? "$" : "") + v.value;
+                    const auto& v = advance(); stmt.instr.operand = v.value;
                     expect(AssemblerTokenType::CLOSE_BRACKET, "Expected ]"); expect(AssemblerTokenType::COMMA, "Expected ,"); advance();
                     stmt.instr.mode = AddressingMode::FLAT_INDIRECT_Z;
                 } else if (peek().type == AssemblerTokenType::REGISTER && (peek().value == "A" || peek().value == "a")) {
                     advance(); stmt.instr.mode = AddressingMode::ACCUMULATOR;
                 } else if (peek().type == AssemblerTokenType::IDENTIFIER || peek().type == AssemblerTokenType::HEX_LITERAL || peek().type == AssemblerTokenType::DECIMAL_LITERAL) {
-                    const auto& v = advance(); stmt.instr.operand = (v.type == AssemblerTokenType::HEX_LITERAL ? "$" : "") + v.value;
+                    const auto& v = advance(); stmt.instr.operand = v.value;
                     if (match(AssemblerTokenType::COMMA)) {
                         const auto& r = peek();
                         if (r.type == AssemblerTokenType::IDENTIFIER && (r.value == "X" || r.value == "x")) { advance(); stmt.instr.mode = AddressingMode::ABSOLUTE_X; }

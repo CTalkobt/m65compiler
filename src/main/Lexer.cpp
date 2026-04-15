@@ -125,7 +125,9 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"if", TokenType::IF},
         {"else", TokenType::ELSE},
         {"while", TokenType::WHILE},
-        {"for", TokenType::FOR}
+        {"for", TokenType::FOR},
+        {"asm", TokenType::ASM},
+        {"__asm__", TokenType::ASM}
     };
 
     auto it = keywords.find(value);

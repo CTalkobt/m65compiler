@@ -115,6 +115,13 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class AsmStatement : public Statement {
+public:
+    std::string code;
+    AsmStatement(const std::string& c) : code(c) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class CompoundStatement : public Statement {
 public:
     std::vector<std::unique_ptr<Statement>> statements;
@@ -158,6 +165,7 @@ public:
     virtual void visit(IfStatement& node) = 0;
     virtual void visit(WhileStatement& node) = 0;
     virtual void visit(ForStatement& node) = 0;
+    virtual void visit(AsmStatement& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;
     virtual void visit(FunctionDeclaration& node) = 0;
     virtual void visit(TranslationUnit& node) = 0;
