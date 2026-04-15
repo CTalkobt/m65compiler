@@ -84,6 +84,10 @@ AssemblerToken AssemblerLexer::nextToken() {
     }
 
     if (c == '.') {
+        // If followed by a digit, it's a decimal number
+        if (pos < source.length() && std::isdigit(source[pos])) {
+            return lexNumber();
+        }
         int startLine = line;
         int startCol = column;
         get();
@@ -107,8 +111,13 @@ AssemblerToken AssemblerLexer::nextToken() {
         return {AssemblerTokenType::FLAG, std::string(1, flag), startLine, startCol};
     }
 
-    if (std::isdigit(c) || c == '$' || c == '%') {
-        return lexNumber();
+    if (std::isdigit(c) || c == '$' || c == '%' || c == '.' || 
+        (c == '-' && pos + 1 < source.length() && (std::isdigit(source[pos + 1]) || source[pos + 1] == '.'))) {
+        if (c == '.' && (pos >= source.length() || !std::isdigit(source[pos]))) {
+            // directive handled later
+        } else {
+            return lexNumber();
+        }
     }
 
     if (std::isalpha(c) || c == '_') {
@@ -155,6 +164,7 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
     while (std::isalnum(peek()) || peek() == '_') {
         value += get();
     }
+    if (value.empty()) return nextToken();
 
     static const std::set<std::string> instructions = {
         "ADC", "AND", "ASL", "ASR", "ASW", "BCC", "BCS", "BEQ", "BIT", "BMI",
@@ -187,22 +197,24 @@ AssemblerToken AssemblerLexer::lexNumber() {
     int startLine = line;
     int startCol = column;
     std::string value;
-    char prefix = get(); // consume $, %, or first digit
+    char prefix = get(); 
+    value += prefix;
     
     if (prefix == '$') {
-        value += prefix;
         while (std::isxdigit(peek())) value += get();
         return {AssemblerTokenType::HEX_LITERAL, value, startLine, startCol};
     }
     
     if (prefix == '%') {
-        value += prefix;
         while (peek() == '0' || peek() == '1') value += get();
         return {AssemblerTokenType::BINARY_LITERAL, value, startLine, startCol};
     }
 
-    value += prefix;
-    while (std::isdigit(peek())) value += get();
+    bool hasDot = (prefix == '.');
+    while (std::isdigit(peek()) || (!hasDot && peek() == '.')) {
+        if (peek() == '.') hasDot = true;
+        value += get();
+    }
     return {AssemblerTokenType::DECIMAL_LITERAL, value, startLine, startCol};
 }
 

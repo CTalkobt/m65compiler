@@ -25,6 +25,7 @@ test_file() {
 # List of assembler feature tests
 AS_TEST_FILES=(
     "src/test-resources/test_basic_upstart.s"
+    "src/test-resources/test_data_types.s"
     "src/test-resources/test_expr.s"
     "src/test-resources/test_var.s"
     "src/test-resources/test_45gs02.s"

@@ -4,11 +4,36 @@
 #include <iomanip>
 #include <algorithm>
 #include <memory>
+#include <cmath>
 
 static uint8_t toPetscii(char c) {
     if (c >= 'a' && c <= 'z') return c - 32;
     if (c >= 'A' && c <= 'Z') return c + 32;
     return (uint8_t)c;
+}
+
+static std::vector<uint8_t> encodeFloat(double val) {
+    std::vector<uint8_t> result(5, 0);
+    if (val == 0.0) return result;
+
+    bool negative = false;
+    if (val < 0) { negative = true; val = -val; }
+
+    int exp;
+    double mantissa = std::frexp(val, &exp);
+    // Commodore format uses excess 128 exponent. frexp returns mantissa in [0.5, 1.0)
+    result[0] = (uint8_t)(exp + 128);
+
+    // Mantissa is 32 bits. bit 31 is the hidden bit (always 1 for non-zero), 
+    // which is replaced by the sign bit.
+    uint32_t m = (uint32_t)(mantissa * 4294967296.0); // 2^32
+    result[1] = (m >> 24) & 0x7F;
+    if (negative) result[1] |= 0x80;
+    result[2] = (m >> 16) & 0xFF;
+    result[3] = (m >> 8) & 0xFF;
+    result[4] = m & 0xFF;
+
+    return result;
 }
 
 struct ExprAST {
@@ -183,8 +208,9 @@ void AssemblerParser::pass1() {
                 stmt.size = 12; // ptr(2) + line(2) + SYS(1) + addr(4) + term(1) + end(2) = 12
             } else {
                 while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
-                    if (match(AssemblerTokenType::COMMA)) continue;
-                    stmt.dir.arguments.push_back(advance().value);
+                    if (peek().type == AssemblerTokenType::COMMA) { advance(); continue; }
+                    std::string val = advance().value;
+                    if (!val.empty()) stmt.dir.arguments.push_back(val);
                 }
                 if (stmt.dir.name == "org") {
                     if (!stmt.dir.arguments.empty()) pc = parseNumericLiteral(stmt.dir.arguments[0]);
@@ -361,6 +387,8 @@ void AssemblerParser::pass1() {
 int AssemblerParser::calculateDirectiveSize(const Directive& dir) {
     if (dir.name == "byte") return (int)dir.arguments.size();
     if (dir.name == "word") return (int)dir.arguments.size() * 2;
+    if (dir.name == "dword" || dir.name == "long") return (int)dir.arguments.size() * 4;
+    if (dir.name == "float") return (int)dir.arguments.size() * 5;
     if (dir.name == "text" || dir.name == "ascii") return dir.arguments.empty() ? 0 : (int)dir.arguments[0].length();
     return 0;
 }
@@ -892,9 +920,37 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                     else if (stmt.dir.varType == Directive::DEC) symbolTable[stmt.dir.varName].value--;
                 } else if (stmt.dir.name == "cleanup") {
                     if (currentPass2Proc) currentPass2Proc->totalParamSize += evaluateExpressionAt(stmt.dir.tokenIndex);
-                } else if (stmt.dir.name == "byte") for (const auto& a : stmt.dir.arguments) binary.push_back(parseNumericLiteral(a));
-                else if (stmt.dir.name == "word") for (const auto& a : stmt.dir.arguments) { uint32_t v = parseNumericLiteral(a); binary.push_back(v & 0xFF); binary.push_back((v >> 8) & 0xFF); }
-                else if (stmt.dir.name == "text") for (char c : stmt.dir.arguments[0]) binary.push_back(toPetscii(c));
+                } else if (stmt.dir.name == "byte") for (const auto& a : stmt.dir.arguments) { if (a.empty()) continue; binary.push_back((uint8_t)parseNumericLiteral(a)); }
+                else if (stmt.dir.name == "word") for (const auto& a : stmt.dir.arguments) { if (a.empty()) continue; uint32_t v = parseNumericLiteral(a); binary.push_back(v & 0xFF); binary.push_back((v >> 8) & 0xFF); }
+                else if (stmt.dir.name == "dword" || stmt.dir.name == "long") {
+                    for (const auto& a : stmt.dir.arguments) {
+                        if (a.empty()) continue;
+                        uint32_t v = parseNumericLiteral(a);
+                        binary.push_back(v & 0xFF);
+                        binary.push_back((v >> 8) & 0xFF);
+                        binary.push_back((v >> 16) & 0xFF);
+                        binary.push_back((v >> 24) & 0xFF);
+                    }
+                } else if (stmt.dir.name == "float") {
+                    for (const auto& a : stmt.dir.arguments) {
+                        if (a.empty()) continue;
+                        double v;
+                        bool neg = false;
+                        std::string cleanA = a;
+                        if (cleanA[0] == '-') { neg = true; cleanA = cleanA.substr(1); }
+
+                        if (!cleanA.empty() && (cleanA[0] == '$' || cleanA[0] == '%')) {
+                            v = (double)parseNumericLiteral(cleanA);
+                        } else {
+                            try { v = std::stod(cleanA); }
+                            catch(...) { v = 0.0; }
+                        }
+                        if (neg) v = -v;
+                        std::vector<uint8_t> encoded = encodeFloat(v);
+                        for (uint8_t b : encoded) binary.push_back(b);
+                    }
+                }
+ else if (stmt.dir.name == "text") for (char c : stmt.dir.arguments[0]) binary.push_back(toPetscii(c));
                 else if (stmt.dir.name == "ascii") for (char c : stmt.dir.arguments[0]) binary.push_back((uint8_t)c);
             }
         }
