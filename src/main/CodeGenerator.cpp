@@ -84,16 +84,48 @@ void CodeGenerator::visit(VariableDeclaration& node) {
 void CodeGenerator::visit(Assignment& node) {
     node.expression->accept(*this);
     emit("STA " + node.name + ", s");
-    if (variableTypes.count(node.name) && variableTypes[node.name].type != "char") {
+    if (variableTypes.count(node.name) && (variableTypes[node.name].isPointer || variableTypes[node.name].type != "char")) {
         emit("STX " + node.name + "+1, s");
     }
 }
 
+struct ExprType {
+    std::string type;
+    bool isPointer;
+};
+
+static ExprType getExprType(Expression* expr, const std::map<std::string, CodeGenerator::VarInfo>& variableTypes) {
+    if (auto* ref = dynamic_cast<VariableReference*>(expr)) {
+        if (variableTypes.count(ref->name)) {
+            return {variableTypes.at(ref->name).type, variableTypes.at(ref->name).isPointer};
+        }
+    }
+    if (auto* lit = dynamic_cast<IntegerLiteral*>(expr)) {
+        return {"int", false};
+    }
+    if (auto* bin = dynamic_cast<BinaryOperation*>(expr)) {
+        return getExprType(bin->left.get(), variableTypes);
+    }
+    return {"int", false};
+}
+
 void CodeGenerator::visit(BinaryOperation& node) {
-    // Check for +/- 1 optimization
+    // Check for pointer arithmetic
+    ExprType lhsType = getExprType(node.left.get(), variableTypes);
+    ExprType rhsType = getExprType(node.right.get(), variableTypes);
+    
+    int scale = 1;
+    if (lhsType.isPointer && !rhsType.isPointer && (node.op == "+" || node.op == "-")) {
+        // Scale RHS by size of pointed-to type
+        scale = (lhsType.type == "char") ? 1 : 2;
+    }
+
+    // Check for +/- 1 optimization (only if not scaled or scale is 1)
     bool isLiteralOne = false;
-    if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
-        if (lit->value == 1) isLiteralOne = true;
+    if (scale == 1) {
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+            if (lit->value == 1) isLiteralOne = true;
+        }
     }
 
     if (isLiteralOne && (node.op == "+" || node.op == "-")) {
@@ -135,6 +167,11 @@ void CodeGenerator::visit(BinaryOperation& node) {
     
     // 2. Evaluate RHS into A/X
     node.right->accept(*this);
+    if (scale > 1) {
+        // Scaling result in A/X (multiply by 2 for int*)
+        emit("ASL A");
+        emit("ROL X");
+    }
     
     // 3. Perform operation using A/X and value at TOP of stack
     // (LHS is at 1,s if 8-bit, or 2,s if 16-bit)

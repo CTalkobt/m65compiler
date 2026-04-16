@@ -16,6 +16,7 @@ TEST_FILES=(
     "src/test-resources/hanoi.c"
     "src/test-resources/guess.c"
     "src/test-resources/hello_world.c"
+    "src/test-resources/test_ptr_arith.c"
 )
 
 mkdir -p build/test
