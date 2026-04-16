@@ -161,7 +161,7 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
     int startLine = line;
     int startCol = column;
     std::string value;
-    while (std::isalnum(peek()) || peek() == '_') {
+    while (std::isalnum(peek()) || peek() == '_' || peek() == '.') {
         value += get();
     }
     if (value.empty()) return nextToken();
@@ -180,7 +180,7 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
         "SMB3", "SMB4", "SMB5", "SMB6", "SMB7", "STA", "STQ", "STX", "STY",
         "STZ", "TAB", "TAY", "TAZ", "TBA", "TAX", "TAY", "TSX", "TSY", "TXA",
         "TXS", "TYA", "TYS", "TZA", "TRB", "TSB",
-        "CALL", "ENDCALL", "PROC", "ENDPROC", "EXPR"
+        "CALL", "PROC", "ENDPROC", "EXPR", "MUL", "DIV"
     };
 
     std::string upperValue = value;

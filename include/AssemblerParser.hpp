@@ -2,6 +2,8 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <deque>
+#include <memory>
 #include <cstdint>
 #include "AssemblerToken.hpp"
 
@@ -77,7 +79,7 @@ private:
     std::map<uint32_t, ProcContext> procedures; 
 
     struct Statement {
-        enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART } type = NONE;
+        enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV } type = NONE;
         Instruction instr;
         Directive dir;
         std::string label;
@@ -91,8 +93,11 @@ private:
         
         // BASIC_UPSTART specific
         int basicUpstartTokenIndex = -1;
+
+        // MUL specific
+        int mulWidth = 8;
     };
-    std::vector<Statement> statements;
+    std::deque<std::unique_ptr<Statement>> statements;
 
     const AssemblerToken& peek() const;
     const AssemblerToken& advance();
@@ -105,4 +110,6 @@ private:
     uint8_t getOpcode(const std::string& mnemonic, AddressingMode mode);
     uint32_t evaluateExpressionAt(int index);
     void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex);
+    void emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex);
+    void emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex);
 };

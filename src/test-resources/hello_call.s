@@ -1,25 +1,24 @@
-; Test Symbol Table Sizes
 .org $2000
 
-MY_CONST = $42  ; Should be a byte
-MY_WIDE = $1234 ; Should be a word
+MY_CONST = $42
+MY_WIDE = $1234
 
 start:
-    ; CALL with equate (byte)
+    // CALL with equate (byte)
     CALL print_byte, MY_CONST
-    ; CALL with label (address, word)
+    // CALL with label (address, word)
     CALL print_word, my_data
     RTS
 
-print_byte:
-    LDA 2, s ; Should be at offset 2
+PROC print_byte, B#val
+    LDA val
     JSR $FFD2
-    ENDCALL 1
+ENDPROC
 
-print_word:
-    LDA 2, s ; Low byte
-    LDA 3, s ; High byte
-    RTS
+PROC print_word, W#ptr
+    LDA ptr     // Low byte
+    LDA ptr+1   // High byte
+ENDPROC
 
 my_data:
-    .byte $AA
+    .word $AABB

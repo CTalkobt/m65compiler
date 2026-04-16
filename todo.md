@@ -44,7 +44,8 @@ Steps required to bring the C compiler closer to C11 standards.
 ## Roadmap - Assembler (ca45)
 
 ### 1. Registers
-- [ ] **Mega65 Multiplication**: Allow use of the Mega65 hardware multiplier / division units (see mega65-book.txt) during expression evaluation for RHS/LHS. Implement as built-in opcodes also. 
+- [X] **Mega65 Multiplication**: Simulated `mul.<width> <dest>, <src>` opcode leveraging hardware multiplier.
+- [X] **Mega65 Division**: Simulated `div.<width> <dest>, <src>` opcode leveraging hardware divider.
 - [ ] **Mega65 Memory**: Allow use of the Mega65 DMA for operations involving memory > 5 bytes for common routines such as memory movement, copy, swap and fill. Implement as built-in opcodes. 
 - [ ] **PC Register**: Treat current program counter as a register named .PC similar to how .A, .X etc are defined. 
 - [ ] **Other 16 bit registers**: Allow support for other psuedo-16 bit registers such as '.AZ', '.XY', '.YZ'. 
