@@ -26,6 +26,7 @@ const Token& Parser::expect(TokenType type, const std::string& message) {
     if (peek().type == type) {
         return advance();
     }
+    // TODO: Improve error handling to provide helpful suggestions instead of generic runtime_errors.
     throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": " + message);
 }
 
@@ -84,6 +85,7 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 
 std::unique_ptr<Statement> Parser::parseStatement() {
     if (peek().type == TokenType::INT || peek().type == TokenType::CHAR) {
+        // TODO: Implement complex nested pointer types and struct types.
         std::string type = (advance().type == TokenType::INT) ? "int" : "char";
         bool isPtr = match(TokenType::STAR);
         std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;

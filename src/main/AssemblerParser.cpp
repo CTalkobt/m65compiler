@@ -194,6 +194,7 @@ struct BinaryExpr : public ExprAST {
         if (op == "+") return l + r;
         if (op == "-") return l - r;
         if (op == "*") return l * r;
+        // TODO: Add explicit assembler-time error for division by zero here.
         if (op == "/") { return r != 0 ? l / r : 0; }
         if (op == "&") return l & r;
         if (op == "|") return l | r;
@@ -274,11 +275,16 @@ AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens, cons
 const AssemblerToken& AssemblerParser::peek() const { if (pos >= tokens.size()) return tokens.back(); return tokens[pos]; }
 const AssemblerToken& AssemblerParser::advance() { if (pos < tokens.size()) pos++; return tokens[pos - 1]; }
 bool AssemblerParser::match(AssemblerTokenType type) { if (peek().type == type) { advance(); return true; } return false; }
-const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std::string& message) { if (peek().type == type) return advance(); throw std::runtime_error(message + " at " + std::to_string(peek().line) + ":" + std::to_string(peek().column)); }
+const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std::string& message) { 
+    if (peek().type == type) return advance(); 
+    // TODO: Improve error handling to provide helpful suggestions instead of generic runtime_errors.
+    throw std::runtime_error(message + " at " + std::to_string(peek().line) + ":" + std::to_string(peek().column)); 
+}
 
 static uint32_t parseNumericLiteral(const std::string& literal) {
     if (literal.empty()) return 0;
     try {
+        // TODO: Add checks for integer overflow during parsing.
         if (literal[0] == '$') return std::stoul(literal.substr(1), nullptr, 16);
         if (literal[0] == '%') return std::stoul(literal.substr(1), nullptr, 2);
         return std::stoul(literal);
@@ -419,6 +425,7 @@ void AssemblerParser::pass1() {
                     std::string argName = advance().value; int size = isByte ? 1 : 2; args.push_back({argName, size}); ctx.totalParamSize += size;
                 }
                 int currentOffset = 2;
+                // TODO: Implement local scoping for procedure arguments to prevent overwriting global symbols.
                 for (int i = (int)args.size() - 1; i >= 0; --i) {
                     ctx.localArgs[args[i].first] = currentOffset; ctx.localArgs["ARG" + std::to_string(i + 1)] = currentOffset;
                     symbolTable[args[i].first] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset, false, currentOffset};
@@ -659,6 +666,7 @@ void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const
     if (isStackRel) {
         for (int i = 0; i < bytes; ++i) { e.lda_stack((uint8_t)(stackOff + i)); e.sta_abs(0xD764 + i); }
     } else if (srcAst->isConstant()) { 
+        // TODO: Add explicit assembler-time error for division by zero here.
         uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD764 + i); } 
     }
     else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) storeMath(0x64, 0, ".A"); if (bytes >= 2) storeMath(0x64, 1, ".X"); if (bytes >= 3) storeMath(0x64, 2, ".Y"); if (bytes >= 4) storeMath(0x64, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x64, i, srcName); }

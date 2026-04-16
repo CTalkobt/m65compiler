@@ -1,6 +1,8 @@
 #include "CodeGenerator.hpp"
 #include <iostream>
 
+// TODO: Implement a better register allocation strategy instead of relying on fixed zero-page scratch space.
+
 CodeGenerator::CodeGenerator(std::ostream& out) : out(out) {}
 
 void CodeGenerator::generate(TranslationUnit& unit) {

@@ -159,6 +159,7 @@ Token Lexer::lexNumber() {
         if (peek() == 'x' || peek() == 'X') {
             value += get();
             while (std::isxdigit(peek())) value += get();
+            // TODO: Add checks for integer overflow during parsing.
             uint32_t val = std::stoul(value.substr(2), nullptr, 16);
             return {TokenType::INTEGER_LITERAL, std::to_string(val), startLine, startCol};
         }
