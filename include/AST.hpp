@@ -61,6 +61,15 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class UnaryOperation : public Expression {
+public:
+    std::string op;
+    std::unique_ptr<Expression> operand;
+    UnaryOperation(const std::string& o, std::unique_ptr<Expression> opnd)
+        : op(o), operand(std::move(opnd)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class VariableDeclaration : public Statement {
 public:
     std::string type;
@@ -167,6 +176,7 @@ public:
     virtual void visit(VariableReference& node) = 0;
     virtual void visit(Assignment& node) = 0;
     virtual void visit(BinaryOperation& node) = 0;
+    virtual void visit(UnaryOperation& node) = 0;
     virtual void visit(FunctionCall& node) = 0;
     virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ReturnStatement& node) = 0;

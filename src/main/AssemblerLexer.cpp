@@ -140,15 +140,36 @@ AssemblerToken AssemblerLexer::nextToken() {
         case ':': return {AssemblerTokenType::COLON, ":", startLine, startCol};
         case ',': return {AssemblerTokenType::COMMA, ",", startLine, startCol};
         case '#': return {AssemblerTokenType::HASH, "#", startLine, startCol};
-        case '=': return {AssemblerTokenType::EQUALS, "=", startLine, startCol};
+        case '=':
+            if (peek() == '=') { get(); return {AssemblerTokenType::EQUALS_EQUALS, "==", startLine, startCol}; }
+            return {AssemblerTokenType::EQUALS, "=", startLine, startCol};
         case '+':
-            if (pos < source.length() && source[pos] == '+') { get(); return {AssemblerTokenType::INCREMENT, "++", startLine, startCol}; }
+            if (peek() == '+') { get(); return {AssemblerTokenType::INCREMENT, "++", startLine, startCol}; }
             return {AssemblerTokenType::PLUS, "+", startLine, startCol};
         case '-':
-            if (pos < source.length() && source[pos] == '-') { get(); return {AssemblerTokenType::DECREMENT, "--", startLine, startCol}; }
+            if (peek() == '-') { get(); return {AssemblerTokenType::DECREMENT, "--", startLine, startCol}; }
             return {AssemblerTokenType::MINUS, "-", startLine, startCol};
         case '*': return {AssemblerTokenType::STAR, "*", startLine, startCol};
         case '/': return {AssemblerTokenType::SLASH, "/", startLine, startCol};
+        case '<':
+            if (peek() == '=') { get(); return {AssemblerTokenType::LESS_EQUAL, "<=", startLine, startCol}; }
+            if (peek() == '<') { get(); return {AssemblerTokenType::LSHIFT, "<<", startLine, startCol}; }
+            return {AssemblerTokenType::LESS_THAN, "<", startLine, startCol};
+        case '>':
+            if (peek() == '=') { get(); return {AssemblerTokenType::GREATER_EQUAL, ">=", startLine, startCol}; }
+            if (peek() == '>') { get(); return {AssemblerTokenType::RSHIFT, ">>", startLine, startCol}; }
+            return {AssemblerTokenType::GREATER_THAN, ">", startLine, startCol};
+        case '!':
+            if (peek() == '=') { get(); return {AssemblerTokenType::NOT_EQUALS, "!=", startLine, startCol}; }
+            return {AssemblerTokenType::BANG, "!", startLine, startCol};
+        case '&':
+            if (peek() == '&') { get(); return {AssemblerTokenType::AND, "&&", startLine, startCol}; }
+            return {AssemblerTokenType::AMPERSAND, "&", startLine, startCol};
+        case '|':
+            if (peek() == '|') { get(); return {AssemblerTokenType::OR, "||", startLine, startCol}; }
+            return {AssemblerTokenType::PIPE, "|", startLine, startCol};
+        case '^': return {AssemblerTokenType::CARET, "^", startLine, startCol};
+        case '~': return {AssemblerTokenType::TILDE, "~", startLine, startCol};
         case '(': return {AssemblerTokenType::OPEN_PAREN, "(", startLine, startCol};
         case ')': return {AssemblerTokenType::CLOSE_PAREN, ")", startLine, startCol};
         case '[': return {AssemblerTokenType::OPEN_BRACKET, "[", startLine, startCol};

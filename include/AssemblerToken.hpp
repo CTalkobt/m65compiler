@@ -6,6 +6,8 @@ enum class AssemblerTokenType {
     HEX_LITERAL, DECIMAL_LITERAL, BINARY_LITERAL, STRING_LITERAL, CHAR_LITERAL,
     COLON, COMMA, HASH, OPEN_PAREN, CLOSE_PAREN, OPEN_BRACKET, CLOSE_BRACKET,
     EQUALS, PLUS, MINUS, STAR, SLASH, INCREMENT, DECREMENT,
+    AMPERSAND, PIPE, CARET, TILDE, BANG, LSHIFT, RSHIFT, AND, OR,
+    EQUALS_EQUALS, NOT_EQUALS, LESS_THAN, GREATER_THAN, LESS_EQUAL, GREATER_EQUAL,
     NEWLINE, END_OF_FILE, UNKNOWN
 };
 
@@ -41,6 +43,21 @@ struct AssemblerToken {
             case AssemblerTokenType::SLASH: return "SLASH";
             case AssemblerTokenType::INCREMENT: return "INCREMENT";
             case AssemblerTokenType::DECREMENT: return "DECREMENT";
+            case AssemblerTokenType::AMPERSAND: return "AMPERSAND";
+            case AssemblerTokenType::PIPE: return "PIPE";
+            case AssemblerTokenType::CARET: return "CARET";
+            case AssemblerTokenType::TILDE: return "TILDE";
+            case AssemblerTokenType::BANG: return "BANG";
+            case AssemblerTokenType::LSHIFT: return "LSHIFT";
+            case AssemblerTokenType::RSHIFT: return "RSHIFT";
+            case AssemblerTokenType::AND: return "AND";
+            case AssemblerTokenType::OR: return "OR";
+            case AssemblerTokenType::EQUALS_EQUALS: return "EQUALS_EQUALS";
+            case AssemblerTokenType::NOT_EQUALS: return "NOT_EQUALS";
+            case AssemblerTokenType::LESS_THAN: return "LESS_THAN";
+            case AssemblerTokenType::GREATER_THAN: return "GREATER_THAN";
+            case AssemblerTokenType::LESS_EQUAL: return "LESS_EQUAL";
+            case AssemblerTokenType::GREATER_EQUAL: return "GREATER_EQUAL";
             case AssemblerTokenType::NEWLINE: return "NEWLINE";
             case AssemblerTokenType::END_OF_FILE: return "EOF";
             default: return "UNKNOWN";

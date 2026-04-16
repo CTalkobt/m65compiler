@@ -29,6 +29,12 @@ public:
         node.right->accept(*this);
         indent--;
     }
+    void visit(UnaryOperation& node) override {
+        printIndent(); std::cout << "UnaryOperation: " << node.op << std::endl;
+        indent++;
+        node.operand->accept(*this);
+        indent--;
+    }
     void visit(FunctionCall& node) override {
         printIndent(); std::cout << "FunctionCall: " << node.name << std::endl;
         indent++;

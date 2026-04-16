@@ -22,9 +22,16 @@ private:
     std::unique_ptr<CompoundStatement> parseCompoundStatement();
     std::unique_ptr<Statement> parseStatement();
     std::unique_ptr<Expression> parseExpression();
+    std::unique_ptr<Expression> parseLogicalOr();
+    std::unique_ptr<Expression> parseLogicalAnd();
+    std::unique_ptr<Expression> parseBitwiseOr();
+    std::unique_ptr<Expression> parseBitwiseXor();
+    std::unique_ptr<Expression> parseBitwiseAnd();
     std::unique_ptr<Expression> parseEquality();
     std::unique_ptr<Expression> parseRelational();
+    std::unique_ptr<Expression> parseShift();
     std::unique_ptr<Expression> parseAdditive();
     std::unique_ptr<Expression> parseMultiplicative();
+    std::unique_ptr<Expression> parseUnary();
     std::unique_ptr<Expression> parsePrimary();
 };

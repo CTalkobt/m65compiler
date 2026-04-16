@@ -1,9 +1,11 @@
 #pragma once
 #include "AST.hpp"
+#include "M65Emitter.hpp"
 #include <ostream>
 #include <vector>
 #include <string>
 #include <map>
+#include <memory>
 
 class CodeGenerator : public ASTVisitor {
 public:
@@ -21,6 +23,7 @@ public:
     void visit(VariableReference& node) override;
     void visit(Assignment& node) override;
     void visit(BinaryOperation& node) override;
+    void visit(UnaryOperation& node) override;
     void visit(FunctionCall& node) override;
     void visit(VariableDeclaration& node) override;
     void visit(ReturnStatement& node) override;
@@ -36,9 +39,11 @@ public:
 
 private:
     std::ostream& out;
+    std::unique_ptr<M65Emitter> emitter;
     int stringCount = 0;
     int labelCount = 0;
     std::map<std::string, std::string> stringPool;
+    std::vector<std::string> currentVars;
 
     void emit(const std::string& line);
     void emitData();

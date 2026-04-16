@@ -38,6 +38,14 @@ enum class TokenType {
     EQUALS_EQUALS, // ==
     NOT_EQUALS,    // !=
     BANG,          // !
+    AMPERSAND,     // &
+    PIPE,          // |
+    CARET,         // ^
+    TILDE,         // ~
+    LSHIFT,        // <<
+    RSHIFT,        // >>
+    AND,           // &&
+    OR,            // ||
     
     // Special
     END_OF_FILE,
@@ -83,6 +91,14 @@ struct Token {
             case TokenType::EQUALS_EQUALS: return "EQUALS_EQUALS";
             case TokenType::NOT_EQUALS: return "NOT_EQUALS";
             case TokenType::BANG: return "BANG";
+            case TokenType::AMPERSAND: return "AMPERSAND";
+            case TokenType::PIPE: return "PIPE";
+            case TokenType::CARET: return "CARET";
+            case TokenType::TILDE: return "TILDE";
+            case TokenType::LSHIFT: return "LSHIFT";
+            case TokenType::RSHIFT: return "RSHIFT";
+            case TokenType::AND: return "AND";
+            case TokenType::OR: return "OR";
             case TokenType::END_OF_FILE: return "EOF";
             default: return "UNKNOWN";
         }

@@ -98,13 +98,23 @@ Token Lexer::nextToken() {
         case '/': return {TokenType::SLASH, "/", startLine, startCol};
         case '<':
             if (peek() == '=') { get(); return {TokenType::LESS_EQUAL, "<=", startLine, startCol}; }
+            if (peek() == '<') { get(); return {TokenType::LSHIFT, "<<", startLine, startCol}; }
             return {TokenType::LESS_THAN, "<", startLine, startCol};
         case '>':
             if (peek() == '=') { get(); return {TokenType::GREATER_EQUAL, ">=", startLine, startCol}; }
+            if (peek() == '>') { get(); return {TokenType::RSHIFT, ">>", startLine, startCol}; }
             return {TokenType::GREATER_THAN, ">", startLine, startCol};
         case '!':
             if (peek() == '=') { get(); return {TokenType::NOT_EQUALS, "!=", startLine, startCol}; }
             return {TokenType::BANG, "!", startLine, startCol};
+        case '&':
+            if (peek() == '&') { get(); return {TokenType::AND, "&&", startLine, startCol}; }
+            return {TokenType::AMPERSAND, "&", startLine, startCol};
+        case '|':
+            if (peek() == '|') { get(); return {TokenType::OR, "||", startLine, startCol}; }
+            return {TokenType::PIPE, "|", startLine, startCol};
+        case '^': return {TokenType::CARET, "^", startLine, startCol};
+        case '~': return {TokenType::TILDE, "~", startLine, startCol};
         default: return {TokenType::UNKNOWN, std::string(1, c), startLine, startCol};
     }
 }

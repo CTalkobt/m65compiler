@@ -178,7 +178,57 @@ std::unique_ptr<Expression> Parser::parseExpression() {
         advance(); // consume =
         return std::make_unique<Assignment>(name, parseExpression());
     }
-    return parseEquality();
+    return parseLogicalOr();
+}
+
+std::unique_ptr<Expression> Parser::parseLogicalOr() {
+    auto left = parseLogicalAnd();
+    while (match(TokenType::OR)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseLogicalAnd();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expression> Parser::parseLogicalAnd() {
+    auto left = parseBitwiseOr();
+    while (match(TokenType::AND)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseBitwiseOr();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expression> Parser::parseBitwiseOr() {
+    auto left = parseBitwiseXor();
+    while (match(TokenType::PIPE)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseBitwiseXor();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expression> Parser::parseBitwiseXor() {
+    auto left = parseBitwiseAnd();
+    while (match(TokenType::CARET)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseBitwiseAnd();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expression> Parser::parseBitwiseAnd() {
+    auto left = parseEquality();
+    while (match(TokenType::AMPERSAND)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseEquality();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
 }
 
 std::unique_ptr<Expression> Parser::parseEquality() {
@@ -192,9 +242,19 @@ std::unique_ptr<Expression> Parser::parseEquality() {
 }
 
 std::unique_ptr<Expression> Parser::parseRelational() {
-    auto left = parseAdditive();
+    auto left = parseShift();
     while (match(TokenType::LESS_THAN) || match(TokenType::GREATER_THAN) ||
            match(TokenType::LESS_EQUAL) || match(TokenType::GREATER_EQUAL)) {
+        std::string op = tokens[pos-1].value;
+        auto right = parseShift();
+        left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
+    }
+    return left;
+}
+
+std::unique_ptr<Expression> Parser::parseShift() {
+    auto left = parseAdditive();
+    while (match(TokenType::LSHIFT) || match(TokenType::RSHIFT)) {
         std::string op = tokens[pos-1].value;
         auto right = parseAdditive();
         left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
@@ -213,13 +273,21 @@ std::unique_ptr<Expression> Parser::parseAdditive() {
 }
 
 std::unique_ptr<Expression> Parser::parseMultiplicative() {
-    auto left = parsePrimary();
+    auto left = parseUnary();
     while (match(TokenType::STAR) || match(TokenType::SLASH)) {
         std::string op = tokens[pos-1].value;
-        auto right = parsePrimary();
+        auto right = parseUnary();
         left = std::make_unique<BinaryOperation>(op, std::move(left), std::move(right));
     }
     return left;
+}
+
+std::unique_ptr<Expression> Parser::parseUnary() {
+    if (match(TokenType::BANG) || match(TokenType::TILDE) || match(TokenType::MINUS)) {
+        std::string op = tokens[pos-1].value;
+        return std::make_unique<UnaryOperation>(op, parseUnary());
+    }
+    return parsePrimary();
 }
 
 std::unique_ptr<Expression> Parser::parsePrimary() {
