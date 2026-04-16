@@ -37,4 +37,10 @@ private:
     void emit(const std::string& line);
     void emitData();
     std::string newLabel();
+
+    struct VarInfo {
+        std::string type;
+        bool isPointer;
+    };
+    std::map<std::string, VarInfo> variableTypes;
 };

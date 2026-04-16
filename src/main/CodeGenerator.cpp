@@ -28,7 +28,9 @@ void CodeGenerator::visit(TranslationUnit& node) {
 void CodeGenerator::visit(FunctionDeclaration& node) {
     std::string procLine = "PROC " + node.name;
     currentVars.clear();
+    variableTypes.clear();
     for (const auto& param : node.parameters) {
+        variableTypes[param.name] = {param.type, param.isPointer};
         if (param.isPointer) {
             procLine += ", W#" + param.name;
         } else if (param.type == "char") {
@@ -54,6 +56,7 @@ void CodeGenerator::visit(CompoundStatement& node) {
 }
 
 void CodeGenerator::visit(VariableDeclaration& node) {
+    variableTypes[node.name] = {node.type, node.isPointer};
     int size = (node.isPointer) ? 2 : ((node.type == "char") ? 1 : 2);
     if (node.initializer) {
         node.initializer->accept(*this);
@@ -81,7 +84,9 @@ void CodeGenerator::visit(VariableDeclaration& node) {
 void CodeGenerator::visit(Assignment& node) {
     node.expression->accept(*this);
     emit("STA " + node.name + ", s");
-    emit("STX " + node.name + "+1, s");
+    if (variableTypes.count(node.name) && variableTypes[node.name].type != "char") {
+        emit("STX " + node.name + "+1, s");
+    }
 }
 
 void CodeGenerator::visit(BinaryOperation& node) {
@@ -110,186 +115,286 @@ void CodeGenerator::visit(BinaryOperation& node) {
         return;
     }
 
-    // 1. Evaluate LHS and push result (16-bit)
+    // 1. Evaluate LHS and push result
     node.left->accept(*this);
-    emit("PHX");
-    emit("PHA");
-    for (const auto& varName : currentVars) emit(".var " + varName + " = " + varName + " + 2");
+    // Find LHS type if it's a variable reference to optimize push
+    int lhsSize = 2;
+    if (auto* ref = dynamic_cast<VariableReference*>(node.left.get())) {
+        if (variableTypes.count(ref->name) && variableTypes[ref->name].type == "char" && !variableTypes[ref->name].isPointer) {
+            lhsSize = 1;
+        }
+    }
+
+    if (lhsSize == 2) {
+        emit("PHX");
+        emit("PHA");
+    } else {
+        emit("PHA");
+    }
+    for (const auto& varName : currentVars) emit(".var " + varName + " = " + varName + " + " + std::to_string(lhsSize));
     
-    // 2. Evaluate RHS into A/X (16-bit)
+    // 2. Evaluate RHS into A/X
     node.right->accept(*this);
     
-    // 3. Perform operation using A/X and value at TOP of stack (offset 2)
+    // 3. Perform operation using A/X and value at TOP of stack
+    // (LHS is at 1,s if 8-bit, or 2,s if 16-bit)
     if (node.op == "+") {
-        emit("STA $02"); // RHS low
-        emit("STX $03"); // RHS high
-        emit("LDA 2, s"); // LHS low
-        emit("CLC");
-        emit("ADC $02"); 
-        emit("PHA"); // Save Result low
-        emit("LDA 3, s"); // LHS high
-        emit("ADC $03");
-        emit("TAX"); // Result high in X
-        emit("PLA"); // Result low in A
+        if (lhsSize == 1) {
+            emit("CLC");
+            emit("ADC 1, s");
+            emit("LDX #$00"); // Result high is 0 for char + anything? 
+            // Actually char + int should be int. But we are in a char context.
+            // Simplified: result is always 16-bit in registers for now.
+        } else {
+            emit("STA $02");
+            emit("STX $03");
+            emit("LDA 2, s");
+            emit("CLC");
+            emit("ADC $02"); 
+            emit("PHA");
+            emit("LDA 3, s");
+            emit("ADC $03");
+            emit("TAX");
+            emit("PLA");
+        }
     } else if (node.op == "-") {
-        emit("STA $02"); // RHS low
-        emit("STX $03"); // RHS high
-        emit("LDA 2, s"); // LHS low
-        emit("SEC");
-        emit("SBC $02");
-        emit("PHA"); // Save Result low
-        emit("LDA 3, s"); // LHS high
-        emit("SBC $03");
-        emit("TAX"); // Result high in X
-        emit("PLA"); // Result low in A
+        if (lhsSize == 1) {
+            emit("STA $02");
+            emit("LDA 1, s");
+            emit("SEC");
+            emit("SBC $02");
+            emit("LDX #$00");
+        } else {
+            emit("STA $02");
+            emit("STX $03");
+            emit("LDA 2, s");
+            emit("SEC");
+            emit("SBC $02");
+            emit("PHA");
+            emit("LDA 3, s");
+            emit("SBC $03");
+            emit("TAX");
+            emit("PLA");
+        }
     } else if (node.op == "==") {
-        emit("CMP 2, s"); // compare low
+        if (lhsSize == 1) {
+            emit("CMP 1, s");
+        } else {
+            emit("CMP 2, s");
+        }
         std::string labelFalse = newLabel();
         std::string labelEnd = newLabel();
         emit("BNE " + labelFalse);
-        emit("TXA");
-        emit("CMP 3, s"); // compare high
-        emit("BNE " + labelFalse);
+        if (lhsSize == 2) {
+            emit("TXA");
+            emit("CMP 3, s");
+            emit("BNE " + labelFalse);
+        }
         emit("LDA #$01");
         emit("BRA " + labelEnd);
         out << labelFalse << ":" << std::endl;
         emit("LDA #$00");
-        out << labelEnd << ":" << std::endl;
-        emit("LDX #$00");
-    } else if (node.op == "!=") {
-        emit("CMP 2, s");
-        std::string labelTrue = newLabel();
-        std::string labelEnd = newLabel();
-        emit("BNE " + labelTrue);
-        emit("TXA");
-        emit("CMP 3, s");
-        emit("BNE " + labelTrue);
-        emit("LDA #$00");
-        emit("BRA " + labelEnd);
-        out << labelTrue << ":" << std::endl;
-        emit("LDA #$01");
         out << labelEnd << ":" << std::endl;
         emit("LDX #$00");
     } else if (node.op == "*") {
-        // Multiplier using hardware math at $D770
-        emit("STA $D770"); // RHS low
-        emit("STX $D771"); // RHS high
-        emit("LDA 2, s");  // LHS low
-        emit("STA $D774");
-        emit("LDA 3, s");  // LHS high
-        emit("STA $D775");
-        emit("LDA $D778"); // Result low
-        emit("LDX $D779"); // Result high
+        // ... use hardware math as before but with correct LHS source ...
+        emit("STA $D770");
+        emit("STX $D771");
+        if (lhsSize == 1) {
+            emit("LDA 1, s");
+            emit("STA $D774");
+            emit("STZ $D775");
+        } else {
+            emit("LDA 2, s");
+            emit("STA $D774");
+            emit("LDA 3, s");
+            emit("STA $D775");
+        }
+        emit("LDA $D778");
+        emit("LDX $D779");
     } else if (node.op == "/") {
-        // Divider using hardware math at $D760
-        emit("STA $D764"); // Divisor low
-        emit("STX $D765"); // Divisor high
-        emit("LDA 2, s");  // Dividend low
-        emit("STA $D760");
-        emit("LDA 3, s");  // Dividend high
-        emit("STA $D761");
-        emit("LDA $D768"); // Quotient low
-        emit("LDX $D769"); // Quotient high
-    } else if (node.op == "<") {
-        // LHS < RHS? (Unsigned 16-bit)
-        // RHS is in A/X, LHS is at 2,s / 3,s
-        emit("STA $02"); // RHS low
-        emit("STX $03"); // RHS high
-        emit("LDA 3, s"); // LHS high
-        emit("CMP $03");
+        emit("STA $D764");
+        emit("STX $D765");
+        if (lhsSize == 1) {
+            emit("LDA 1, s");
+            emit("STA $D760");
+            emit("STZ $D761");
+        } else {
+            emit("LDA 2, s");
+            emit("STA $D760");
+            emit("LDA 3, s");
+            emit("STA $D761");
+        }
+        emit("LDA $D768");
+        emit("LDX $D769");
+    } else if (node.op == "!=") {
+        if (lhsSize == 1) {
+            emit("CMP 1, s");
+        } else {
+            emit("CMP 2, s");
+        }
         std::string labelTrue = newLabel();
-        std::string labelFalse = newLabel();
         std::string labelEnd = newLabel();
-        emit("BCC " + labelTrue); // LHS_high < RHS_high
-        emit("BNE " + labelFalse); // LHS_high > RHS_high
-        emit("LDA 2, s"); // LHS low
-        emit("CMP $02");
-        emit("BCC " + labelTrue); // LHS_low < RHS_low
-        out << labelFalse << ":" << std::endl;
+        emit("BNE " + labelTrue);
+        if (lhsSize == 2) {
+            emit("TXA");
+            emit("CMP 3, s");
+            emit("BNE " + labelTrue);
+        }
         emit("LDA #$00");
         emit("BRA " + labelEnd);
         out << labelTrue << ":" << std::endl;
         emit("LDA #$01");
         out << labelEnd << ":" << std::endl;
+        emit("LDX #$00");
+    } else if (node.op == "<") {
+        if (lhsSize == 1) {
+            emit("STA $02");
+            emit("LDA 1, s");
+            emit("CMP $02");
+        } else {
+            emit("STA $02");
+            emit("STX $03");
+            emit("LDA 3, s");
+            emit("CMP $03");
+            std::string labelTrue = newLabel();
+            std::string labelFalse = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCC " + labelTrue);
+            emit("BNE " + labelFalse);
+            emit("LDA 2, s");
+            emit("CMP $02");
+            emit("BCC " + labelTrue);
+            out << labelFalse << ":" << std::endl;
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        }
+        if (lhsSize == 1) {
+            std::string labelTrue = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCC " + labelTrue);
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        }
         emit("LDX #$00");
     } else if (node.op == ">") {
-        // LHS > RHS? (Unsigned 16-bit)
-        emit("STA $02"); // RHS low
-        emit("STX $03"); // RHS high
-        emit("LDA $03"); // RHS high
-        emit("CMP 3, s"); // RHS_high vs LHS_high
-        std::string labelTrue = newLabel();
-        std::string labelFalse = newLabel();
-        std::string labelEnd = newLabel();
-        emit("BCC " + labelTrue); // RHS_high < LHS_high => LHS > RHS
-        emit("BNE " + labelFalse); // RHS_high > LHS_high => LHS < RHS
-        emit("LDA $02"); // RHS low
-        emit("CMP 2, s"); // RHS_low vs LHS_low
-        emit("BCC " + labelTrue); // RHS_low < LHS_low => LHS > RHS
-        out << labelFalse << ":" << std::endl;
-        emit("LDA #$00");
-        emit("BRA " + labelEnd);
-        out << labelTrue << ":" << std::endl;
-        emit("LDA #$01");
-        out << labelEnd << ":" << std::endl;
+        if (lhsSize == 1) {
+            emit("STA $02");
+            emit("LDA $02");
+            emit("CMP 1, s");
+        } else {
+            emit("STA $02");
+            emit("STX $03");
+            emit("LDA $03");
+            emit("CMP 3, s");
+            std::string labelTrue = newLabel();
+            std::string labelFalse = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCC " + labelTrue); 
+            emit("BNE " + labelFalse);
+            emit("LDA $02");
+            emit("CMP 2, s");
+            emit("BCC " + labelTrue);
+            out << labelFalse << ":" << std::endl;
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        }
+        if (lhsSize == 1) {
+            std::string labelTrue = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCC " + labelTrue);
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        }
         emit("LDX #$00");
     } else if (node.op == "<=") {
-        // LHS <= RHS? (Unsigned 16-bit)
-        // implemented as !(RHS < LHS)
-        // actually let's just do direct logic
-        emit("STA $02"); // RHS low
-        emit("STX $03"); // RHS high
-        emit("LDA 3, s"); // LHS high
-        emit("CMP $03");
-        std::string labelTrue = newLabel();
-        std::string labelFalse = newLabel();
-        std::string labelEnd = newLabel();
-        emit("BCC " + labelTrue); // LHS_high < RHS_high
-        emit("BNE " + labelFalse); // LHS_high > RHS_high
-        emit("LDA 2, s"); // LHS low
-        emit("CMP $02");
-        emit("BCC " + labelTrue); // LHS_low < RHS_low
-        emit("BEQ " + labelTrue); // LHS_low == RHS_low
-        out << labelFalse << ":" << std::endl;
-        emit("LDA #$00");
-        emit("BRA " + labelEnd);
-        out << labelTrue << ":" << std::endl;
-        emit("LDA #$01");
-        out << labelEnd << ":" << std::endl;
+        if (lhsSize == 1) {
+            emit("STA $02");
+            emit("LDA 1, s");
+            emit("CMP $02");
+            std::string labelTrue = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCC " + labelTrue);
+            emit("BEQ " + labelTrue);
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        } else {
+            emit("STA $02");
+            emit("STX $03");
+            emit("LDA 3, s");
+            emit("CMP $03");
+            std::string labelTrue = newLabel();
+            std::string labelFalse = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCC " + labelTrue);
+            emit("BNE " + labelFalse);
+            emit("LDA 2, s");
+            emit("CMP $02");
+            emit("BCC " + labelTrue);
+            emit("BEQ " + labelTrue);
+            out << labelFalse << ":" << std::endl;
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        }
         emit("LDX #$00");
     } else if (node.op == ">=") {
-        // LHS >= RHS? (Unsigned 16-bit)
-        emit("STA $02"); // RHS low
-        emit("STX $03"); // RHS high
-        emit("LDA 3, s"); // LHS high
-        emit("CMP $03");
-        std::string labelTrue = newLabel();
-        std::string labelFalse = newLabel();
-        std::string labelEnd = newLabel();
-        emit("BCS " + labelTrue); // LHS_high > RHS_high or equal high?
-        // Wait, BCS is >=. If LHS_high > RHS_high, it's definitely true.
-        // If LHS_high == RHS_high, we need to check low.
-        // BCS is true if Carry is set (A >= M).
-        // If LHS_high > RHS_high, Carry is set and BNE would be true.
-        // If LHS_high < RHS_high, Carry is clear.
-        // If LHS_high == RHS_high, Carry is set and BNE is false.
-        emit("BCC " + labelFalse);
-        emit("BNE " + labelTrue);
-        emit("LDA 2, s");
-        emit("CMP $02");
-        emit("BCS " + labelTrue);
-        out << labelFalse << ":" << std::endl;
-        emit("LDA #$00");
-        emit("BRA " + labelEnd);
-        out << labelTrue << ":" << std::endl;
-        emit("LDA #$01");
-        out << labelEnd << ":" << std::endl;
+        if (lhsSize == 1) {
+            emit("STA $02");
+            emit("LDA 1, s");
+            emit("CMP $02");
+            std::string labelTrue = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCS " + labelTrue);
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        } else {
+            emit("STA $02");
+            emit("STX $03");
+            emit("LDA 3, s");
+            emit("CMP $03");
+            std::string labelTrue = newLabel();
+            std::string labelFalse = newLabel();
+            std::string labelEnd = newLabel();
+            emit("BCS " + labelTrue); 
+            emit("BCC " + labelFalse);
+            emit("BNE " + labelTrue);
+            emit("LDA 2, s");
+            emit("CMP $02");
+            emit("BCS " + labelTrue);
+            out << labelFalse << ":" << std::endl;
+            emit("LDA #$00");
+            emit("BRA " + labelEnd);
+            out << labelTrue << ":" << std::endl;
+            emit("LDA #$01");
+            out << labelEnd << ":" << std::endl;
+        }
         emit("LDX #$00");
     }
     
     // 4. Pop the LHS
-    emit("RTN #2");
-    for (const auto& varName : currentVars) emit(".var " + varName + " = " + varName + " - 2");
+    emit("RTN #" + std::to_string(lhsSize));
+    for (const auto& varName : currentVars) emit(".var " + varName + " = " + varName + " - " + std::to_string(lhsSize));
 }
 
 void CodeGenerator::visit(ReturnStatement& node) {
@@ -389,7 +494,11 @@ void CodeGenerator::visit(FunctionCall& node) {
 
 void CodeGenerator::visit(VariableReference& node) {
     emit("LDA " + node.name + ", s");
-    emit("LDX " + node.name + "+1, s");
+    if (variableTypes.count(node.name) && variableTypes[node.name].type == "char" && !variableTypes[node.name].isPointer) {
+        emit("LDX #$00");
+    } else {
+        emit("LDX " + node.name + "+1, s");
+    }
 }
 
 void CodeGenerator::visit(IntegerLiteral& node) {
