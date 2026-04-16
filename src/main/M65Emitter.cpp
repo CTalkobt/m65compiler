@@ -208,6 +208,11 @@ void M65Emitter::dec_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("DEC", 
 
 void M65Emitter::bit_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("BIT", hex8(addr)); else { emitByte(0x24); emitByte(addr); } }
 
+void M65Emitter::bit_abs(uint16_t addr) {
+    if (mode == Mode::TEXT) emitText("BIT", hex16(addr));
+    else { emitByte(0x2C); emitByte(addr & 0xFF); emitByte(addr >> 8); }
+}
+
 void M65Emitter::eom() { if (mode == Mode::TEXT) emitText("EOM"); else emitByte(0xEA); }
 
 void M65Emitter::bra(int8_t offset) { if (mode == Mode::TEXT) emitText("BRA", "*+" + std::to_string((int)offset)); else { emitByte(0x80); emitByte((uint8_t)offset); } }

@@ -166,6 +166,8 @@ int main(int argc, char** argv) {
     std::string output_file = "out.s";
     bool assemble = false;
     bool verbose = false;
+    uint32_t zeroPageStart = 0x02;
+    std::string defineFlag = "";
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -175,6 +177,18 @@ int main(int argc, char** argv) {
             output_file = argv[++i];
         } else if (arg == "-v") {
             verbose = true;
+        } else if (arg.substr(0, 2) == "-D") {
+            defineFlag = arg;
+            size_t eq = arg.find('=');
+            if (eq != std::string::npos) {
+                std::string name = arg.substr(2, eq - 2);
+                if (name == "ca45.zeroPageStart") {
+                    std::string valStr = arg.substr(eq + 1);
+                    if (valStr.substr(0, 1) == "$") zeroPageStart = std::stoul(valStr.substr(1), nullptr, 16);
+                    else if (valStr.substr(0, 1) == "%") zeroPageStart = std::stoul(valStr.substr(1), nullptr, 2);
+                    else zeroPageStart = std::stoul(valStr);
+                }
+            }
         } else {
             input_file = arg;
         }
@@ -227,6 +241,7 @@ int main(int argc, char** argv) {
         }
 
         CodeGenerator codegen(asmOut);
+        codegen.zeroPageStart = zeroPageStart;
         codegen.generate(*ast);
         if (verbose) {
             std::cout << "Generated assembly in " << output_file << std::endl;
@@ -241,7 +256,7 @@ int main(int argc, char** argv) {
     if (assemble) {
         std::cout << "Calling assembler (ca45)..." << std::endl;
         std::string bin_out = output_file + ".bin";
-        std::string command = "./bin/ca45 -o " + bin_out + " " + output_file;
+        std::string command = "./bin/ca45 " + defineFlag + " -o " + bin_out + " " + output_file;
         int ret = std::system(command.c_str());
         if (ret != 0) {
             std::cerr << "Assembler failed with return code " << ret << std::endl;

@@ -10,6 +10,7 @@ int main(int argc, char** argv) {
     std::string input_file;
     std::string output_file = "out.bin";
     bool verbose = false;
+    std::map<std::string, uint32_t> predefinedSymbols;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -17,9 +18,25 @@ int main(int argc, char** argv) {
             output_file = argv[++i];
         } else if (arg == "-v") {
             verbose = true;
+        } else if (arg.substr(0, 2) == "-D") {
+            std::string define = arg.substr(2);
+            size_t eq = define.find('=');
+            if (eq != std::string::npos) {
+                std::string name = define.substr(0, eq);
+                std::string valStr = define.substr(eq + 1);
+                uint32_t val = 0;
+                if (valStr.substr(0, 1) == "$") val = std::stoul(valStr.substr(1), nullptr, 16);
+                else if (valStr.substr(0, 1) == "%") val = std::stoul(valStr.substr(1), nullptr, 2);
+                else val = std::stoul(valStr);
+                predefinedSymbols[name] = val;
+            }
         } else {
             input_file = arg;
         }
+    }
+
+    if (predefinedSymbols.find("ca45.zeroPageStart") == predefinedSymbols.end()) {
+        predefinedSymbols["ca45.zeroPageStart"] = 0x02;
     }
 
     if (input_file.empty()) {
@@ -50,7 +67,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    AssemblerParser parser(tokens);
+    AssemblerParser parser(tokens, predefinedSymbols);
     parser.pass1();
     auto binary = parser.pass2();
 

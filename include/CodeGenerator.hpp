@@ -17,6 +17,7 @@ public:
         bool isPointer;
     };
     std::map<std::string, VarInfo> variableTypes;
+    uint32_t zeroPageStart = 0x02;
 
     void visit(IntegerLiteral& node) override;
     void visit(StringLiteral& node) override;

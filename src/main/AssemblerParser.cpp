@@ -179,9 +179,9 @@ struct DereferenceNode : public ExprAST {
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
         M65Emitter e(binary);
         address->emit(binary, parser, 16, ".AX");
-        e.sta_zp(0x02); e.stx_zp(0x03);
-        e.lda_ind_z(0x02, isFlat);
-        if (width >= 16) { e.inc_zp(0x02); e.lda_ind_z(0x02, isFlat); e.tax(); e.dec_zp(0x02); }
+        e.sta_zp(parser->getZP(0)); e.stx_zp(parser->getZP(1));
+        e.lda_ind_z(parser->getZP(0), isFlat);
+        if (width >= 16) { e.inc_zp(parser->getZP(0)); e.lda_ind_z(parser->getZP(0), isFlat); e.tax(); e.dec_zp(parser->getZP(0)); }
     }
 };
 
@@ -224,47 +224,54 @@ struct BinaryExpr : public ExprAST {
             right->emit(binary, parser, width, ".A");
             e.sta_abs(0xD774); if (bytes >= 2) e.stx_abs(0xD775);
             if (op == "*") { for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD778 + i); if (i == 1) e.tax(); } }
-            else if (op == "/") { e.bit_zp(0x0F); e.bne(-5); for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD76C + i); if (i == 1) e.tax(); } }
+            else if (op == "/") { e.bit_abs(0xD70F); e.bne(-5); for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD76C + i); if (i == 1) e.tax(); } }
             else if (op == "+") { for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD77C + i); if (i == 1) e.tax(); } }
-            else if (op == "-") { e.sec(); for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD770 + i); e.sbc_abs(0xD774 + i); e.sta_abs(0xD770 + i); } e.lda_abs(0xD770); if (bytes >= 2) e.ldx_abs(0xD771); }
+            else if (op == "-") { 
+                e.sec(); 
+                for (int i = 0; i < bytes; ++i) { 
+                    e.lda_abs(0xD770 + i); 
+                    e.sbc_abs(0xD774 + i); 
+                    e.sta_abs(0xD770 + i); 
+                } 
+                e.lda_abs(0xD770); 
+                if (bytes >= 2) e.ldx_abs(0xD771); 
+            }
         } else if (op == "&" || op == "|" || op == "^") {
             left->emit(binary, parser, width, ".A");
             e.push_ax();
             right->emit(binary, parser, width, ".A");
-            e.sta_zp(0x02); if (width >= 16) e.stx_zp(0x03);
+            e.sta_zp(parser->getZP(0)); if (width >= 16) e.stx_zp(parser->getZP(1));
             e.pop_ax();
-            if (op == "&") e.and_zp(0x02); else if (op == "|") e.ora_zp(0x02); else e.eor_zp(0x02);
-            if (width >= 16) { e.pha(); e.txa(); if (op == "&") e.and_zp(0x03); else if (op == "|") e.ora_zp(0x03); else e.eor_zp(0x03); e.tax(); e.pla(); }
+            if (op == "&") e.and_zp(parser->getZP(0)); else if (op == "|") e.ora_zp(parser->getZP(0)); else e.eor_zp(parser->getZP(0));
+            if (width >= 16) { e.pha(); e.txa(); if (op == "&") e.and_zp(parser->getZP(1)); else if (op == "|") e.ora_zp(parser->getZP(1)); else e.eor_zp(parser->getZP(1)); e.tax(); e.pla(); }
         } else if (op == "<<" || op == ">>") {
             left->emit(binary, parser, width, ".A");
             e.push_ax();
             right->emit(binary, parser, width, ".A");
-            e.sta_zp(0x02); e.pop_ax(); e.lda_zp(0x02);
-            e.beq((width >= 16) ? 0x07 : 0x05); e.dec_zp(0x02);
-            if (op == "<<") { 
-                e.asl_a(); 
-                if (width >= 16) { 
-                    e.rol_a(); 
-                    e.txa(); 
-                    e.rol_a(); 
-                    e.tax(); 
-                } 
-            } else { 
-                if (width >= 16) { 
-                    e.txa(); 
-                    e.lsr_a(); 
-                    e.tax(); 
-                    e.ror_a(); 
-                } else 
-                    e.lsr_a(); 
-            }
+            e.sta_zp(parser->getZP(0));
+            e.pop_ax();
+            e.lda_zp(parser->getZP(0));
+            e.beq((width >= 16) ? 0x07 : 0x05); e.dec_zp(parser->getZP(0));
+            if (op == "<<") { e.asl_a(); if (width >= 16) { e.rol_a(); e.txa(); e.rol_a(); e.tax(); } }
+            else { if (width >= 16) { e.txa(); e.lsr_a(); e.tax(); e.ror_a(); } else e.lsr_a(); }
             e.bra((width >= 16) ? -11 : -9);
         }
+
     }
 };
 
 AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens) : tokens(tokens), pos(0), pc(0) {}
-const AssemblerToken& AssemblerParser::peek() const { if (pos >= tokens.size()) { return tokens.back(); } return tokens[pos]; }
+
+AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols) 
+    : tokens(tokens), pos(0), pc(0) 
+{
+    for (const auto& [name, val] : predefinedSymbols) {
+        symbolTable[name] = {val, false, 2};
+    }
+}
+
+const AssemblerToken& AssemblerParser::peek() const { if (pos >= tokens.size()) return tokens.back(); return tokens[pos]; }
+
 const AssemblerToken& AssemblerParser::advance() { if (pos < tokens.size()) { pos++; } return tokens[pos - 1]; }
 bool AssemblerParser::match(AssemblerTokenType type) { if (peek().type == type) { advance(); return true; } return false; }
 const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std::string& message) { if (peek().type == type) { return advance(); } throw std::runtime_error(message + " at " + std::to_string(peek().line) + ":" + std::to_string(peek().column)); }
@@ -331,10 +338,18 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
 
 uint32_t AssemblerParser::evaluateExpressionAt(int index) {
     int idx = index; auto ast = parseExprAST(tokens, idx, symbolTable);
-    if (!ast) { return 0; } return ast->getValue();
+    if (!ast) return 0; return ast->getValue();
+}
+
+uint8_t AssemblerParser::getZP(int offset) {
+    if (symbolTable.count("ca45.zeroPageStart")) {
+        return (uint8_t)(symbolTable["ca45.zeroPageStart"].value + offset);
+    }
+    return (uint8_t)(0x02 + offset);
 }
 
 void AssemblerParser::pass1() {
+
     pc = 0; pos = 0; statements.clear();
     while (pos < tokens.size()) {
         while (match(AssemblerTokenType::NEWLINE));
@@ -602,7 +617,7 @@ void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const
     if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (bytes >= 1) { storeMath(0x70, 0, ".A"); } if (bytes >= 2) { storeMath(0x70, 1, ".X"); } if (bytes >= 3) { storeMath(0x70, 2, ".Y"); } if (bytes >= 4) { storeMath(0x70, 3, ".Z"); } } else { for (int i = 0; i < bytes; ++i) { storeMath(0x70, i, dest); } }
     if (srcAst->isConstant()) { uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD774 + i); } }
     else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) { srcName = "." + srcName; } if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) { storeMath(0x74, 0, ".A"); } if (bytes >= 2) { storeMath(0x74, 1, ".X"); } if (bytes >= 3) { storeMath(0x74, 2, ".Y"); } if (bytes >= 4) { storeMath(0x74, 3, ".Z"); } } else { for (int i = 0; i < bytes; ++i) { storeMath(0x74, i, srcName); } } }
-    e.bit_zp(0x0F); e.bne(-5);
+    e.bit_abs(0xD70F); e.bne(-5);
     for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD76C + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) { e.tax(); } else if (i == 2) { e.tay(); } else if (i == 3) { e.taz(); } } else { uint32_t addr = symbolTable.count(dest) ? symbolTable[dest].value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
 }
 

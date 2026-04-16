@@ -78,6 +78,7 @@ public:
     void dec_zp(uint8_t addr);
 
     void bit_zp(uint8_t addr);
+    void bit_abs(uint16_t addr);
     void eom();
     
     void bra(int8_t offset);
