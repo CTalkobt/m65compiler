@@ -66,6 +66,7 @@ public:
     AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols);
     void pass1();
     std::vector<uint8_t> pass2();
+    uint32_t getZPStart() const;
 
 private:
     std::vector<AssemblerToken> tokens;
@@ -112,7 +113,6 @@ private:
     int calculateExprSize(int tokenIndex);
     uint8_t getOpcode(const std::string& mnemonic, AddressingMode mode);
     uint32_t evaluateExpressionAt(int index);
-    uint8_t getZP(int offset);
     void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex);
     void emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex);
     void emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex);

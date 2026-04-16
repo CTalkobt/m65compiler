@@ -1,11 +1,10 @@
 #include "CodeGenerator.hpp"
 #include <iostream>
 
-CodeGenerator::CodeGenerator(std::ostream& out) : out(out) {
-    emitter = std::make_unique<M65Emitter>(out);
-}
+CodeGenerator::CodeGenerator(std::ostream& out) : out(out) {}
 
 void CodeGenerator::generate(TranslationUnit& unit) {
+    emitter = std::make_unique<M65Emitter>(out, zeroPageStart);
     unit.accept(*this);
     emitData();
 }
@@ -16,10 +15,6 @@ void CodeGenerator::emit(const std::string& line) {
 
 std::string CodeGenerator::newLabel() {
     return "L" + std::to_string(labelCount++);
-}
-
-uint8_t getZP(int offset, uint32_t start) {
-    return (uint8_t)(start + offset);
 }
 
 void CodeGenerator::visit(TranslationUnit& node) {
@@ -213,22 +208,22 @@ void CodeGenerator::visit(BinaryOperation& node) {
     
     if (node.op == "+") {
         if (lhsSize == 1) { emitter->clc(); emit("ADC 1, s"); emitter->ldx_imm(0); }
-        else { emitter->sta_zp(getZP(0, zeroPageStart)); emitter->stx_zp(getZP(1, zeroPageStart)); emit("LDA 2, s"); emitter->clc(); emitter->adc_zp(getZP(0, zeroPageStart)); emitter->pha(); emit("LDA 3, s"); emitter->adc_zp(getZP(1, zeroPageStart)); emitter->tax(); emitter->pla(); }
+        else { emitter->sta_s(0); emitter->stx_s(1); emit("LDA 2, s"); emitter->clc(); emitter->adc_s(0); emitter->pha(); emit("LDA 3, s"); emitter->adc_s(1); emitter->tax(); emitter->pla(); }
     } else if (node.op == "-") {
-        if (lhsSize == 1) { emitter->sta_zp(getZP(0, zeroPageStart)); emit("LDA 1, s"); emitter->sec(); emitter->sbc_zp(getZP(0, zeroPageStart)); emitter->ldx_imm(0); }
-        else { emitter->sta_zp(getZP(0, zeroPageStart)); emitter->stx_zp(getZP(1, zeroPageStart)); emit("LDA 2, s"); emitter->sec(); emitter->sbc_zp(getZP(0, zeroPageStart)); emitter->pha(); emit("LDA 3, s"); emitter->sbc_zp(getZP(1, zeroPageStart)); emitter->tax(); emitter->pla(); }
+        if (lhsSize == 1) { emitter->sta_s(0); emit("LDA 1, s"); emitter->sec(); emitter->sbc_s(0); emitter->ldx_imm(0); }
+        else { emitter->sta_s(0); emitter->stx_s(1); emit("LDA 2, s"); emitter->sec(); emitter->sbc_s(0); emitter->pha(); emit("LDA 3, s"); emitter->sbc_s(1); emitter->tax(); emitter->pla(); }
     } else if (node.op == "&") {
-        if (lhsSize == 1) { emit("AND 1, s"); emitter->ldx_imm(0); }
+        if (lhsSize == 1) { emitter->and_s(0); emitter->ldx_imm(0); }
         else { emit("AND 2, s"); emitter->pha(); emitter->txa(); emit("AND 3, s"); emitter->tax(); emitter->pla(); }
     } else if (node.op == "|") {
-        if (lhsSize == 1) { emit("ORA 1, s"); emitter->ldx_imm(0); }
+        if (lhsSize == 1) { emitter->ora_s(0); emitter->ldx_imm(0); }
         else { emit("ORA 2, s"); emitter->pha(); emitter->txa(); emit("ORA 3, s"); emitter->tax(); emitter->pla(); }
     } else if (node.op == "^") {
-        if (lhsSize == 1) { emit("EOR 1, s"); emitter->ldx_imm(0); }
+        if (lhsSize == 1) { emitter->eor_s(0); emitter->ldx_imm(0); }
         else { emit("EOR 2, s"); emitter->pha(); emitter->txa(); emit("EOR 3, s"); emitter->tax(); emitter->pla(); }
     } else if (node.op == "<<") {
-        emitter->sta_zp(getZP(0, zeroPageStart)); emitter->pop_ax(); std::string label = newLabel(); std::string end = newLabel();
-        out << label << ":" << std::endl; emitter->lda_zp(getZP(0, zeroPageStart)); emitter->beq(0x07); emitter->dec_zp(getZP(0, zeroPageStart)); emitter->asl_a(); emit("ROL X"); emitter->bra(-11);
+        emitter->sta_s(0); emitter->pop_ax(); std::string label = newLabel(); std::string end = newLabel();
+        out << label << ":" << std::endl; emitter->lda_s(0); emitter->beq(0x07); emitter->dec_s(0); emitter->asl_a(); emit("ROL X"); emitter->bra(-11);
         out << end << ":" << std::endl;
     }
  else if (node.op == "==" || node.op == "!=") {

@@ -6,4 +6,5 @@ bin/
 .idea/
 .tmp/
 
-
+*tags
+*TAGS
