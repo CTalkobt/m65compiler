@@ -80,41 +80,29 @@ struct FlagNode : public ExprAST {
     bool is16Bit() const override { return false; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
         if (flag == 'C') {
-            // Specialized optimization for Carry flag
-            binary.push_back(0xA9); binary.push_back(0x00); // LDA #0
-            binary.push_back(0x69); binary.push_back(0x00); // ADC #0 (Adds 0 + Carry)
+            binary.push_back(0xA9); binary.push_back(0x00);
+            binary.push_back(0x69); binary.push_back(0x00);
         } else {
             uint8_t branchOp = 0;
             switch (flag) {
-                case 'Z': branchOp = 0xD0; break; // BNE
-                case 'V': branchOp = 0x50; break; // BVC
-                case 'N': branchOp = 0x10; break; // BPL
+                case 'Z': branchOp = 0xD0; break;
+                case 'V': branchOp = 0x50; break;
+                case 'N': branchOp = 0x10; break;
             }
-            
             if (branchOp != 0) {
-                binary.push_back(0xA9); binary.push_back(0x00); // LDA #0
-                binary.push_back(branchOp); binary.push_back(0x02); // branch over LDA #1
-                binary.push_back(0xA9); binary.push_back(0x01); // LDA #1
+                binary.push_back(0xA9); binary.push_back(0x00);
+                binary.push_back(branchOp); binary.push_back(0x02);
+                binary.push_back(0xA9); binary.push_back(0x01);
             } else {
-            uint8_t mask = 0;
-            if (flag == 'I') mask = 0x04;
-            else if (flag == 'D') mask = 0x08;
-            else if (flag == 'B') mask = 0x10;
-            
-            if (mask != 0) {
-                binary.push_back(0x08); // PHP
-                binary.push_back(0x68); // PLA
-                binary.push_back(0x29); binary.push_back(mask); // AND #mask
-                binary.push_back(0xF0); binary.push_back(0x02); // BEQ over LDA #1
-                binary.push_back(0xA9); binary.push_back(0x01); // LDA #1
-            } else {
-                binary.push_back(0xA9); binary.push_back(0x00); // Default 0 for unknown
+                uint8_t mask = 0;
+                if (flag == 'I') mask = 0x04; else if (flag == 'D') mask = 0x08; else if (flag == 'B') mask = 0x10;
+                if (mask != 0) {
+                    binary.push_back(0x08); binary.push_back(0x68); binary.push_back(0x29); binary.push_back(mask);
+                    binary.push_back(0xF0); binary.push_back(0x02); binary.push_back(0xA9); binary.push_back(0x01);
+                } else { binary.push_back(0xA9); binary.push_back(0x00); }
             }
         }
-        
-        if (width >= 16) {
-            binary.push_back(0xA2); binary.push_back(0x00); // LDX #0
-        }
+        if (width >= 16) { binary.push_back(0xA2); binary.push_back(0x00); }
     }
 };
 
@@ -126,9 +114,7 @@ struct VariableNode : public ExprAST {
     bool isConstant() const override { if (symbolTable.count(name)) return !symbolTable[name].isAddress; return false; }
     bool is16Bit() const override { if (symbolTable.count(name)) return symbolTable[name].size > 1; return true; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
-        if (!symbolTable.count(name)) {
-            return; 
-        }
+        if (!symbolTable.count(name)) return;
         const auto& sym = symbolTable[name];
         if (!sym.isAddress) { binary.push_back(0xA9); binary.push_back(sym.value & 0xFF); if (width >= 16) { binary.push_back(0xA2); binary.push_back((sym.value >> 8) & 0xFF); } }
         else {
@@ -145,11 +131,7 @@ struct BinaryExpr : public ExprAST {
         : op(o), left(std::move(l)), right(std::move(r)) {}
     uint32_t getValue() const override {
         uint32_t l = left ? left->getValue() : 0; uint32_t r = right ? right->getValue() : 0;
-        if (op == "+") return l + r; if (op == "-") return l - r; if (op == "*") return l * r; 
-        if (op == "/") {
-            // Note: Division by zero is undefined behavior.
-            return r != 0 ? l / r : 0;
-        }
+        if (op == "+") return l + r; if (op == "-") return l - r; if (op == "*") return l * r; if (op == "/") { return r != 0 ? l / r : 0; }
         return 0;
     }
     bool isConstant() const override { return (left ? left->isConstant() : true) && (right ? right->isConstant() : true); }
@@ -161,79 +143,44 @@ struct BinaryExpr : public ExprAST {
         if (bytes < 1) bytes = 1;
         if (bytes > 4) bytes = 4;
 
-        // Helper to store a byte from A to a math register
         auto storeAtoMath = [&](uint8_t regAddr, int byteIdx) {
             binary.push_back(0x8D); binary.push_back(regAddr + byteIdx); binary.push_back(0xD7);
         };
 
-        // 1. Evaluate LHS and store to MULTINA ($D770)
-        // If width is > 8, the emitter for the nodes (Constant, Variable, etc) 
-        // will handle loading A and X. We still need to store them.
         left->emit(binary, parser, width, ".A");
-        storeAtoMath(0x70, 0); // Store A to $D770
-        if (bytes >= 2) {
-            binary.push_back(0x8E); binary.push_back(0x71); binary.push_back(0xD7); // STX $D771
-        }
-        // If bytes > 2 (24 or 32 bit), our current node emitters don't yet populate Y/Z.
-        // This is a known limitation documented in partial.md.
+        storeAtoMath(0x70, 0); 
+        if (bytes >= 2) { binary.push_back(0x8E); binary.push_back(0x71); binary.push_back(0xD7); }
 
-        // 2. Evaluate RHS and store to MULTINB ($D774)
-        // We must preserve MULTINA while evaluating RHS. 
-        // Our nodes currently use A/X, so MULTINA is safe.
         right->emit(binary, parser, width, ".A");
-        storeAtoMath(0x74, 0); // Store A to $D774
-        if (bytes >= 2) {
-            binary.push_back(0x8E); binary.push_back(0x75); binary.push_back(0xD7); // STX $D775
-        }
+        storeAtoMath(0x74, 0);
+        if (bytes >= 2) { binary.push_back(0x8E); binary.push_back(0x75); binary.push_back(0xD7); }
 
         if (op == "*") {
-            // Product is in MULTOUT ($D778)
             for (int i = 0; i < bytes; ++i) {
-                binary.push_back(0xAD); binary.push_back(0x78 + i); binary.push_back(0xD7); // LDA $D778+i
-                if (i == 1) binary.push_back(0xAA); // TAX
+                binary.push_back(0xAD); binary.push_back(0x78 + i); binary.push_back(0xD7);
+                if (i == 1) binary.push_back(0xAA);
             }
         } else if (op == "/") {
-            // Wait for DIVBUSY
-            binary.push_back(0x24); binary.push_back(0x0F); binary.push_back(0xD7); // BIT $D70F
-            binary.push_back(0x30); binary.push_back(0xFB); // BMI -5
-            // Quotient is in DIVOUTWhole ($D76C)
+            binary.push_back(0x24); binary.push_back(0x0F); binary.push_back(0xD7);
+            binary.push_back(0x30); binary.push_back(0xFB);
             for (int i = 0; i < bytes; ++i) {
-                binary.push_back(0xAD); binary.push_back(0x6C + i); binary.push_back(0xD7); // LDA $D76C+i
-                if (i == 1) binary.push_back(0xAA); // TAX
+                binary.push_back(0xAD); binary.push_back(0x6C + i); binary.push_back(0xD7);
+                if (i == 1) binary.push_back(0xAA);
             }
         } else if (op == "+") {
-            // Use hardware adder? 45GS02 doesn't have a simple "add" register like the multiplier.
-            // Actually, it DOES. MULTINA + MULTINB result is available in ADDOUT ($D77C-$D77F)
-            // Wait, the book says MULTINA + MULTINB is available at $D77C.
             for (int i = 0; i < bytes; ++i) {
-                binary.push_back(0xAD); binary.push_back(0x7C + i); binary.push_back(0xD7); // LDA $D77C+i
-                if (i == 1) binary.push_back(0xAA); // TAX
+                binary.push_back(0xAD); binary.push_back(0x7C + i); binary.push_back(0xD7);
+                if (i == 1) binary.push_back(0xAA);
             }
         } else if (op == "-") {
-            // MULTINA - MULTINB is in SUBOUT ($D770 - $D774) ?? 
-            // Re-checking book... 
-            // Actually, standard 6502 ADC/SBC is more reliable for 16-bit if we don't have a sub register.
-            // But let's check if there is a hardware sub. 
-            // The MEGA65 book (K-18) only mentions MULTOUT and DIVOUT.
-            // Okay, let's use the optimized manual sequence for + and - if no hardware exists.
-            // BUT, the simulated sequence was what the user wanted fixed.
-            
-            // Re-implementing manual + and - with correct carry propagation
-            if (op == "+") binary.push_back(0x18); else binary.push_back(0x38); // CLC / SEC
-            
-            // This requires both operands in memory or registers.
-            // Evaluation already happened. LHS is in MULTINA, RHS is in MULTINB.
+            binary.push_back(0x38);
             for (int i = 0; i < bytes; ++i) {
-                binary.push_back(0xAD); binary.push_back(0x70 + i); binary.push_back(0xD7); // LDA MULTINA_i
-                binary.push_back(op == "+" ? 0x6D : 0xED); binary.push_back(0x74 + i); binary.push_back(0xD7); // ADC/SBC MULTINB_i
-                // Store result byte back to MULTINA temporarily to free A for next byte
+                binary.push_back(0xAD); binary.push_back(0x70 + i); binary.push_back(0xD7);
+                binary.push_back(0xED); binary.push_back(0x74 + i); binary.push_back(0xD7);
                 binary.push_back(0x8D); binary.push_back(0x70 + i); binary.push_back(0xD7); 
             }
-            // Finally load result into A and X
             binary.push_back(0xAD); binary.push_back(0x70); binary.push_back(0xD7);
-            if (bytes >= 2) {
-                binary.push_back(0xAE); binary.push_back(0x71); binary.push_back(0xD7); // LDX $D771
-            }
+            if (bytes >= 2) { binary.push_back(0xAE); binary.push_back(0x71); binary.push_back(0xD7); }
         }
     }
 };
@@ -331,8 +278,8 @@ void AssemblerParser::pass1() {
                 int currentOffset = 2;
                 for (int i = (int)args.size() - 1; i >= 0; --i) {
                     ctx.localArgs[args[i].first] = currentOffset; ctx.localArgs["ARG" + std::to_string(i + 1)] = currentOffset;
-                    symbolTable[args[i].first] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset};
-                    symbolTable["ARG" + std::to_string(i + 1)] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset};
+                    symbolTable[args[i].first] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset, false, currentOffset};
+                    symbolTable["ARG" + std::to_string(i + 1)] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset, false, currentOffset};
                     currentOffset += args[i].second;
                 }
                 auto res = procedures.emplace(pc, ctx); currentProc = &res.first->second; stmt->size = 0;
@@ -391,6 +338,24 @@ void AssemblerParser::pass1() {
         } else if (stmt->label.empty()) { advance(); continue; }
         pc += stmt->size; statements.push_back(std::move(stmt));
     }
+
+    // Resolve labels and branch sizes iteratively
+    bool changed = true;
+    for (int iter = 0; iter < 10 && changed; ++iter) {
+        changed = false; pc = 0;
+        for (auto& stmt : statements) {
+            if (stmt->type == Statement::DIRECTIVE && stmt->dir.name == "org") { if (!stmt->dir.arguments.empty()) pc = parseNumericLiteral(stmt->dir.arguments[0]); stmt->address = pc; stmt->size = 0; }
+            else {
+                stmt->address = pc;
+                if (!stmt->label.empty()) { if (symbolTable[stmt->label].value != pc) { symbolTable[stmt->label].value = pc; changed = true; } }
+                if (stmt->type == Statement::INSTRUCTION) {
+                    int oldSize = stmt->size; stmt->size = calculateInstructionSize(stmt->instr, stmt->address);
+                    if (stmt->size != oldSize) changed = true;
+                }
+                pc += stmt->size;
+            }
+        }
+    }
 }
 
 int AssemblerParser::calculateDirectiveSize(const Directive& dir) {
@@ -407,13 +372,20 @@ int AssemblerParser::calculateExprSize(int tokenIndex) {
     return ast->isConstant() ? 5 : 35;
 }
 
-int AssemblerParser::calculateInstructionSize(const Instruction& instr) {
+int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t currentAddr) {
     if (instr.mnemonic == "PROC") return 0; if (instr.mnemonic == "ENDPROC") return 2;
     if (instr.mnemonic == "CALL") return 3 + (int)instr.callArgs.size() * 3;
     int size = 0; bool isQuad = (instr.mnemonic.size() > 1 && instr.mnemonic.back() == 'Q' && instr.mnemonic != "LDQ" && instr.mnemonic != "STQ" && instr.mnemonic != "BEQ" && instr.mnemonic != "BNE" && instr.mnemonic != "BRA" && instr.mnemonic != "BSR");
     if (isQuad) size += 2; if (instr.mode == AddressingMode::FLAT_INDIRECT_Z) size += 1;
-    if (instr.mnemonic == "PHW") size += 3; else if (instr.mnemonic == "RTN") size += 2; else if (instr.mnemonic == "BSR") size += 3; else if (instr.mnemonic == "BRA" || (instr.mnemonic[0] == 'B' && instr.mnemonic.size() == 3 && instr.mnemonic != "BIT" && instr.mnemonic != "BRK")) size += 3;
-    else {
+    if (instr.mnemonic == "PHW") size += 3; else if (instr.mnemonic == "RTN") size += 2; 
+    else if (instr.mnemonic == "BSR") size += 3;
+    else if (instr.mnemonic == "BRA" || (instr.mnemonic[0] == 'B' && instr.mnemonic.size() == 3 && instr.mnemonic != "BIT" && instr.mnemonic != "BRK" && instr.mnemonic.substr(0,3) != "BBR" && instr.mnemonic.substr(0,3) != "BBS")) {
+        if (symbolTable.count(instr.operand)) {
+            uint32_t target = symbolTable.at(instr.operand).value;
+            int32_t offset = (int32_t)target - (int32_t)(currentAddr + 2);
+            if (offset >= -128 && offset <= 127) size = 2; else size = 3;
+        } else size = 3; 
+    } else {
         switch (instr.mode) {
             case AddressingMode::IMPLIED: case AddressingMode::ACCUMULATOR: size += 1; break;
             case AddressingMode::IMMEDIATE: case AddressingMode::STACK_RELATIVE: case AddressingMode::RELATIVE: case AddressingMode::BASE_PAGE: case AddressingMode::BASE_PAGE_X: case AddressingMode::BASE_PAGE_Y: case AddressingMode::BASE_PAGE_X_INDIRECT: case AddressingMode::BASE_PAGE_INDIRECT_Y: case AddressingMode::BASE_PAGE_INDIRECT_Z: case AddressingMode::FLAT_INDIRECT_Z: size += 2; break;
@@ -454,10 +426,7 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
         { {"ROL", AddressingMode::ABSOLUTE}, 0x2E }, { {"ROL", AddressingMode::ABSOLUTE_X}, 0x3E }, { {"ROL", AddressingMode::ACCUMULATOR}, 0x2A }, { {"ROL", AddressingMode::BASE_PAGE}, 0x26 }, { {"ROL", AddressingMode::BASE_PAGE_X}, 0x36 }, { {"ROR", AddressingMode::ABSOLUTE}, 0x6E }, { {"ROR", AddressingMode::ABSOLUTE_X}, 0x7E }, { {"ROR", AddressingMode::ACCUMULATOR}, 0x6A }, { {"ROR", AddressingMode::BASE_PAGE}, 0x66 }, { {"ROR", AddressingMode::BASE_PAGE_X}, 0x76 }, { {"ROW", AddressingMode::ABSOLUTE}, 0xEB },
         { {"RTI", AddressingMode::IMPLIED}, 0x40 }, { {"RTS", AddressingMode::IMMEDIATE}, 0x62 }, { {"RTS", AddressingMode::IMPLIED}, 0x60 },
         { {"SBC", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0xF1 }, { {"SBC", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0xF2 }, { {"SBC", AddressingMode::STACK_RELATIVE}, 0xF2 }, { {"SBC", AddressingMode::BASE_PAGE_X_INDIRECT}, 0xE1 }, { {"SBC", AddressingMode::ABSOLUTE}, 0xED }, { {"SBC", AddressingMode::ABSOLUTE_X}, 0xFD }, { {"SBC", AddressingMode::ABSOLUTE_Y}, 0xF9 }, { {"SBC", AddressingMode::BASE_PAGE}, 0xE5 }, { {"SBC", AddressingMode::BASE_PAGE_X}, 0xF5 }, { {"SBC", AddressingMode::IMMEDIATE}, 0xE9 },
-        { {"SEC", AddressingMode::IMPLIED}, 0x38 },
-        { {"SED", AddressingMode::IMPLIED}, 0xF8 },
-        { {"SEE", AddressingMode::IMPLIED}, 0x03 },
- { {"SEI", AddressingMode::IMPLIED}, 0x78 }, { {"SMB0", AddressingMode::BASE_PAGE}, 0x87 }, { {"SMB1", AddressingMode::BASE_PAGE}, 0x97 }, { {"SMB2", AddressingMode::BASE_PAGE}, 0xA7 }, { {"SMB3", AddressingMode::BASE_PAGE}, 0xB7 }, { {"SMB4", AddressingMode::BASE_PAGE}, 0xC7 }, { {"SMB5", AddressingMode::BASE_PAGE}, 0xD7 }, { {"SMB6", AddressingMode::BASE_PAGE}, 0xE7 }, { {"SMB7", AddressingMode::BASE_PAGE}, 0xF7 },
+        { {"SEC", AddressingMode::IMPLIED}, 0x38 }, { {"SED", AddressingMode::IMPLIED}, 0xF8 }, { {"SEE", AddressingMode::IMPLIED}, 0x03 }, { {"SEI", AddressingMode::IMPLIED}, 0x78 }, { {"SMB0", AddressingMode::BASE_PAGE}, 0x87 }, { {"SMB1", AddressingMode::BASE_PAGE}, 0x97 }, { {"SMB2", AddressingMode::BASE_PAGE}, 0xA7 }, { {"SMB3", AddressingMode::BASE_PAGE}, 0xB7 }, { {"SMB4", AddressingMode::BASE_PAGE}, 0xC7 }, { {"SMB5", AddressingMode::BASE_PAGE}, 0xD7 }, { {"SMB6", AddressingMode::BASE_PAGE}, 0xE7 }, { {"SMB7", AddressingMode::BASE_PAGE}, 0xF7 },
         { {"STA", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0x91 }, { {"STA", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x92 }, { {"STA", AddressingMode::STACK_RELATIVE}, 0x82 }, { {"STA", AddressingMode::BASE_PAGE_X_INDIRECT}, 0x81 }, { {"STA", AddressingMode::ABSOLUTE}, 0x8D }, { {"STA", AddressingMode::ABSOLUTE_X}, 0x9D }, { {"STA", AddressingMode::ABSOLUTE_Y}, 0x99 }, { {"STA", AddressingMode::BASE_PAGE}, 0x85 }, { {"STA", AddressingMode::BASE_PAGE_X}, 0x95 },
         { {"STX", AddressingMode::ABSOLUTE}, 0x8E }, { {"STX", AddressingMode::ABSOLUTE_Y}, 0x9B }, { {"STX", AddressingMode::BASE_PAGE}, 0x86 }, { {"STX", AddressingMode::BASE_PAGE_Y}, 0x96 },
         { {"STY", AddressingMode::ABSOLUTE}, 0x8C }, { {"STY", AddressingMode::ABSOLUTE_X}, 0x8B }, { {"STY", AddressingMode::BASE_PAGE}, 0x84 }, { {"STY", AddressingMode::BASE_PAGE_X}, 0x94 },
@@ -493,7 +462,6 @@ void AssemblerParser::emitMulCode(std::vector<uint8_t>& binary, int width, const
 }
 
 void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex) {
-    // Note: Division by zero is undefined behavior.
     int idx = tokenIndex; auto srcAst = parseExprAST(tokens, idx, symbolTable); if (!srcAst) return;
     int bytes = width / 8; if (bytes < 1) bytes = 1; if (bytes > 4) bytes = 4;
     auto storeToMath = [&](uint8_t regAddr, int byteIdx, const std::string& source) {
@@ -514,7 +482,7 @@ std::vector<uint8_t> AssemblerParser::pass2() {
     std::vector<uint8_t> binary; ProcContext* currentPass2Proc = nullptr; bool isDeadCode = false;
     for (auto& [name, symbol] : symbolTable) if (symbol.isVariable) symbol.value = symbol.initialValue;
     for (auto& stmt : statements) {
-        if (!stmt->label.empty()) { isDeadCode = false; symbolTable[stmt->label].value = stmt->address; }
+        if (!stmt->label.empty()) { isDeadCode = false; }
         if (procedures.count(stmt->address)) { if (stmt->type == Statement::INSTRUCTION && stmt->instr.mnemonic == "PROC") { currentPass2Proc = &procedures[stmt->address]; isDeadCode = false; } }
         if (stmt->type == Statement::EXPR) { if (!isDeadCode) emitExpressionCode(binary, stmt->exprTarget, stmt->exprTokenIndex); continue; }
         if (stmt->type == Statement::MUL) { if (!isDeadCode) emitMulCode(binary, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex); continue; }
@@ -523,7 +491,8 @@ std::vector<uint8_t> AssemblerParser::pass2() {
             if (!isDeadCode) {
                 uint32_t addr = 0; const auto& t = tokens[stmt->basicUpstartTokenIndex]; if (t.type == AssemblerTokenType::IDENTIFIER) { if (symbolTable.count(t.value)) addr = symbolTable[t.value].value; } else addr = parseNumericLiteral(t.value);
                 std::string addrStr = std::to_string(addr); while (addrStr.length() < 4) addrStr = " " + addrStr; if (addrStr.length() > 4) addrStr = addrStr.substr(addrStr.length() - 4);
-                uint16_t nextLine = (uint16_t)(stmt->address + 12 - 2); binary.push_back(nextLine & 0xFF); binary.push_back((nextLine >> 8) & 0xFF); binary.push_back(0x0A); binary.push_back(0x00); binary.push_back(0x9E); for (char c : addrStr) binary.push_back(c); binary.push_back(0x00); binary.push_back(0x00); binary.push_back(0x00);
+                uint16_t nextLine = (uint16_t)(stmt->address + 12 - 2); 
+                binary.push_back(nextLine & 0xFF); binary.push_back((nextLine >> 8) & 0xFF); binary.push_back(0x0A); binary.push_back(0x00); binary.push_back(0x9E); for (char c : addrStr) binary.push_back(c); binary.push_back(0x00); binary.push_back(0x00); binary.push_back(0x00);
             }
             continue;
         }
@@ -545,13 +514,9 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                     bool isQuad = (stmt->instr.mnemonic.size() > 1 && stmt->instr.mnemonic.back() == 'Q' && stmt->instr.mnemonic != "LDQ" && stmt->instr.mnemonic != "STQ" && stmt->instr.mnemonic != "BEQ" && stmt->instr.mnemonic != "BNE" && stmt->instr.mnemonic != "BRA" && stmt->instr.mnemonic != "BSR");
                     if (isQuad) { binary.push_back(0x42); binary.push_back(0x42); }
                     if (stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z) binary.push_back(0xEA);
-                    bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" ||
-                                     stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" ||
-                                     stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" ||
-                                     stmt->instr.mnemonic == "BSR");
+                    bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" || stmt->instr.mnemonic == "BSR");
                     if (!isBranch) {
                         uint8_t op = getOpcode(stmt->instr.mnemonic, stmt->instr.mode);
-                        // Emit opcode if found (including $00 for BRK)
                         if (op != 0 || stmt->instr.mnemonic == "BRK") binary.push_back(op);
                     }
                     if (stmt->instr.mode == AddressingMode::IMMEDIATE || stmt->instr.mode == AddressingMode::STACK_RELATIVE || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Z || stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || stmt->instr.mode == AddressingMode::BASE_PAGE_X_INDIRECT || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Y || stmt->instr.mode == AddressingMode::BASE_PAGE || stmt->instr.mode == AddressingMode::BASE_PAGE_X || stmt->instr.mode == AddressingMode::BASE_PAGE_Y) {
@@ -562,7 +527,7 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                         binary.push_back(a & 0xFF); binary.push_back((a >> 8) & 0xFF);
                     } else if (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS") {
                         uint32_t t = symbolTable[stmt->instr.operand].value; int32_t offset2 = (int32_t)t - (int32_t)(stmt->address + 2); int32_t offset3 = (int32_t)t - (int32_t)(stmt->address + 3);
-                        if (offset2 >= -128 && offset2 <= 127) { binary.push_back(getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE)); binary.push_back((uint8_t)(int8_t)offset2); }
+                        if (stmt->size == 2) { binary.push_back(getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE)); binary.push_back((uint8_t)(int8_t)offset2); }
                         else { binary.push_back(getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE16)); binary.push_back(offset3 & 0xFF); binary.push_back((offset3 >> 8) & 0xFF); }
                     } else if (stmt->instr.mnemonic == "BSR") {
                         uint32_t t = symbolTable[stmt->instr.operand].value; int32_t offset = (int32_t)t - (int32_t)(stmt->address + 3);

@@ -173,7 +173,7 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
         "BBS4", "BBS5", "BBS6", "BBS7", "CLC", "CLD", "CLE", "CLI", "CLV", "CMP",
         "CPX", "CPY", "CPZ", "DEC", "DEW", "DEX", "DEY", "DEZ", "EOM", "EOR",
         "INC", "INW", "INX", "INY", "INZ", "JMP", "JSR", "LDA", "LDQ", "LDX",
-        "LDY", "LDZ", "LSR", "MAP", "NEG", "NOP", "ORA", "PHA", "PHP", "PHX",
+        "LDY", "LDZ", "LSR", "MAP", "NEG", "ORA", "PHA", "PHP", "PHX",
         "PHY", "PHZ", "PHW", "PLA", "PLP", "PLX", "PLY", "PLZ", "RMB0", "RMB1",
         "RMB2", "RMB3", "RMB4", "RMB5", "RMB6", "RMB7", "ROL", "ROR", "ROW",
         "RTI", "RTS", "SBC", "SEC", "SED", "SEE", "SEI", "SMB0", "SMB1", "SMB2",

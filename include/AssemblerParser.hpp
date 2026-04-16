@@ -106,7 +106,7 @@ private:
     bool match(AssemblerTokenType type);
     const AssemblerToken& expect(AssemblerTokenType type, const std::string& message);
     
-    int calculateInstructionSize(const Instruction& instr);
+    int calculateInstructionSize(const Instruction& instr, uint32_t currentAddr = 0);
     int calculateDirectiveSize(const Directive& dir);
     int calculateExprSize(int tokenIndex);
     uint8_t getOpcode(const std::string& mnemonic, AddressingMode mode);
