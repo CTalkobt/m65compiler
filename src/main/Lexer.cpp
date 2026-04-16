@@ -1,6 +1,7 @@
 #include "Lexer.hpp"
 #include <cctype>
 #include <map>
+#include <cstdint>
 
 Lexer::Lexer(const std::string& source) : source(source), pos(0), line(1), column(1) {}
 
@@ -153,6 +154,15 @@ Token Lexer::lexNumber() {
     int startLine = line;
     int startCol = column;
     std::string value;
+    if (peek() == '0') {
+        value += get();
+        if (peek() == 'x' || peek() == 'X') {
+            value += get();
+            while (std::isxdigit(peek())) value += get();
+            uint32_t val = std::stoul(value.substr(2), nullptr, 16);
+            return {TokenType::INTEGER_LITERAL, std::to_string(val), startLine, startCol};
+        }
+    }
     while (std::isdigit(peek())) {
         value += get();
     }

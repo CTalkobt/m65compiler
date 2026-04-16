@@ -29,6 +29,7 @@ AS_TEST_FILES=(
     "src/test-resources/test_mul.s"
     "src/test-resources/test_div.s"
     "src/test-resources/test_expr.s"
+    "src/test-resources/test_expr_advanced.s"
     "src/test-resources/hello_call.s"
     "src/test-resources/test_var.s"
     "src/test-resources/test_45gs02.s"
@@ -50,6 +51,20 @@ else
     echo "FAIL: .basicUpstart output mismatch."
     echo "  Expected start: $EXPECTED"
     echo "  Actual:         $ACTUAL"
+    failed=$((failed + 1))
+fi
+
+echo "Testing -Dca45.zeroPageStart=\$10..."
+# Use a dereference which is guaranteed to use ZP scratch $02/$03
+echo -e ".var ptr = \$20\nexpr .A, *ptr" > build/test_zp_shift.s
+$AS "-Dca45.zeroPageStart=\$10" -o build/test_zp_shift.bin build/test_zp_shift.s
+# 85 10 (STA $10) should be in there (saving eval'd ptr address to ZP scratch)
+ACTUAL_ZP=$(hexdump -v -e '1/1 "%02x "' build/test_zp_shift.bin)
+if [ -f build/test_zp_shift.bin ] && echo "$ACTUAL_ZP" | grep -q "85 10"; then
+    echo "SUCCESS: -Dca45.zeroPageStart correctly shifted ZP addresses."
+else
+    echo "FAIL: -Dca45.zeroPageStart did not shift ZP addresses correctly."
+    echo "Actual bytes: $ACTUAL_ZP"
     failed=$((failed + 1))
 fi
 
