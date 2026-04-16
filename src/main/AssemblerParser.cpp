@@ -296,15 +296,21 @@ void AssemblerParser::pass1() {
                 stmt->type = Statement::EXPR; const auto& target = advance(); stmt->exprTarget = (target.type == AssemblerTokenType::REGISTER ? "." : "") + target.value;
                 expect(AssemblerTokenType::COMMA, "Expected ,"); stmt->exprTokenIndex = (int)pos;
                 while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
-                stmt->size = calculateExprSize(stmt->exprTokenIndex);
+                std::vector<uint8_t> dummy;
+                emitExpressionCode(dummy, stmt->exprTarget, stmt->exprTokenIndex);
+                stmt->size = dummy.size();
             } else if (stmt->instr.mnemonic.substr(0, 3) == "MUL" || stmt->instr.mnemonic.substr(0, 3) == "DIV") {
                 stmt->type = (stmt->instr.mnemonic.substr(0, 3) == "MUL") ? Statement::MUL : Statement::DIV;
                 std::string m = stmt->instr.mnemonic; if (m.size() > 4 && m[3] == '.') stmt->mulWidth = std::stoi(m.substr(4)); else stmt->mulWidth = 8;
                 const auto& dest = advance(); stmt->instr.operand = (dest.type == AssemblerTokenType::REGISTER ? "." : "") + dest.value;
                 if (!match(AssemblerTokenType::COMMA)) throw std::runtime_error("Expected , after destination");
                 stmt->exprTokenIndex = (int)pos; while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
-                int bytes = stmt->mulWidth / 8; if (bytes < 1) bytes = 1; stmt->size = bytes * 35;
+                std::vector<uint8_t> dummy;
+                if (stmt->type == Statement::MUL) emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex);
+                else emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex);
+                stmt->size = dummy.size();
             } else {
+                // ... rest of instruction handling ...
                 if (match(AssemblerTokenType::HASH)) { stmt->instr.operand = advance().value; if (stmt->instr.mnemonic == "PHW") stmt->instr.mode = AddressingMode::IMMEDIATE16; else stmt->instr.mode = AddressingMode::IMMEDIATE; }
                 else if (match(AssemblerTokenType::OPEN_PAREN)) {
                     stmt->instr.operand = advance().value;
@@ -348,10 +354,23 @@ void AssemblerParser::pass1() {
             else {
                 stmt->address = pc;
                 if (!stmt->label.empty()) { if (symbolTable[stmt->label].value != pc) { symbolTable[stmt->label].value = pc; changed = true; } }
+                int oldSize = stmt->size;
                 if (stmt->type == Statement::INSTRUCTION) {
-                    int oldSize = stmt->size; stmt->size = calculateInstructionSize(stmt->instr, stmt->address);
-                    if (stmt->size != oldSize) changed = true;
+                    stmt->size = calculateInstructionSize(stmt->instr, stmt->address);
+                } else if (stmt->type == Statement::MUL) {
+                    std::vector<uint8_t> dummy;
+                    emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex);
+                    stmt->size = dummy.size();
+                } else if (stmt->type == Statement::DIV) {
+                    std::vector<uint8_t> dummy;
+                    emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex);
+                    stmt->size = dummy.size();
+                } else if (stmt->type == Statement::EXPR) {
+                    std::vector<uint8_t> dummy;
+                    emitExpressionCode(dummy, stmt->exprTarget, stmt->exprTokenIndex);
+                    stmt->size = dummy.size();
                 }
+                if (stmt->size != oldSize) changed = true;
                 pc += stmt->size;
             }
         }
