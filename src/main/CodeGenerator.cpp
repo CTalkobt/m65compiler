@@ -225,8 +225,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emitter->sta_s(0); emitter->pop_ax(); std::string label = newLabel(); std::string end = newLabel();
         out << label << ":" << std::endl; emitter->lda_s(0); emitter->beq(0x07); emitter->dec_s(0); emitter->asl_a(); emit("ROL X"); emitter->bra(-11);
         out << end << ":" << std::endl;
-    }
- else if (node.op == "==" || node.op == "!=") {
+    } else if (node.op == "==" || node.op == "!=") {
         if (lhsSize == 1) emit("CMP 1, s"); else emit("CMP 2, s");
         std::string labelFalse = newLabel(); std::string labelEnd = newLabel();
         if (node.op == "==") emit("BNE " + labelFalse); else emit("BEQ " + labelFalse);
@@ -235,15 +234,12 @@ void CodeGenerator::visit(BinaryOperation& node) {
         out << labelFalse << ":" << std::endl; emitter->lda_imm(0);
         out << labelEnd << ":" << std::endl; emitter->ldx_imm(0);
     } else if (node.op == "*") {
-        emitter->sta_abs(0xD770); emitter->stx_abs(0xD771);
-        if (lhsSize == 1) { emit("LDA 1, s"); emitter->sta_abs(0xD774); emitter->stz_abs(0xD775); }
-        else { emit("LDA 2, s"); emitter->sta_abs(0xD774); emit("LDA 3, s"); emitter->sta_abs(0xD775); }
-        emitter->lda_abs(0xD778); emitter->ldx_abs(0xD779);
+        emit("mul.16 .AX, " + std::to_string(lhsSize) + ", s");
     } else if (node.op == "/") {
-        emitter->sta_abs(0xD764); emitter->stx_abs(0xD765);
-        if (lhsSize == 1) { emit("LDA 1, s"); emitter->sta_abs(0xD760); emitter->stz_abs(0xD761); }
-        else { emit("LDA 2, s"); emitter->sta_abs(0xD760); emit("LDA 3, s"); emitter->sta_abs(0xD761); }
-        emitter->lda_abs(0xD768); emitter->ldx_abs(0xD769);
+        emitter->sta_s(0); emitter->stx_s(1);
+        if (lhsSize == 1) { emitter->lda_stack(1); emitter->ldx_imm(0); }
+        else { emit("LDA 2, s"); emit("LDX 3, s"); }
+        emit("div.16 .AX, " + std::to_string((int)emitter->getZP(0)));
     }
     emit("RTN #" + std::to_string(lhsSize));
     for (const auto& varName : currentVars) emit(".var " + varName + " = " + varName + " - " + std::to_string(lhsSize));

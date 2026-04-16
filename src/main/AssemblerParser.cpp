@@ -219,11 +219,12 @@ struct BinaryExpr : public ExprAST {
 
         if (op == "*" || op == "/" || op == "+" || op == "-") {
             left->emit(binary, parser, width, ".A");
-            e.sta_abs(0xD770); if (bytes >= 2) e.stx_abs(0xD771);
+            uint8_t base = (op == "/") ? 0x60 : 0x70;
+            e.sta_abs(0xD700 + base); if (bytes >= 2) e.stx_abs(0xD701 + base);
             right->emit(binary, parser, width, ".A");
-            e.sta_abs(0xD774); if (bytes >= 2) e.stx_abs(0xD775);
+            e.sta_abs(0xD700 + base + 4); if (bytes >= 2) e.stx_abs(0xD701 + base + 4);
             if (op == "*") { for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD778 + i); if (i == 1) e.tax(); } }
-            else if (op == "/") { e.bit_abs(0xD70F); e.bne(-5); for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD76C + i); if (i == 1) e.tax(); } }
+            else if (op == "/") { e.bit_abs(0xD70F); e.bne(-5); for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD768 + i); if (i == 1) e.tax(); } }
             else if (op == "+") { for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD77C + i); if (i == 1) e.tax(); } }
             else if (op == "-") { 
                 e.sec(); 
@@ -288,6 +289,17 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
     auto parsePrimary = [&]() -> std::unique_ptr<ExprAST> {
         if (idx >= (int)tokens.size()) return nullptr;
         const auto& t = tokens[idx++];
+        if (t.type == AssemblerTokenType::DECIMAL_LITERAL || t.type == AssemblerTokenType::HEX_LITERAL) {
+            if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) {
+                if (idx + 1 < (int)tokens.size() && (tokens[idx + 1].value == "s" || tokens[idx + 1].value == "S")) {
+                    uint32_t val = (t.type == AssemblerTokenType::HEX_LITERAL) ? parseNumericLiteral(t.value) : std::stoul(t.value);
+                    idx += 2;
+                    std::string tempName = "__stack_" + std::to_string(val);
+                    symbolTable[tempName] = {val, true, 2, false, 0, true, (int)val};
+                    return std::make_unique<VariableNode>(tempName, symbolTable);
+                }
+            }
+        }
         if (t.type == AssemblerTokenType::DECIMAL_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value));
         if (t.type == AssemblerTokenType::HEX_LITERAL) return std::make_unique<ConstantNode>(parseNumericLiteral(t.value));
         if (t.type == AssemblerTokenType::BINARY_LITERAL) return std::make_unique<ConstantNode>(parseNumericLiteral(t.value));
@@ -583,15 +595,35 @@ void AssemblerParser::emitMulCode(std::vector<uint8_t>& binary, int width, const
     int idx = tokenIndex; auto srcAst = parseExprAST(tokens, idx, symbolTable); if (!srcAst) return;
     M65Emitter e(binary, getZPStart());
     int bytes = width / 8; if (bytes < 1) bytes = 1; if (bytes > 4) bytes = 4;
+
+    bool isStackRel = false;
+    int stackOff = 0;
+    if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) {
+        if (idx + 1 < (int)tokens.size() && (tokens[idx + 1].value == "s" || tokens[idx + 1].value == "S")) {
+            isStackRel = true;
+            stackOff = srcAst->getValue();
+        }
+    }
+
     auto storeMath = [&](uint8_t regAddr, int byteIdx, const std::string& src) {
         if (src == ".A") e.sta_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".X") e.stx_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Y") e.sty_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Z") e.stz_abs(0xD700 + regAddr + byteIdx);
+        else if (symbolTable.count(src) && symbolTable.at(src).isStackRelative) {
+            e.lda_stack((uint8_t)(symbolTable.at(src).stackOffset + byteIdx));
+            e.sta_abs(0xD700 + regAddr + byteIdx);
+        }
         else { uint32_t addr = symbolTable.count(src) ? symbolTable.at(src).value : parseNumericLiteral(src); e.lda_abs(addr + byteIdx); e.sta_abs(0xD700 + regAddr + byteIdx); }
     };
+
     if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (bytes >= 1) storeMath(0x70, 0, ".A"); if (bytes >= 2) storeMath(0x70, 1, ".X"); if (bytes >= 3) storeMath(0x70, 2, ".Y"); if (bytes >= 4) storeMath(0x70, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x70, i, dest);
-    if (srcAst->isConstant()) { uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD774 + i); } }
+
+    if (isStackRel) {
+        for (int i = 0; i < bytes; ++i) { e.lda_stack((uint8_t)(stackOff + i)); e.sta_abs(0xD774 + i); }
+    } else if (srcAst->isConstant()) { 
+        uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD774 + i); } 
+    }
     else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) storeMath(0x74, 0, ".A"); if (bytes >= 2) storeMath(0x74, 1, ".X"); if (bytes >= 3) storeMath(0x74, 2, ".Y"); if (bytes >= 4) storeMath(0x74, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x74, i, srcName); }
     for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD778 + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { uint32_t addr = symbolTable.count(dest) ? symbolTable.at(dest).value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
 }
@@ -600,18 +632,38 @@ void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const
     int idx = tokenIndex; auto srcAst = parseExprAST(tokens, idx, symbolTable); if (!srcAst) return;
     M65Emitter e(binary, getZPStart());
     int bytes = width / 8; if (bytes < 1) bytes = 1; if (bytes > 4) bytes = 4;
+
+    bool isStackRel = false;
+    int stackOff = 0;
+    if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) {
+        if (idx + 1 < (int)tokens.size() && (tokens[idx + 1].value == "s" || tokens[idx + 1].value == "S")) {
+            isStackRel = true;
+            stackOff = srcAst->getValue();
+        }
+    }
+
     auto storeMath = [&](uint8_t regAddr, int byteIdx, const std::string& src) {
         if (src == ".A") e.sta_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".X") e.stx_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Y") e.sty_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Z") e.stz_abs(0xD700 + regAddr + byteIdx);
+        else if (symbolTable.count(src) && symbolTable.at(src).isStackRelative) {
+            e.lda_stack((uint8_t)(symbolTable.at(src).stackOffset + byteIdx));
+            e.sta_abs(0xD700 + regAddr + byteIdx);
+        }
         else { uint32_t addr = symbolTable.count(src) ? symbolTable.at(src).value : parseNumericLiteral(src); e.lda_abs(addr + byteIdx); e.sta_abs(0xD700 + regAddr + byteIdx); }
     };
-    if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (bytes >= 1) storeMath(0x70, 0, ".A"); if (bytes >= 2) storeMath(0x70, 1, ".X"); if (bytes >= 3) storeMath(0x70, 2, ".Y"); if (bytes >= 4) storeMath(0x70, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x70, i, dest);
-    if (srcAst->isConstant()) { uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD774 + i); } }
-    else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) storeMath(0x74, 0, ".A"); if (bytes >= 2) storeMath(0x74, 1, ".X"); if (bytes >= 3) storeMath(0x74, 2, ".Y"); if (bytes >= 4) storeMath(0x74, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x74, i, srcName); }
+
+    if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (bytes >= 1) storeMath(0x60, 0, ".A"); if (bytes >= 2) storeMath(0x60, 1, ".X"); if (bytes >= 3) storeMath(0x60, 2, ".Y"); if (bytes >= 4) storeMath(0x60, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x60, i, dest);
+
+    if (isStackRel) {
+        for (int i = 0; i < bytes; ++i) { e.lda_stack((uint8_t)(stackOff + i)); e.sta_abs(0xD764 + i); }
+    } else if (srcAst->isConstant()) { 
+        uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD764 + i); } 
+    }
+    else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) storeMath(0x64, 0, ".A"); if (bytes >= 2) storeMath(0x64, 1, ".X"); if (bytes >= 3) storeMath(0x64, 2, ".Y"); if (bytes >= 4) storeMath(0x64, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x64, i, srcName); }
     e.bit_abs(0xD70F); e.bne(-5);
-    for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD76C + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { uint32_t addr = symbolTable.count(dest) ? symbolTable.at(dest).value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
+    for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD768 + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { uint32_t addr = symbolTable.count(dest) ? symbolTable.at(dest).value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
 }
 
 std::vector<uint8_t> AssemblerParser::pass2() {
