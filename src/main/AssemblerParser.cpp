@@ -79,7 +79,42 @@ struct FlagNode : public ExprAST {
     bool isConstant() const override { return false; }
     bool is16Bit() const override { return false; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
-        binary.push_back(0xA9); binary.push_back(0); 
+        if (flag == 'C') {
+            // Specialized optimization for Carry flag
+            binary.push_back(0xA9); binary.push_back(0x00); // LDA #0
+            binary.push_back(0x69); binary.push_back(0x00); // ADC #0 (Adds 0 + Carry)
+        } else {
+            uint8_t branchOp = 0;
+            switch (flag) {
+                case 'Z': branchOp = 0xD0; break; // BNE
+                case 'V': branchOp = 0x50; break; // BVC
+                case 'N': branchOp = 0x10; break; // BPL
+            }
+            
+            if (branchOp != 0) {
+                binary.push_back(0xA9); binary.push_back(0x00); // LDA #0
+                binary.push_back(branchOp); binary.push_back(0x02); // branch over LDA #1
+                binary.push_back(0xA9); binary.push_back(0x01); // LDA #1
+            } else {
+            uint8_t mask = 0;
+            if (flag == 'I') mask = 0x04;
+            else if (flag == 'D') mask = 0x08;
+            else if (flag == 'B') mask = 0x10;
+            
+            if (mask != 0) {
+                binary.push_back(0x08); // PHP
+                binary.push_back(0x68); // PLA
+                binary.push_back(0x29); binary.push_back(mask); // AND #mask
+                binary.push_back(0xF0); binary.push_back(0x02); // BEQ over LDA #1
+                binary.push_back(0xA9); binary.push_back(0x01); // LDA #1
+            } else {
+                binary.push_back(0xA9); binary.push_back(0x00); // Default 0 for unknown
+            }
+        }
+        
+        if (width >= 16) {
+            binary.push_back(0xA2); binary.push_back(0x00); // LDX #0
+        }
     }
 };
 
