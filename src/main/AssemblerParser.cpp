@@ -57,19 +57,17 @@ struct RegisterNode : public ExprAST {
     bool is16Bit() const override { return name.size() > 1; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
         if (width <= 8) {
-            if (name == ".X") binary.push_back(0x8A);      // TXA
-            else if (name == ".Y") binary.push_back(0x98); // TYA
-            else if (name == ".Z") binary.push_back(0x6B); // TZA
-            else if (name == ".SP") { binary.push_back(0xBA); binary.push_back(0x8A); } // TSX, TXA
+            if (name == ".X") binary.push_back(0x8A); else if (name == ".Y") binary.push_back(0x98); else if (name == ".Z") binary.push_back(0x6B);
+            else if (name == ".SP") { binary.push_back(0xBA); binary.push_back(0x8A); }
         } else {
-            if (name == ".AY") { binary.push_back(0x5A); binary.push_back(0xFA); } // PHY, PLX
-            else if (name == ".AZ") { binary.push_back(0xDB); binary.push_back(0xFA); } // PHZ, PLX
-            else if (name == ".XY") { binary.push_back(0x8A); binary.push_back(0x5A); binary.push_back(0xFA); } // TXA, PHY, PLX
-            else if (name == ".YZ") { binary.push_back(0x98); binary.push_back(0xDB); binary.push_back(0xFA); } // TYA, PHZ, PLX
-            else if (name == ".A") { binary.push_back(0xA2); binary.push_back(0x00); } // LDX #0
-            else if (name == ".X") { binary.push_back(0x8A); binary.push_back(0xA2); binary.push_back(0x00); } // TXA, LDX #0
-            else if (name == ".Y") { binary.push_back(0x98); binary.push_back(0xA2); binary.push_back(0x00); } // TYA, LDX #0
-            else if (name == ".Z") { binary.push_back(0x6B); binary.push_back(0xA2); binary.push_back(0x00); } // TZA, LDX #0
+            if (name == ".AY") { binary.push_back(0x5A); binary.push_back(0xFA); }
+            else if (name == ".AZ") { binary.push_back(0xDB); binary.push_back(0xFA); }
+            else if (name == ".XY") { binary.push_back(0x8A); binary.push_back(0x5A); binary.push_back(0xFA); }
+            else if (name == ".YZ") { binary.push_back(0x98); binary.push_back(0xDB); binary.push_back(0xFA); }
+            else if (name == ".A") { binary.push_back(0xA2); binary.push_back(0x00); }
+            else if (name == ".X") { binary.push_back(0x8A); binary.push_back(0xA2); binary.push_back(0x00); }
+            else if (name == ".Y") { binary.push_back(0x98); binary.push_back(0xA2); binary.push_back(0x00); }
+            else if (name == ".Z") { binary.push_back(0x6B); binary.push_back(0xA2); binary.push_back(0x00); }
         }
     }
 };
@@ -82,6 +80,26 @@ struct FlagNode : public ExprAST {
     bool is16Bit() const override { return false; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
         binary.push_back(0xA9); binary.push_back(0); 
+    }
+};
+
+struct VariableNode : public ExprAST {
+    std::string name;
+    std::map<std::string, Symbol>& symbolTable;
+    VariableNode(const std::string& n, std::map<std::string, Symbol>& st) : name(n), symbolTable(st) {}
+    uint32_t getValue() const override { if (symbolTable.count(name)) return symbolTable[name].value; return 0; }
+    bool isConstant() const override { if (symbolTable.count(name)) return !symbolTable[name].isAddress; return false; }
+    bool is16Bit() const override { if (symbolTable.count(name)) return symbolTable[name].size > 1; return true; }
+    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
+        if (!symbolTable.count(name)) {
+            return; 
+        }
+        const auto& sym = symbolTable[name];
+        if (!sym.isAddress) { binary.push_back(0xA9); binary.push_back(sym.value & 0xFF); if (width >= 16) { binary.push_back(0xA2); binary.push_back((sym.value >> 8) & 0xFF); } }
+        else {
+            if (sym.isStackRelative) { binary.push_back(0xE2); binary.push_back((uint8_t)sym.stackOffset); if (width >= 16) { binary.push_back(0xAD); binary.push_back(0x03); binary.push_back(0x00); } }
+            else { binary.push_back(0xAD); binary.push_back(sym.value & 0xFF); binary.push_back((sym.value >> 8) & 0xFF); if (width >= 16) { binary.push_back(0xAE); binary.push_back((sym.value + 1) & 0xFF); binary.push_back(((sym.value + 1) >> 8) & 0xFF); } }
+        }
     }
 };
 
@@ -116,8 +134,8 @@ struct BinaryExpr : public ExprAST {
                 if (width >= 16) { binary.push_back(0xAE); binary.push_back(0x79); binary.push_back(0xD7); }
             }
         } else if (op == "+" || op == "-") {
-            left->emit(binary, parser, width, ".A");
             if (right->isConstant()) {
+                left->emit(binary, parser, width, ".A");
                 uint32_t val = right->getValue();
                 if (op == "+") binary.push_back(0x18); else binary.push_back(0x38);
                 binary.push_back(op == "+" ? 0x69 : 0xE9); binary.push_back(val & 0xFF);
@@ -126,6 +144,16 @@ struct BinaryExpr : public ExprAST {
                     binary.push_back(op == "+" ? 0x69 : 0xE9); binary.push_back((val >> 8) & 0xFF);
                     binary.push_back(0xAA); binary.push_back(0x68);
                 }
+            } else {
+                left->emit(binary, parser, width, ".A");
+                binary.push_back(0x48); if (width >= 16) binary.push_back(0xDA);
+                right->emit(binary, parser, width, ".A");
+                binary.push_back(0xA8); if (width >= 16) binary.push_back(0x4B);
+                if (width >= 16) binary.push_back(0xFA); binary.push_back(0x68);
+                binary.push_back(0x84); binary.push_back(0x02); if (width >= 16) { binary.push_back(0x94); binary.push_back(0x03); }
+                if (op == "+") binary.push_back(0x18); else binary.push_back(0x38);
+                binary.push_back(op == "+" ? 0x65 : 0xE5); binary.push_back(0x02);
+                if (width >= 16) { binary.push_back(0x48); binary.push_back(0x8A); binary.push_back(op == "+" ? 0x65 : 0xE5); binary.push_back(0x03); binary.push_back(0xAA); binary.push_back(0x68); }
             }
         }
     }
@@ -155,7 +183,7 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
         if (t.type == AssemblerTokenType::BINARY_LITERAL) return std::make_unique<ConstantNode>(parseNumericLiteral(t.value));
         if (t.type == AssemblerTokenType::REGISTER) return std::make_unique<RegisterNode>(t.value);
         if (t.type == AssemblerTokenType::FLAG) return std::make_unique<FlagNode>(t.value[0]);
-        if (t.type == AssemblerTokenType::IDENTIFIER) { if (symbolTable.count(t.value)) return std::make_unique<ConstantNode>(symbolTable[t.value].value); return std::make_unique<ConstantNode>(0); }
+        if (t.type == AssemblerTokenType::IDENTIFIER) return std::make_unique<VariableNode>(t.value, symbolTable);
         return nullptr;
     };
     auto left = parsePrimary();
@@ -347,7 +375,10 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
         { {"ROL", AddressingMode::ABSOLUTE}, 0x2E }, { {"ROL", AddressingMode::ABSOLUTE_X}, 0x3E }, { {"ROL", AddressingMode::ACCUMULATOR}, 0x2A }, { {"ROL", AddressingMode::BASE_PAGE}, 0x26 }, { {"ROL", AddressingMode::BASE_PAGE_X}, 0x36 }, { {"ROR", AddressingMode::ABSOLUTE}, 0x6E }, { {"ROR", AddressingMode::ABSOLUTE_X}, 0x7E }, { {"ROR", AddressingMode::ACCUMULATOR}, 0x6A }, { {"ROR", AddressingMode::BASE_PAGE}, 0x66 }, { {"ROR", AddressingMode::BASE_PAGE_X}, 0x76 }, { {"ROW", AddressingMode::ABSOLUTE}, 0xEB },
         { {"RTI", AddressingMode::IMPLIED}, 0x40 }, { {"RTS", AddressingMode::IMMEDIATE}, 0x62 }, { {"RTS", AddressingMode::IMPLIED}, 0x60 },
         { {"SBC", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0xF1 }, { {"SBC", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0xF2 }, { {"SBC", AddressingMode::STACK_RELATIVE}, 0xF2 }, { {"SBC", AddressingMode::BASE_PAGE_X_INDIRECT}, 0xE1 }, { {"SBC", AddressingMode::ABSOLUTE}, 0xED }, { {"SBC", AddressingMode::ABSOLUTE_X}, 0xFD }, { {"SBC", AddressingMode::ABSOLUTE_Y}, 0xF9 }, { {"SBC", AddressingMode::BASE_PAGE}, 0xE5 }, { {"SBC", AddressingMode::BASE_PAGE_X}, 0xF5 }, { {"SBC", AddressingMode::IMMEDIATE}, 0xE9 },
-        { {"SEC", AddressingMode::IMPLIED}, 0x38 }, { {"SED", AddressingMode::IMPLIED}, 0xD8 }, { {"SEE", AddressingMode::IMPLIED}, 0x03 }, { {"SEI", AddressingMode::IMPLIED}, 0x78 }, { {"SMB0", AddressingMode::BASE_PAGE}, 0x87 }, { {"SMB1", AddressingMode::BASE_PAGE}, 0x97 }, { {"SMB2", AddressingMode::BASE_PAGE}, 0xA7 }, { {"SMB3", AddressingMode::BASE_PAGE}, 0xB7 }, { {"SMB4", AddressingMode::BASE_PAGE}, 0xC7 }, { {"SMB5", AddressingMode::BASE_PAGE}, 0xD7 }, { {"SMB6", AddressingMode::BASE_PAGE}, 0xE7 }, { {"SMB7", AddressingMode::BASE_PAGE}, 0xF7 },
+        { {"SEC", AddressingMode::IMPLIED}, 0x38 },
+        { {"SED", AddressingMode::IMPLIED}, 0xF8 },
+        { {"SEE", AddressingMode::IMPLIED}, 0x03 },
+ { {"SEI", AddressingMode::IMPLIED}, 0x78 }, { {"SMB0", AddressingMode::BASE_PAGE}, 0x87 }, { {"SMB1", AddressingMode::BASE_PAGE}, 0x97 }, { {"SMB2", AddressingMode::BASE_PAGE}, 0xA7 }, { {"SMB3", AddressingMode::BASE_PAGE}, 0xB7 }, { {"SMB4", AddressingMode::BASE_PAGE}, 0xC7 }, { {"SMB5", AddressingMode::BASE_PAGE}, 0xD7 }, { {"SMB6", AddressingMode::BASE_PAGE}, 0xE7 }, { {"SMB7", AddressingMode::BASE_PAGE}, 0xF7 },
         { {"STA", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0x91 }, { {"STA", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x92 }, { {"STA", AddressingMode::STACK_RELATIVE}, 0x82 }, { {"STA", AddressingMode::BASE_PAGE_X_INDIRECT}, 0x81 }, { {"STA", AddressingMode::ABSOLUTE}, 0x8D }, { {"STA", AddressingMode::ABSOLUTE_X}, 0x9D }, { {"STA", AddressingMode::ABSOLUTE_Y}, 0x99 }, { {"STA", AddressingMode::BASE_PAGE}, 0x85 }, { {"STA", AddressingMode::BASE_PAGE_X}, 0x95 },
         { {"STX", AddressingMode::ABSOLUTE}, 0x8E }, { {"STX", AddressingMode::ABSOLUTE_Y}, 0x9B }, { {"STX", AddressingMode::BASE_PAGE}, 0x86 }, { {"STX", AddressingMode::BASE_PAGE_Y}, 0x96 },
         { {"STY", AddressingMode::ABSOLUTE}, 0x8C }, { {"STY", AddressingMode::ABSOLUTE_X}, 0x8B }, { {"STY", AddressingMode::BASE_PAGE}, 0x84 }, { {"STY", AddressingMode::BASE_PAGE_X}, 0x94 },
@@ -434,8 +465,15 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                     bool isQuad = (stmt->instr.mnemonic.size() > 1 && stmt->instr.mnemonic.back() == 'Q' && stmt->instr.mnemonic != "LDQ" && stmt->instr.mnemonic != "STQ" && stmt->instr.mnemonic != "BEQ" && stmt->instr.mnemonic != "BNE" && stmt->instr.mnemonic != "BRA" && stmt->instr.mnemonic != "BSR");
                     if (isQuad) { binary.push_back(0x42); binary.push_back(0x42); }
                     if (stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z) binary.push_back(0xEA);
-                    bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" || stmt->instr.mnemonic == "BSR");
-                    if (!isBranch) { uint8_t op = getOpcode(stmt->instr.mnemonic, stmt->instr.mode); if (op) binary.push_back(op); }
+                    bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" ||
+                                     stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" ||
+                                     stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" ||
+                                     stmt->instr.mnemonic == "BSR");
+                    if (!isBranch) {
+                        uint8_t op = getOpcode(stmt->instr.mnemonic, stmt->instr.mode);
+                        // Emit opcode if found (including $00 for BRK)
+                        if (op != 0 || stmt->instr.mnemonic == "BRK") binary.push_back(op);
+                    }
                     if (stmt->instr.mode == AddressingMode::IMMEDIATE || stmt->instr.mode == AddressingMode::STACK_RELATIVE || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Z || stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || stmt->instr.mode == AddressingMode::BASE_PAGE_X_INDIRECT || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Y || stmt->instr.mode == AddressingMode::BASE_PAGE || stmt->instr.mode == AddressingMode::BASE_PAGE_X || stmt->instr.mode == AddressingMode::BASE_PAGE_Y) {
                         uint32_t v; if (currentPass2Proc && currentPass2Proc->localArgs.count(stmt->instr.operand)) v = currentPass2Proc->localArgs[stmt->instr.operand]; else if (symbolTable.count(stmt->instr.operand)) v = symbolTable[stmt->instr.operand].value; else v = parseNumericLiteral(stmt->instr.operand);
                         binary.push_back((uint8_t)v);
