@@ -56,7 +56,21 @@ struct RegisterNode : public ExprAST {
     bool isConstant() const override { return false; }
     bool is16Bit() const override { return name.size() > 1; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
-        if (name == ".X") binary.push_back(0x8A); else if (name == ".Y") binary.push_back(0x98); else if (name == ".Z") binary.push_back(0x6B);
+        if (width <= 8) {
+            if (name == ".X") binary.push_back(0x8A);      // TXA
+            else if (name == ".Y") binary.push_back(0x98); // TYA
+            else if (name == ".Z") binary.push_back(0x6B); // TZA
+            else if (name == ".SP") { binary.push_back(0xBA); binary.push_back(0x8A); } // TSX, TXA
+        } else {
+            if (name == ".AY") { binary.push_back(0x5A); binary.push_back(0xFA); } // PHY, PLX
+            else if (name == ".AZ") { binary.push_back(0xDB); binary.push_back(0xFA); } // PHZ, PLX
+            else if (name == ".XY") { binary.push_back(0x8A); binary.push_back(0x5A); binary.push_back(0xFA); } // TXA, PHY, PLX
+            else if (name == ".YZ") { binary.push_back(0x98); binary.push_back(0xDB); binary.push_back(0xFA); } // TYA, PHZ, PLX
+            else if (name == ".A") { binary.push_back(0xA2); binary.push_back(0x00); } // LDX #0
+            else if (name == ".X") { binary.push_back(0x8A); binary.push_back(0xA2); binary.push_back(0x00); } // TXA, LDX #0
+            else if (name == ".Y") { binary.push_back(0x98); binary.push_back(0xA2); binary.push_back(0x00); } // TYA, LDX #0
+            else if (name == ".Z") { binary.push_back(0x6B); binary.push_back(0xA2); binary.push_back(0x00); } // TZA, LDX #0
+        }
     }
 };
 
