@@ -1,0 +1,9 @@
+.org $2000
+    ADC [2],Z
+    AND [4],Z
+    CMP [6],Z
+    EOR [8],Z
+    LDA [10],Z
+    ORA [12],Z
+    SBC [14],Z
+    STA [16],Z

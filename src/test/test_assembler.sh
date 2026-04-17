@@ -33,6 +33,10 @@ AS_TEST_FILES=(
     "src/test-resources/hello_call.s"
     "src/test-resources/test_var.s"
     "src/test-resources/test_45gs02.s"
+    "src/test-resources/test_equates_advanced.s"
+    "src/test-resources/test_flat_z_all.s"
+    "src/test-resources/test_accumulator_labels.s"
+    "src/test-resources/test_multi_org.s"
 )
 
 for f in "${AS_TEST_FILES[@]}"; do
