@@ -117,6 +117,8 @@ private:
     int calculateDirectiveSize(const Directive& dir);
     int calculateExprSize(int tokenIndex, const std::string& scopePrefix = "");
     uint8_t getOpcode(const std::string& mnemonic, AddressingMode mode);
+    std::string AddressingModeToString(AddressingMode mode);
+    std::vector<AddressingMode> getValidAddressingModes(const std::string& mnemonic);
     uint32_t evaluateExpressionAt(int index, const std::string& scopePrefix = "");
     void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix = "");
     void emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");

@@ -212,8 +212,10 @@ struct BinaryExpr : public ExprAST {
         if (op == "+") return l + r;
         if (op == "-") return l - r;
         if (op == "*") return l * r;
-        // TODO: Add explicit assembler-time error for division by zero here.
-        if (op == "/") { return r != 0 ? l / r : 0; }
+        if (op == "/") { 
+            if (r == 0) throw std::runtime_error("Division by zero in expression");
+            return l / r; 
+        }
         if (op == "&") return l & r;
         if (op == "|") return l | r;
         if (op == "^") return l ^ r;
@@ -300,13 +302,14 @@ const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std
 }
 
 static uint32_t parseNumericLiteral(const std::string& literal) {
-    if (literal.empty()) return 0;
+    if (literal.empty()) throw std::runtime_error("Empty numeric literal");
     try {
-        // TODO: Add checks for integer overflow during parsing.
         if (literal[0] == '$') return std::stoul(literal.substr(1), nullptr, 16);
         if (literal[0] == '%') return std::stoul(literal.substr(1), nullptr, 2);
         return std::stoul(literal);
-    } catch (...) { return 0; }
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Invalid numeric literal: " + literal + " (" + e.what() + ")");
+    }
 }
 
 std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens, int& idx, std::map<std::string, Symbol>& symbolTable, const std::string& scopePrefix = "") {
@@ -365,8 +368,11 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
 }
 
 uint32_t AssemblerParser::evaluateExpressionAt(int index, const std::string& scopePrefix) {
-    int idx = index; auto ast = parseExprAST(tokens, idx, symbolTable, scopePrefix);
-    if (!ast) return 0;
+    int idx = index; 
+    auto ast = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+    if (!ast) {
+        throw std::runtime_error("Expected expression at " + std::to_string(tokens[index].line) + ":" + std::to_string(tokens[index].column));
+    }
     return ast->getValue(this);
 }
 
@@ -413,6 +419,13 @@ void AssemblerParser::pass1() {
             stmt->label = stmt->scopePrefix + advance().value; advance(); symbolTable[stmt->label] = {pc, true, 2};
         }
 
+        if (peek().type == AssemblerTokenType::NEWLINE) {
+            if (stmt->label.empty()) {
+                advance();
+                continue;
+            }
+        }
+
         if (match(AssemblerTokenType::OPEN_CURLY)) {
             scopeStack.push_back("_S" + std::to_string(nextScopeId++));
             stmt->size = 0;
@@ -424,6 +437,7 @@ void AssemblerParser::pass1() {
             statements.push_back(std::move(stmt));
             continue;
         } else if (match(AssemblerTokenType::DIRECTIVE)) {
+            // ... existing directive handling ...
             stmt->type = Statement::DIRECTIVE; stmt->dir.name = tokens[pos-1].value;
             if (stmt->dir.name == "var") {
                 std::string varName = expect(AssemblerTokenType::IDENTIFIER, "Expected var name").value;
@@ -556,7 +570,14 @@ void AssemblerParser::pass1() {
                 if (stmt->instr.mode == AddressingMode::ABSOLUTE_Y && !stmt->instr.operand.empty()) { try { uint32_t val = parseNumericLiteral(stmt->instr.operand); if (val <= 0xFF) stmt->instr.mode = AddressingMode::BASE_PAGE_Y; } catch(...) {} }
                 stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
             }
-        } else if (stmt->label.empty()) { advance(); continue; }
+        } else if (stmt->label.empty()) { 
+            const auto& t = peek();
+            if (t.type != AssemblerTokenType::END_OF_FILE && t.type != AssemblerTokenType::NEWLINE) {
+                throw std::runtime_error("Unexpected token: " + t.value + " (" + t.typeToString() + ") at line " + std::to_string(t.line));
+            }
+            advance(); 
+            continue; 
+        }
         pc += stmt->size; statements.push_back(std::move(stmt));
     }
 
@@ -618,8 +639,36 @@ int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t
     return size;
 }
 
-uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
-    std::string baseM = m; if (m.size() > 1 && m.back() == 'Q' && m != "LDQ" && m != "STQ" && m.substr(0, 3) != "BEQ" && m.substr(0, 3) != "BNE" && m.substr(0, 3) != "BRA" && m.substr(0, 3) != "BSR") baseM = m.substr(0, m.size() - 1);
+std::string AssemblerParser::AddressingModeToString(AddressingMode mode) {
+    switch (mode) {
+        case AddressingMode::IMPLIED: return "Implied";
+        case AddressingMode::ACCUMULATOR: return "A";
+        case AddressingMode::IMMEDIATE: return "#imm";
+        case AddressingMode::IMMEDIATE16: return "#imm16";
+        case AddressingMode::BASE_PAGE: return "zp";
+        case AddressingMode::BASE_PAGE_X: return "zp,X";
+        case AddressingMode::BASE_PAGE_Y: return "zp,Y";
+        case AddressingMode::ABSOLUTE: return "abs";
+        case AddressingMode::ABSOLUTE_X: return "abs,X";
+        case AddressingMode::ABSOLUTE_Y: return "abs,Y";
+        case AddressingMode::INDIRECT: return "(zp)";
+        case AddressingMode::BASE_PAGE_X_INDIRECT: return "(zp,X)";
+        case AddressingMode::BASE_PAGE_INDIRECT_Y: return "(zp),Y";
+        case AddressingMode::BASE_PAGE_INDIRECT_Z: return "(zp),Z";
+        case AddressingMode::BASE_PAGE_INDIRECT_SP_Y: return "(zp,SP),Y";
+        case AddressingMode::ABSOLUTE_INDIRECT: return "(abs)";
+        case AddressingMode::ABSOLUTE_X_INDIRECT: return "(abs,X)";
+        case AddressingMode::RELATIVE: return "rel";
+        case AddressingMode::RELATIVE16: return "rel16";
+        case AddressingMode::BASE_PAGE_RELATIVE: return "zp,rel";
+        case AddressingMode::FLAT_INDIRECT_Z: return "[zp],Z";
+        case AddressingMode::QUAD_Q: return "Q";
+        case AddressingMode::STACK_RELATIVE: return "offset,S";
+        default: return "Unknown";
+    }
+}
+
+static const std::map<std::pair<std::string, AddressingMode>, uint8_t>& getOpcodeMap() {
     static const std::map<std::pair<std::string, AddressingMode>, uint8_t> opcodes = {
         { {"ADC", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0x71 }, { {"ADC", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x72 }, { {"ADC", AddressingMode::STACK_RELATIVE}, 0x72 }, { {"ADC", AddressingMode::BASE_PAGE_X_INDIRECT}, 0x61 }, { {"ADC", AddressingMode::ABSOLUTE}, 0x6D }, { {"ADC", AddressingMode::ABSOLUTE_X}, 0x7D }, { {"ADC", AddressingMode::ABSOLUTE_Y}, 0x79 }, { {"ADC", AddressingMode::BASE_PAGE}, 0x65 }, { {"ADC", AddressingMode::BASE_PAGE_X}, 0x75 }, { {"ADC", AddressingMode::IMMEDIATE}, 0x69 },
         { {"AND", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0x31 }, { {"AND", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x32 }, { {"AND", AddressingMode::STACK_RELATIVE}, 0x32 }, { {"AND", AddressingMode::BASE_PAGE_X_INDIRECT}, 0x21 }, { {"AND", AddressingMode::ABSOLUTE}, 0x2D }, { {"AND", AddressingMode::ABSOLUTE_X}, 0x3D }, { {"AND", AddressingMode::ABSOLUTE_Y}, 0x39 }, { {"AND", AddressingMode::BASE_PAGE}, 0x25 }, { {"AND", AddressingMode::BASE_PAGE_X}, 0x35 }, { {"AND", AddressingMode::IMMEDIATE}, 0x29 },
@@ -643,7 +692,6 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
         { {"LDY", AddressingMode::ABSOLUTE}, 0xAC }, { {"LDY", AddressingMode::ABSOLUTE_X}, 0xBC }, { {"LDY", AddressingMode::BASE_PAGE}, 0xA4 }, { {"LDY", AddressingMode::BASE_PAGE_X}, 0xB4 }, { {"LDY", AddressingMode::IMMEDIATE}, 0xA0 },
         { {"LDZ", AddressingMode::ABSOLUTE}, 0xAB }, { {"LDZ", AddressingMode::ABSOLUTE_X}, 0xBB }, { {"LDZ", AddressingMode::IMMEDIATE}, 0xA3 }, { {"LDQ", AddressingMode::BASE_PAGE}, 0xA5 }, { {"LDQ", AddressingMode::ABSOLUTE}, 0xAD }, { {"LDQ", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0xB2 }, { {"LDQ", AddressingMode::FLAT_INDIRECT_Z}, 0xB2 },
         { {"LSR", AddressingMode::ABSOLUTE}, 0x4E }, { {"LSR", AddressingMode::ABSOLUTE_X}, 0x5E }, { {"LSR", AddressingMode::ACCUMULATOR}, 0x4A }, { {"LSR", AddressingMode::BASE_PAGE}, 0x46 }, { {"LSR", AddressingMode::BASE_PAGE_X}, 0x56 }, { {"MAP", AddressingMode::IMPLIED}, 0x5C }, { {"NEG", AddressingMode::ACCUMULATOR}, 0x42 }, 
-        // NOTE: NOP ($EA) is not implemented as it is used as a prefix for other sequences (e.g. flat addressing) or as EOM.
         { {"ORA", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0x11 }, { {"ORA", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x12 }, { {"ORA", AddressingMode::STACK_RELATIVE}, 0x12 }, { {"ORA", AddressingMode::BASE_PAGE_X_INDIRECT}, 0x01 }, { {"ORA", AddressingMode::ABSOLUTE}, 0x0D }, { {"ORA", AddressingMode::ABSOLUTE_X}, 0x1D }, { {"ORA", AddressingMode::ABSOLUTE_Y}, 0x19 }, { {"ORA", AddressingMode::BASE_PAGE}, 0x05 }, { {"ORA", AddressingMode::BASE_PAGE_X}, 0x15 }, { {"ORA", AddressingMode::IMMEDIATE}, 0x09 },
         { {"PHA", AddressingMode::IMPLIED}, 0x48 }, { {"PHP", AddressingMode::IMPLIED}, 0x08 }, { {"PHW", AddressingMode::ABSOLUTE}, 0xFC }, { {"PHW", AddressingMode::IMMEDIATE16}, 0xF4 }, { {"PHX", AddressingMode::IMPLIED}, 0xDA }, { {"PHY", AddressingMode::IMPLIED}, 0x5A }, { {"PHZ", AddressingMode::IMPLIED}, 0xDB }, { {"PLA", AddressingMode::IMPLIED}, 0x68 }, { {"PLP", AddressingMode::IMPLIED}, 0x28 }, { {"PLX", AddressingMode::IMPLIED}, 0xFA }, { {"PLY", AddressingMode::IMPLIED}, 0x7A }, { {"PLZ", AddressingMode::IMPLIED}, 0xFB },
         { {"RMB0", AddressingMode::BASE_PAGE}, 0x07 }, { {"RMB1", AddressingMode::BASE_PAGE}, 0x17 }, { {"RMB2", AddressingMode::BASE_PAGE}, 0x27 }, { {"RMB3", AddressingMode::BASE_PAGE}, 0x37 }, { {"RMB4", AddressingMode::BASE_PAGE}, 0x47 }, { {"RMB5", AddressingMode::BASE_PAGE}, 0x57 }, { {"RMB6", AddressingMode::BASE_PAGE}, 0x67 }, { {"RMB7", AddressingMode::BASE_PAGE}, 0x77 },
@@ -657,7 +705,33 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
         { {"STZ", AddressingMode::ABSOLUTE}, 0x9C }, { {"STZ", AddressingMode::ABSOLUTE_X}, 0x9E }, { {"STZ", AddressingMode::BASE_PAGE}, 0x64 }, { {"STZ", AddressingMode::BASE_PAGE_X}, 0x74 }, { {"STQ", AddressingMode::BASE_PAGE}, 0x85 }, { {"STQ", AddressingMode::ABSOLUTE}, 0x8D }, { {"STQ", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x92 }, { {"STQ", AddressingMode::FLAT_INDIRECT_Z}, 0x92 },
         { {"TAB", AddressingMode::IMPLIED}, 0x5B }, { {"TAX", AddressingMode::IMPLIED}, 0xAA }, { {"TAY", AddressingMode::IMPLIED}, 0xA8 }, { {"TAZ", AddressingMode::IMPLIED}, 0x4B }, { {"TBA", AddressingMode::IMPLIED}, 0x7B }, { {"TRB", AddressingMode::ABSOLUTE}, 0x1C }, { {"TRB", AddressingMode::BASE_PAGE}, 0x14 }, { {"TSB", AddressingMode::ABSOLUTE}, 0x0C }, { {"TSB", AddressingMode::BASE_PAGE}, 0x04 }, { {"TSX", AddressingMode::IMPLIED}, 0xBA }, { {"TSY", AddressingMode::IMPLIED}, 0x0B }, { {"TXA", AddressingMode::IMPLIED}, 0x8A }, { {"TXS", AddressingMode::IMPLIED}, 0x9A }, { {"TYA", AddressingMode::IMPLIED}, 0x98 }, { {"TYS", AddressingMode::IMPLIED}, 0x2B }, { {"TZA", AddressingMode::IMPLIED}, 0x6B },
     };
-    auto it = opcodes.find({baseM, mode}); if (it != opcodes.end()) return it->second; return 0;
+    return opcodes;
+}
+
+uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
+    std::string baseM = m; 
+    if (m.size() > 1 && m.back() == 'Q' && m != "LDQ" && m != "STQ" && m.substr(0, 3) != "BEQ" && m.substr(0, 3) != "BNE" && m.substr(0, 3) != "BRA" && m.substr(0, 3) != "BSR") {
+        baseM = m.substr(0, m.size() - 1);
+    }
+    const auto& opcodes = getOpcodeMap();
+    auto it = opcodes.find({baseM, mode});
+    if (it != opcodes.end()) return it->second;
+    return 0;
+}
+
+std::vector<AddressingMode> AssemblerParser::getValidAddressingModes(const std::string& mnemonic) {
+    std::string baseM = mnemonic;
+    if (mnemonic.size() > 1 && mnemonic.back() == 'Q' && mnemonic != "LDQ" && mnemonic != "STQ" && mnemonic.substr(0, 3) != "BEQ" && mnemonic.substr(0, 3) != "BNE" && mnemonic.substr(0, 3) != "BRA" && mnemonic.substr(0, 3) != "BSR") {
+        baseM = mnemonic.substr(0, mnemonic.size() - 1);
+    }
+    std::vector<AddressingMode> modes;
+    const auto& opcodes = getOpcodeMap();
+    for (const auto& entry : opcodes) {
+        if (entry.first.first == baseM) {
+            modes.push_back(entry.first.second);
+        }
+    }
+    return modes;
 }
 
 void AssemblerParser::emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix) {
@@ -813,7 +887,24 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                     if (isQuad) { binary.push_back(0x42); binary.push_back(0x42); }
                     if (stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z) e.eom();
                     bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" || stmt->instr.mnemonic == "BSR");
-                    if (!isBranch) { uint8_t op = getOpcode(stmt->instr.mnemonic, stmt->instr.mode); if (op != 0 || stmt->instr.mnemonic == "BRK") binary.push_back(op); }
+                    if (!isBranch) { 
+                        uint8_t op = getOpcode(stmt->instr.mnemonic, stmt->instr.mode); 
+                        if (op == 0 && stmt->instr.mnemonic != "BRK") {
+                            std::string errorMsg = "Invalid instruction or addressing mode: " + stmt->instr.mnemonic + " " + AddressingModeToString(stmt->instr.mode);
+                            auto validModes = getValidAddressingModes(stmt->instr.mnemonic);
+                            if (validModes.empty()) {
+                                errorMsg = "Unknown mnemonic: " + stmt->instr.mnemonic;
+                            } else {
+                                errorMsg += ". Valid addressing modes for " + stmt->instr.mnemonic + " are: ";
+                                for (size_t i = 0; i < validModes.size(); ++i) {
+                                    errorMsg += AddressingModeToString(validModes[i]);
+                                    if (i < validModes.size() - 1) errorMsg += ", ";
+                                }
+                            }
+                            throw std::runtime_error(errorMsg + " at line " + std::to_string(stmt->line));
+                        }
+                        binary.push_back(op); 
+                    }
                     if (stmt->instr.mode == AddressingMode::IMMEDIATE || stmt->instr.mode == AddressingMode::STACK_RELATIVE || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Z || stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || stmt->instr.mode == AddressingMode::BASE_PAGE_X_INDIRECT || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Y || stmt->instr.mode == AddressingMode::BASE_PAGE || stmt->instr.mode == AddressingMode::BASE_PAGE_X || stmt->instr.mode == AddressingMode::BASE_PAGE_Y) {
                         Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
                         uint32_t v = sym ? sym->value : parseNumericLiteral(stmt->instr.operand);

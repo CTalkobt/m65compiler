@@ -68,13 +68,18 @@ int main(int argc, char** argv) {
     }
 
     AssemblerParser parser(tokens, predefinedSymbols);
-    parser.pass1();
-    auto binary = parser.pass2();
+    try {
+        parser.pass1();
+        auto binary = parser.pass2();
 
-    if (!binary.empty()) {
-        std::ofstream out(output_file, std::ios::binary);
-        out.write(reinterpret_cast<const char*>(binary.data()), binary.size());
-        std::cout << "Assembled to " << output_file << " (" << binary.size() << " bytes)" << std::endl;
+        if (!binary.empty()) {
+            std::ofstream out(output_file, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(binary.data()), binary.size());
+            std::cout << "Assembled to " << output_file << " (" << binary.size() << " bytes)" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Assembly Error: " << e.what() << std::endl;
+        return 1;
     }
 
     return 0;
