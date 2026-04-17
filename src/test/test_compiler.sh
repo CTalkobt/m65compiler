@@ -20,6 +20,7 @@ TEST_FILES=(
     "src/test-resources/guess.c"
     "src/test-resources/hello_world.c"
     "src/test-resources/test_ptr_arith.c"
+    "src/test-resources/test_constant_folding.c"
 )
 
 mkdir -p build/test

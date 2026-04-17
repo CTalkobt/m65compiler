@@ -9,7 +9,7 @@ Legend:
 ## Current Optimizations
 - [X] **Dead Code Removal**: Detect and remove code following a `return` statement.
 - [X] **Redundant RTN Removal**: Optimize `RTN #0` to `RTS`.
-- [ ] **Constant Folding**: Evaluate `1 + 2` at compile time.
+- [X] **Constant Folding**: Evaluate `1 + 2` at compile time.
 - [ ] **Strength Reduction**: Convert `x * 2` to `x << 1`.
 - [ ] **Register Allocation**: Better usage of A, X, Y, Z to reduce stack traffic.
 - [X] **Increment Optimization**: Use `INC A`, `INX`, etc. for `+ 1`.

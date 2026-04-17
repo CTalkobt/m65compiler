@@ -8,6 +8,7 @@
 #include "Parser.hpp"
 #include "AST.hpp"
 #include "CodeGenerator.hpp"
+#include "ConstantFolder.hpp"
 
 class ASTPrinter : public ASTVisitor {
 public:
@@ -229,6 +230,13 @@ int main(int argc, char** argv) {
     Parser parser(tokens);
     try {
         auto ast = parser.parse();
+
+        if (verbose) {
+            std::cout << "Folding constants..." << std::endl;
+        }
+        ConstantFolder folder;
+        ast->accept(folder);
+
         if (verbose) {
             ASTPrinter printer;
             ast->accept(printer);
