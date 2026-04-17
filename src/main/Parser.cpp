@@ -26,8 +26,8 @@ const Token& Parser::expect(TokenType type, const std::string& message) {
     if (peek().type == type) {
         return advance();
     }
-    // TODO: Improve error handling to provide helpful suggestions instead of generic runtime_errors.
-    throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": " + message);
+    std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
+    throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": " + message + ". Found '" + foundStr + "' (" + peek().typeToString() + ") instead.");
 }
 
 std::unique_ptr<TranslationUnit> Parser::parse() {
@@ -43,7 +43,10 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     if (match(TokenType::INT)) returnType = "int";
     else if (match(TokenType::CHAR)) returnType = "char";
     else if (match(TokenType::VOID)) returnType = "void";
-    else throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type");
+    else {
+        std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
+        throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type (int, char, void) for function declaration. Found '" + foundStr + "' instead.");
+    }
 
     match(TokenType::STAR); // return pointer (optional)
 
@@ -56,7 +59,10 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
             std::string pType;
             if (match(TokenType::INT)) pType = "int";
             else if (match(TokenType::CHAR)) pType = "char";
-            else throw std::runtime_error("Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type");
+            else {
+                std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
+                throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type (int, char). Found '" + foundStr + "' instead.");
+            }
 
             bool pIsPtr = match(TokenType::STAR);
 
@@ -322,5 +328,6 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         return expr;
     }
 
-    throw std::runtime_error("Expected expression at " + std::to_string(peek().line) + ":" + std::to_string(peek().column));
+    std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
+    throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected expression. Found '" + foundStr + "' (" + peek().typeToString() + ") instead.");
 }

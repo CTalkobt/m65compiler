@@ -73,7 +73,10 @@ void CodeGenerator::visit(Assignment& node) {
     node.expression->accept(*this);
     emit("STA " + node.name + ", s");
     if (variableTypes.count(node.name) && (variableTypes[node.name].isPointer || variableTypes[node.name].type != "char")) {
-        emit("STX " + node.name + "+1, s");
+        emit("PHA");
+        emit("TXA");
+        emit("STA " + node.name + "+1, s");
+        emit("PLA");
     }
 }
 
@@ -147,8 +150,14 @@ void CodeGenerator::visit(StringLiteral& node) {
 }
 void CodeGenerator::visit(VariableReference& node) {
     emit("LDA " + node.name + ", s");
-    if (variableTypes.count(node.name) && variableTypes[node.name].type == "char" && !variableTypes[node.name].isPointer) emitter->ldx_imm(0);
-    else emit("LDX " + node.name + "+1, s");
+    if (variableTypes.count(node.name) && variableTypes[node.name].type == "char" && !variableTypes[node.name].isPointer) {
+        emitter->ldx_imm(0);
+    } else {
+        emit("PHA");
+        emit("LDA " + node.name + "+1, s");
+        emit("TAX");
+        emit("PLA");
+    }
 }
 void CodeGenerator::visit(FunctionCall& node) {
     for (auto& arg : node.arguments) {
@@ -240,7 +249,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
     } else if (node.op == "/") {
         emitter->sta_s(0); emitter->stx_s(1);
         if (lhsSize == 1) { emitter->lda_stack(1); emitter->ldx_imm(0); }
-        else { emit("LDA 2, s"); emit("LDX 3, s"); }
+        else { emit("LDA 3, s"); emit("TAX"); emit("LDA 2, s"); }
         emit("div.16 .AX, " + std::to_string((int)emitter->getZP(0)));
     }
     emit("RTN #" + std::to_string(lhsSize));

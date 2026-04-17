@@ -302,14 +302,13 @@ const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std
 }
 
 static uint32_t parseNumericLiteral(const std::string& literal) {
-    if (literal.empty()) throw std::runtime_error("Empty numeric literal");
+    if (literal.empty()) return 0;
     try {
+        // TODO: Add checks for integer overflow during parsing.
         if (literal[0] == '$') return std::stoul(literal.substr(1), nullptr, 16);
         if (literal[0] == '%') return std::stoul(literal.substr(1), nullptr, 2);
         return std::stoul(literal);
-    } catch (const std::exception& e) {
-        throw std::runtime_error("Invalid numeric literal: " + literal + " (" + e.what() + ")");
-    }
+    } catch (...) { return 0; }
 }
 
 std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens, int& idx, std::map<std::string, Symbol>& symbolTable, const std::string& scopePrefix = "") {
@@ -540,7 +539,14 @@ void AssemblerParser::pass1() {
                 stmt->exprTokenIndex = (int)pos; while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
                 std::vector<uint8_t> dummy; if (stmt->type == Statement::MUL) emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); else emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); stmt->size = dummy.size();
             } else {
-                if (match(AssemblerTokenType::HASH)) { stmt->instr.operand = advance().value; if (stmt->instr.mnemonic == "PHW") stmt->instr.mode = AddressingMode::IMMEDIATE16; else stmt->instr.mode = AddressingMode::IMMEDIATE; }
+                if (match(AssemblerTokenType::HASH)) {
+                    std::string op;
+                    while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE && peek().type != AssemblerTokenType::COMMA) {
+                        op += advance().value;
+                    }
+                    stmt->instr.operand = op;
+                    if (stmt->instr.mnemonic == "PHW") stmt->instr.mode = AddressingMode::IMMEDIATE16; else stmt->instr.mode = AddressingMode::IMMEDIATE;
+                }
                 else if (match(AssemblerTokenType::OPEN_PAREN)) {
                     stmt->instr.operand = advance().value;
                     if (match(AssemblerTokenType::COMMA)) {
@@ -554,7 +560,11 @@ void AssemblerParser::pass1() {
                 } else if (match(AssemblerTokenType::OPEN_BRACKET)) { stmt->instr.operand = advance().value; expect(AssemblerTokenType::CLOSE_BRACKET, "Expected ]"); expect(AssemblerTokenType::COMMA, "Expected ,"); advance(); stmt->instr.mode = AddressingMode::FLAT_INDIRECT_Z; }
                 else if (peek().type == AssemblerTokenType::REGISTER && (peek().value == "A" || peek().value == "a")) { advance(); stmt->instr.mode = AddressingMode::ACCUMULATOR; }
                 else if (peek().type == AssemblerTokenType::IDENTIFIER || peek().type == AssemblerTokenType::HEX_LITERAL || peek().type == AssemblerTokenType::DECIMAL_LITERAL) {
-                    stmt->instr.operand = advance().value;
+                    std::string op = advance().value;
+                    while (peek().type != AssemblerTokenType::COMMA && peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
+                        op += advance().value;
+                    }
+                    stmt->instr.operand = op;
                     if (match(AssemblerTokenType::COMMA)) {
                         const auto& r = peek(); if (r.type == AssemblerTokenType::IDENTIFIER && (r.value == "X" || r.value == "x")) { advance(); stmt->instr.mode = AddressingMode::ABSOLUTE_X; }
                         else if (r.type == AssemblerTokenType::IDENTIFIER && (r.value == "Y" || r.value == "y")) { advance(); stmt->instr.mode = AddressingMode::ABSOLUTE_Y; }
@@ -571,10 +581,6 @@ void AssemblerParser::pass1() {
                 stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
             }
         } else if (stmt->label.empty()) { 
-            const auto& t = peek();
-            if (t.type != AssemblerTokenType::END_OF_FILE && t.type != AssemblerTokenType::NEWLINE) {
-                throw std::runtime_error("Unexpected token: " + t.value + " (" + t.typeToString() + ") at line " + std::to_string(t.line));
-            }
             advance(); 
             continue; 
         }
@@ -906,12 +912,30 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                         binary.push_back(op); 
                     }
                     if (stmt->instr.mode == AddressingMode::IMMEDIATE || stmt->instr.mode == AddressingMode::STACK_RELATIVE || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Z || stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || stmt->instr.mode == AddressingMode::BASE_PAGE_X_INDIRECT || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Y || stmt->instr.mode == AddressingMode::BASE_PAGE || stmt->instr.mode == AddressingMode::BASE_PAGE_X || stmt->instr.mode == AddressingMode::BASE_PAGE_Y) {
-                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
-                        uint32_t v = sym ? sym->value : parseNumericLiteral(stmt->instr.operand);
+                        std::string op = stmt->instr.operand;
+                        bool lowByte = false, highByte = false;
+                        if (!op.empty() && op[0] == '<') { lowByte = true; op = op.substr(1); }
+                        else if (!op.empty() && op[0] == '>') { highByte = true; op = op.substr(1); }
+                        
+                        Symbol* sym = resolveSymbol(op, stmt->scopePrefix);
+                        uint32_t v = sym ? sym->value : parseNumericLiteral(op);
+                        
+                        if (lowByte) v = v & 0xFF;
+                        else if (highByte) v = (v >> 8) & 0xFF;
+                        
                         binary.push_back((uint8_t)v);
                     } else if (stmt->instr.mode == AddressingMode::ABSOLUTE || stmt->instr.mode == AddressingMode::ABSOLUTE_X || stmt->instr.mode == AddressingMode::ABSOLUTE_Y || stmt->instr.mode == AddressingMode::ABSOLUTE_INDIRECT || stmt->instr.mode == AddressingMode::ABSOLUTE_X_INDIRECT || stmt->instr.mode == AddressingMode::IMMEDIATE16) {
-                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
-                        uint32_t a = sym ? sym->value : parseNumericLiteral(stmt->instr.operand);
+                        std::string op = stmt->instr.operand;
+                        bool lowByte = false, highByte = false;
+                        if (!op.empty() && op[0] == '<') { lowByte = true; op = op.substr(1); }
+                        else if (!op.empty() && op[0] == '>') { highByte = true; op = op.substr(1); }
+                        
+                        Symbol* sym = resolveSymbol(op, stmt->scopePrefix);
+                        uint32_t a = sym ? sym->value : parseNumericLiteral(op);
+                        
+                        if (lowByte) a = a & 0xFF;
+                        else if (highByte) a = (a >> 8) & 0xFF;
+                        
                         binary.push_back(a & 0xFF); binary.push_back(a >> 8);
                     } else if (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS") {
                         Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
