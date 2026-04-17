@@ -43,6 +43,12 @@ public:
         for (auto& arg : node.arguments) arg->accept(*this);
         indent--;
     }
+    void visit(MemberAccess& node) override {
+        printIndent(); std::cout << "MemberAccess: " << (node.isArrow ? "->" : ".") << node.memberName << std::endl;
+        indent++;
+        node.structExpr->accept(*this);
+        indent--;
+    }
     void visit(VariableDeclaration& node) override {
         printIndent(); std::cout << "VariableDeclaration: " << node.name << " (" << node.type << ")" << std::endl;
         if (node.initializer) {
@@ -140,6 +146,16 @@ public:
     void visit(AsmStatement& node) override {
         printIndent(); std::cout << "AsmStatement: " << node.code << std::endl;
     }
+    void visit(StructDefinition& node) override {
+        printIndent(); std::cout << "StructDefinition: " << node.name << std::endl;
+        indent++;
+        for (const auto& member : node.members) {
+            std::string ptrs = "";
+            for (int i = 0; i < member.pointerLevel; i++) ptrs += "*";
+            printIndent(); std::cout << "Member: " << member.name << " (" << member.type << ptrs << ")" << std::endl;
+        }
+        indent--;
+    }
     void visit(CompoundStatement& node) override {
         printIndent(); std::cout << "CompoundStatement" << std::endl;
         indent++;
@@ -160,7 +176,7 @@ public:
     void visit(TranslationUnit& node) override {
         printIndent(); std::cout << "TranslationUnit" << std::endl;
         indent++;
-        for (auto& func : node.functions) func->accept(*this);
+        for (auto& decl : node.topLevelDecls) decl->accept(*this);
         indent--;
     }
 };

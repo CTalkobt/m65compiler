@@ -90,11 +90,14 @@ Token Lexer::nextToken() {
         case '}': return {TokenType::CLOSE_BRACE, "}", startLine, startCol};
         case ';': return {TokenType::SEMICOLON, ";", startLine, startCol};
         case ',': return {TokenType::COMMA, ",", startLine, startCol};
+        case '.': return {TokenType::DOT, ".", startLine, startCol};
         case '=': 
             if (peek() == '=') { get(); return {TokenType::EQUALS_EQUALS, "==", startLine, startCol}; }
             return {TokenType::EQUALS, "=", startLine, startCol};
         case '+': return {TokenType::PLUS, "+", startLine, startCol};
-        case '-': return {TokenType::MINUS, "-", startLine, startCol};
+        case '-': 
+            if (peek() == '>') { get(); return {TokenType::ARROW, "->", startLine, startCol}; }
+            return {TokenType::MINUS, "-", startLine, startCol};
         case '*': return {TokenType::STAR, "*", startLine, startCol};
         case '/': return {TokenType::SLASH, "/", startLine, startCol};
         case '<':
@@ -139,7 +142,8 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"for", TokenType::FOR},
         {"do", TokenType::DO},
         {"asm", TokenType::ASM},
-        {"__asm__", TokenType::ASM}
+        {"__asm__", TokenType::ASM},
+        {"struct", TokenType::STRUCT}
     };
 
     auto it = keywords.find(value);

@@ -20,7 +20,18 @@ public:
         std::string type;
         int pointerLevel;
     };
+    struct MemberInfo {
+        std::string type;
+        int pointerLevel;
+        int offset;
+    };
+    struct StructInfo {
+        std::string name;
+        std::map<std::string, MemberInfo> members;
+        int totalSize;
+    };
     std::map<std::string, VarInfo> variableTypes;
+    std::map<std::string, StructInfo> structs;
     uint32_t zeroPageStart = 0x02;
 
     void visit(IntegerLiteral& node) override;
@@ -30,6 +41,7 @@ public:
     void visit(BinaryOperation& node) override;
     void visit(UnaryOperation& node) override;
     void visit(FunctionCall& node) override;
+    void visit(MemberAccess& node) override;
     void visit(VariableDeclaration& node) override;
     void visit(ReturnStatement& node) override;
     void visit(ExpressionStatement& node) override;
@@ -38,6 +50,7 @@ public:
     void visit(DoWhileStatement& node) override;
     void visit(ForStatement& node) override;
     void visit(AsmStatement& node) override;
+    void visit(StructDefinition& node) override;
     void visit(CompoundStatement& node) override;
     void visit(FunctionDeclaration& node) override;
     void visit(TranslationUnit& node) override;
@@ -53,4 +66,6 @@ private:
     void emit(const std::string& line);
     void emitData();
     std::string newLabel();
+    ExpressionType getExprType(Expression* expr);
+    void emitAddress(Expression* expr);
 };

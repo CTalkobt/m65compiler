@@ -107,6 +107,10 @@ public:
         lastExpr = std::move(call);
     }
 
+    void visit(MemberAccess& node) override {
+        lastExpr = std::make_unique<MemberAccess>(fold(std::move(node.structExpr)), node.memberName, node.isArrow);
+    }
+
     void visit(VariableDeclaration& node) override {
         auto decl = std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel);
         if (node.initializer) {
@@ -174,6 +178,12 @@ public:
         lastStmt = std::make_unique<AsmStatement>(node.code);
     }
 
+    void visit(StructDefinition& node) override {
+        auto def = std::make_unique<StructDefinition>(node.name);
+        def->members = node.members;
+        lastStmt = std::move(def);
+    }
+
     void visit(CompoundStatement& node) override {
         auto compound = std::make_unique<CompoundStatement>();
         for (auto& stmt : node.statements) {
@@ -192,8 +202,8 @@ public:
     }
 
     void visit(TranslationUnit& node) override {
-        for (auto& func : node.functions) {
-            visit(*func);
+        for (auto& decl : node.topLevelDecls) {
+            decl->accept(*this);
         }
     }
 };

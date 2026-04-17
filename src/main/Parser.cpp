@@ -33,7 +33,18 @@ const Token& Parser::expect(TokenType type, const std::string& message) {
 std::unique_ptr<TranslationUnit> Parser::parse() {
     auto unit = std::make_unique<TranslationUnit>();
     while (peek().type != TokenType::END_OF_FILE) {
-        unit->functions.push_back(parseFunctionDeclaration());
+        if (peek().type == TokenType::STRUCT) {
+            // Check if it's a definition: struct name { ... };
+            if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER &&
+                pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
+                advance(); // struct
+                unit->topLevelDecls.push_back(parseStructDefinition());
+            } else {
+                unit->topLevelDecls.push_back(parseFunctionDeclaration());
+            }
+        } else {
+            unit->topLevelDecls.push_back(parseFunctionDeclaration());
+        }
     }
     return unit;
 }
@@ -43,9 +54,10 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     if (match(TokenType::INT)) returnType = "int";
     else if (match(TokenType::CHAR)) returnType = "char";
     else if (match(TokenType::VOID)) returnType = "void";
+    else if (match(TokenType::STRUCT)) returnType = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
     else {
         std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
-        throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type (int, char, void) for function declaration. Found '" + foundStr + "' instead.");
+        throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type (int, char, void, struct) for function declaration. Found '" + foundStr + "' instead.");
     }
 
     match(TokenType::STAR); // return pointer (optional)
@@ -59,9 +71,10 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
             std::string pType;
             if (match(TokenType::INT)) pType = "int";
             else if (match(TokenType::CHAR)) pType = "char";
+            else if (match(TokenType::STRUCT)) pType = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
             else {
                 std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
-                throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type (int, char). Found '" + foundStr + "' instead.");
+                throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type (int, char, struct). Found '" + foundStr + "' instead.");
             }
 
             int pPtrLevel = 0;
@@ -91,8 +104,24 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
+    if (match(TokenType::STRUCT)) {
+        if (peek().type == TokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::OPEN_BRACE) {
+            return parseStructDefinition();
+        }
+        // struct name var;
+        std::string structName = expect(TokenType::IDENTIFIER, "Expected struct name").value;
+        int ptrLevel = 0;
+        while (match(TokenType::STAR)) ptrLevel++;
+        std::string varName = expect(TokenType::IDENTIFIER, "Expected variable name").value;
+        auto decl = std::make_unique<VariableDeclaration>("struct " + structName, varName, ptrLevel);
+        if (match(TokenType::EQUALS)) {
+            decl->initializer = parseExpression();
+        }
+        expect(TokenType::SEMICOLON, "Expected ';'");
+        return decl;
+    }
+
     if (peek().type == TokenType::INT || peek().type == TokenType::CHAR) {
-        // TODO: Implement complex nested pointer types and struct types.
         std::string type = (advance().type == TokenType::INT) ? "int" : "char";
         int ptrLevel = 0;
         while (match(TokenType::STAR)) ptrLevel++;
@@ -148,7 +177,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         expect(TokenType::OPEN_PAREN, "Expected '(' after 'for'");
         std::unique_ptr<Statement> initializer = nullptr;
         if (!match(TokenType::SEMICOLON)) {
-            initializer = parseStatement(); // parseStatement handles its own semicolon for decls/exprs
+            initializer = parseStatement();
         }
         std::unique_ptr<Expression> condition = nullptr;
         if (!match(TokenType::SEMICOLON)) {
@@ -179,6 +208,30 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     auto expr = parseExpression();
     expect(TokenType::SEMICOLON, "Expected ';'");
     return std::make_unique<ExpressionStatement>(std::move(expr));
+}
+
+std::unique_ptr<StructDefinition> Parser::parseStructDefinition() {
+    std::string name = expect(TokenType::IDENTIFIER, "Expected struct name").value;
+    expect(TokenType::OPEN_BRACE, "Expected '{'");
+    auto def = std::make_unique<StructDefinition>(name);
+    while (peek().type != TokenType::CLOSE_BRACE && peek().type != TokenType::END_OF_FILE) {
+        std::string type;
+        if (match(TokenType::INT)) type = "int";
+        else if (match(TokenType::CHAR)) type = "char";
+        else if (match(TokenType::STRUCT)) {
+            type = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+        } else {
+            throw std::runtime_error("Expected member type");
+        }
+        int ptrLevel = 0;
+        while (match(TokenType::STAR)) ptrLevel++;
+        std::string memberName = expect(TokenType::IDENTIFIER, "Expected member name").value;
+        def->members.push_back({type, ptrLevel, memberName});
+        expect(TokenType::SEMICOLON, "Expected ';'");
+    }
+    expect(TokenType::CLOSE_BRACE, "Expected '}'");
+    expect(TokenType::SEMICOLON, "Expected ';'");
+    return def;
 }
 
 std::unique_ptr<Expression> Parser::parseExpression() {
@@ -299,6 +352,7 @@ std::unique_ptr<Expression> Parser::parseUnary() {
 }
 
 std::unique_ptr<Expression> Parser::parsePrimary() {
+    std::unique_ptr<Expression> expr;
     if (peek().type == TokenType::IDENTIFIER) {
         std::string name = advance().value;
         if (match(TokenType::OPEN_PAREN)) {
@@ -309,25 +363,26 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
                 } while (match(TokenType::COMMA));
             }
             expect(TokenType::CLOSE_PAREN, "Expected ')'");
-            return call;
+            expr = std::move(call);
+        } else {
+            expr = std::make_unique<VariableReference>(name);
         }
-        return std::make_unique<VariableReference>(name);
-    }
-
-    if (peek().type == TokenType::INTEGER_LITERAL) {
-        return std::make_unique<IntegerLiteral>(std::stoi(advance().value));
-    }
-
-    if (peek().type == TokenType::STRING_LITERAL) {
-        return std::make_unique<StringLiteral>(advance().value);
-    }
-
-    if (match(TokenType::OPEN_PAREN)) {
-        auto expr = parseExpression();
+    } else if (peek().type == TokenType::INTEGER_LITERAL) {
+        expr = std::make_unique<IntegerLiteral>(std::stoi(advance().value));
+    } else if (peek().type == TokenType::STRING_LITERAL) {
+        expr = std::make_unique<StringLiteral>(advance().value);
+    } else if (match(TokenType::OPEN_PAREN)) {
+        expr = parseExpression();
         expect(TokenType::CLOSE_PAREN, "Expected ')'");
-        return expr;
+    } else {
+        std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
+        throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected expression. Found '" + foundStr + "' (" + peek().typeToString() + ") instead.");
     }
 
-    std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
-    throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected expression. Found '" + foundStr + "' (" + peek().typeToString() + ") instead.");
+    while (match(TokenType::DOT) || match(TokenType::ARROW)) {
+        bool isArrow = (tokens[pos-1].type == TokenType::ARROW);
+        std::string memberName = expect(TokenType::IDENTIFIER, "Expected member name").value;
+        expr = std::make_unique<MemberAccess>(std::move(expr), memberName, isArrow);
+    }
+    return expr;
 }

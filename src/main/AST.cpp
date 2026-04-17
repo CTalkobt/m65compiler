@@ -6,6 +6,7 @@ void VariableReference::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void Assignment::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void BinaryOperation::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void UnaryOperation::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void MemberAccess::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionCall::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void VariableDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ReturnStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
@@ -15,6 +16,7 @@ void WhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void DoWhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ForStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AsmStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void StructDefinition::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void CompoundStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void TranslationUnit::accept(ASTVisitor& visitor) { visitor.visit(*this); }

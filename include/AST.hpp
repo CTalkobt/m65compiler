@@ -70,6 +70,16 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class MemberAccess : public Expression {
+public:
+    std::unique_ptr<Expression> structExpr;
+    std::string memberName;
+    bool isArrow;
+    MemberAccess(std::unique_ptr<Expression> s, const std::string& m, bool arrow) 
+        : structExpr(std::move(s)), memberName(m), isArrow(arrow) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class VariableDeclaration : public Statement {
 public:
     std::string type;
@@ -146,6 +156,20 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+struct StructMember {
+    std::string type;
+    int pointerLevel;
+    std::string name;
+};
+
+class StructDefinition : public Statement {
+public:
+    std::string name;
+    std::vector<StructMember> members;
+    StructDefinition(const std::string& n) : name(n) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 struct Parameter {
     std::string type;
     int pointerLevel;
@@ -164,7 +188,7 @@ public:
 
 class TranslationUnit : public ASTNode {
 public:
-    std::vector<std::unique_ptr<FunctionDeclaration>> functions;
+    std::vector<std::unique_ptr<ASTNode>> topLevelDecls;
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -178,6 +202,7 @@ public:
     virtual void visit(BinaryOperation& node) = 0;
     virtual void visit(UnaryOperation& node) = 0;
     virtual void visit(FunctionCall& node) = 0;
+    virtual void visit(MemberAccess& node) = 0;
     virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ReturnStatement& node) = 0;
     virtual void visit(ExpressionStatement& node) = 0;
@@ -186,6 +211,7 @@ public:
     virtual void visit(DoWhileStatement& node) = 0;
     virtual void visit(ForStatement& node) = 0;
     virtual void visit(AsmStatement& node) = 0;
+    virtual void visit(StructDefinition& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;
     virtual void visit(FunctionDeclaration& node) = 0;
     virtual void visit(TranslationUnit& node) = 0;

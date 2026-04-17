@@ -21,6 +21,7 @@ private:
     std::unique_ptr<FunctionDeclaration> parseFunctionDeclaration();
     std::unique_ptr<CompoundStatement> parseCompoundStatement();
     std::unique_ptr<Statement> parseStatement();
+    std::unique_ptr<StructDefinition> parseStructDefinition();
     std::unique_ptr<Expression> parseExpression();
     std::unique_ptr<Expression> parseLogicalOr();
     std::unique_ptr<Expression> parseLogicalAnd();

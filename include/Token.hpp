@@ -13,6 +13,7 @@ enum class TokenType {
     FOR,
     ASM,
     DO,
+    STRUCT,
     
     // Literals
     IDENTIFIER,
@@ -46,6 +47,8 @@ enum class TokenType {
     RSHIFT,        // >>
     AND,           // &&
     OR,            // ||
+    DOT,           // .
+    ARROW,         // ->
     
     // Special
     END_OF_FILE,
@@ -70,6 +73,7 @@ struct Token {
             case TokenType::FOR: return "FOR";
             case TokenType::ASM: return "ASM";
             case TokenType::DO: return "DO";
+            case TokenType::STRUCT: return "STRUCT";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";
@@ -99,6 +103,8 @@ struct Token {
             case TokenType::RSHIFT: return "RSHIFT";
             case TokenType::AND: return "AND";
             case TokenType::OR: return "OR";
+            case TokenType::DOT: return "DOT";
+            case TokenType::ARROW: return "ARROW";
             case TokenType::END_OF_FILE: return "EOF";
             default: return "UNKNOWN";
         }
