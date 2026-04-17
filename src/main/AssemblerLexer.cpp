@@ -174,6 +174,8 @@ AssemblerToken AssemblerLexer::nextToken() {
         case ')': return {AssemblerTokenType::CLOSE_PAREN, ")", startLine, startCol};
         case '[': return {AssemblerTokenType::OPEN_BRACKET, "[", startLine, startCol};
         case ']': return {AssemblerTokenType::CLOSE_BRACKET, "]", startLine, startCol};
+        case '{': return {AssemblerTokenType::OPEN_CURLY, "{", startLine, startCol};
+        case '}': return {AssemblerTokenType::CLOSE_CURLY, "}", startLine, startCol};
         default: return {AssemblerTokenType::UNKNOWN, std::string(1, c), startLine, startCol};
     }
 }

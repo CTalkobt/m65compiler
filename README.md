@@ -13,6 +13,7 @@ The compilation process follows a multi-pass pipeline:
 
 ## Design Philosophy
 - **Procedural Abstraction**: Function calls are treated as first-class citizens with named parameters and automated stack cleanup.
+- **Hierarchical Scoping**: Supports nested local scopes for labels and variables within procedures and `{}` blocks, preventing namespace pollution and allowing safe label reuse.
 - **MEGA65 First**: Special emphasis is placed on supporting the 45GS02 instruction set enhancements, including a high-level expression engine (`EXPR`) that handles constant folding and register arithmetic.
 - **Compatibility**: Supports KickAssembler-style syntax (comments, `* =`, `.cpu`) for easier porting of existing MEGA65 codebases.
 - **Inline Assembly**: Standard C `asm()` and `__asm__()` support for direct hardware control from C source.

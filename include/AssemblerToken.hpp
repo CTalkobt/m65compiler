@@ -5,6 +5,7 @@ enum class AssemblerTokenType {
     IDENTIFIER, INSTRUCTION, DIRECTIVE, REGISTER, FLAG,
     HEX_LITERAL, DECIMAL_LITERAL, BINARY_LITERAL, STRING_LITERAL, CHAR_LITERAL,
     COLON, COMMA, HASH, OPEN_PAREN, CLOSE_PAREN, OPEN_BRACKET, CLOSE_BRACKET,
+    OPEN_CURLY, CLOSE_CURLY,
     EQUALS, PLUS, MINUS, STAR, SLASH, INCREMENT, DECREMENT,
     AMPERSAND, PIPE, CARET, TILDE, BANG, LSHIFT, RSHIFT, AND, OR,
     EQUALS_EQUALS, NOT_EQUALS, LESS_THAN, GREATER_THAN, LESS_EQUAL, GREATER_EQUAL,
@@ -36,6 +37,8 @@ struct AssemblerToken {
             case AssemblerTokenType::CLOSE_PAREN: return "CLOSE_PAREN";
             case AssemblerTokenType::OPEN_BRACKET: return "OPEN_BRACKET";
             case AssemblerTokenType::CLOSE_BRACKET: return "CLOSE_BRACKET";
+            case AssemblerTokenType::OPEN_CURLY: return "OPEN_CURLY";
+            case AssemblerTokenType::CLOSE_CURLY: return "CLOSE_CURLY";
             case AssemblerTokenType::EQUALS: return "EQUALS";
             case AssemblerTokenType::PLUS: return "PLUS";
             case AssemblerTokenType::MINUS: return "MINUS";

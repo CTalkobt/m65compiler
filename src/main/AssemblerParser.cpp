@@ -36,19 +36,20 @@ static std::vector<uint8_t> encodeFloat(double val) {
 
 struct ExprAST {
     virtual ~ExprAST() = default;
-    virtual uint32_t getValue() const = 0;
-    virtual bool isConstant() const = 0;
-    virtual bool is16Bit() const = 0;
+    virtual uint32_t getValue(AssemblerParser* parser) const = 0;
+    virtual bool isConstant(AssemblerParser* parser) const = 0;
+    virtual bool is16Bit(AssemblerParser* parser) const = 0;
     virtual void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) = 0;
 };
 
 struct ConstantNode : public ExprAST {
     uint32_t value;
     ConstantNode(uint32_t v) : value(v) {}
-    uint32_t getValue() const override { return value; }
-    bool isConstant() const override { return true; }
-    bool is16Bit() const override { return value > 0xFF; }
+    uint32_t getValue(AssemblerParser* parser) const override { return value; }
+    bool isConstant(AssemblerParser* parser) const override { return true; }
+    bool is16Bit(AssemblerParser* parser) const override { return value > 0xFF; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
+        if (!parser) return;
         M65Emitter e(binary, parser->getZPStart());
         e.lda_imm(value & 0xFF);
         if (width >= 16) e.ldx_imm((value >> 8) & 0xFF);
@@ -58,10 +59,11 @@ struct ConstantNode : public ExprAST {
 struct RegisterNode : public ExprAST {
     std::string name;
     RegisterNode(const std::string& n) : name(n) {}
-    uint32_t getValue() const override { return 0; }
-    bool isConstant() const override { return false; }
-    bool is16Bit() const override { return name.size() > 1; }
+    uint32_t getValue(AssemblerParser* parser) const override { return 0; }
+    bool isConstant(AssemblerParser* parser) const override { return false; }
+    bool is16Bit(AssemblerParser* parser) const override { return name.size() > 1; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
+        if (!parser) return;
         M65Emitter e(binary, parser->getZPStart());
         if (width <= 8) {
             if (name == ".X") e.txa();
@@ -84,10 +86,11 @@ struct RegisterNode : public ExprAST {
 struct FlagNode : public ExprAST {
     char flag;
     FlagNode(char f) : flag(f) {}
-    uint32_t getValue() const override { return 0; }
-    bool isConstant() const override { return false; }
-    bool is16Bit() const override { return false; }
+    uint32_t getValue(AssemblerParser* parser) const override { return 0; }
+    bool isConstant(AssemblerParser* parser) const override { return false; }
+    bool is16Bit(AssemblerParser* parser) const override { return false; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
+        if (!parser) return;
         M65Emitter e(binary, parser->getZPStart());
         if (flag == 'C') {
             e.lda_imm(0); e.adc_imm(0);
@@ -114,25 +117,38 @@ struct FlagNode : public ExprAST {
 
 struct VariableNode : public ExprAST {
     std::string name;
-    std::map<std::string, Symbol>& symbolTable;
-    VariableNode(const std::string& n, std::map<std::string, Symbol>& st) : name(n), symbolTable(st) {}
-    uint32_t getValue() const override { if (symbolTable.count(name)) return symbolTable.at(name).value; return 0; }
-    bool isConstant() const override { if (symbolTable.count(name)) return !symbolTable.at(name).isAddress; return false; }
-    bool is16Bit() const override { if (symbolTable.count(name)) return symbolTable.at(name).size > 1; return true; }
+    std::string scopePrefix;
+    VariableNode(const std::string& n, const std::string& scope = "") : name(n), scopePrefix(scope) {}
+    uint32_t getValue(AssemblerParser* parser) const override {
+        if (!parser) return 0;
+        Symbol* sym = parser->resolveSymbol(name, scopePrefix);
+        return sym ? sym->value : 0;
+    }
+    bool isConstant(AssemblerParser* parser) const override {
+        if (!parser) return false;
+        Symbol* sym = parser->resolveSymbol(name, scopePrefix);
+        return sym ? !sym->isAddress : false;
+    }
+    bool is16Bit(AssemblerParser* parser) const override {
+        if (!parser) return true;
+        Symbol* sym = parser->resolveSymbol(name, scopePrefix);
+        return sym ? sym->size > 1 : true;
+    }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
-        if (!symbolTable.count(name)) return;
+        if (!parser) return;
+        Symbol* sym = parser->resolveSymbol(name, scopePrefix);
+        if (!sym) return;
         M65Emitter e(binary, parser->getZPStart());
-        const auto& sym = symbolTable.at(name);
-        if (!sym.isAddress) {
-            e.lda_imm(sym.value & 0xFF);
-            if (width >= 16) e.ldx_imm((sym.value >> 8) & 0xFF);
+        if (!sym->isAddress) {
+            e.lda_imm(sym->value & 0xFF);
+            if (width >= 16) e.ldx_imm((sym->value >> 8) & 0xFF);
         } else {
-            if (sym.isStackRelative) {
-                e.lda_stack((uint8_t)sym.stackOffset);
+            if (sym->isStackRelative) {
+                e.lda_stack((uint8_t)sym->stackOffset);
                 if (width >= 16) e.ldx_imm(0); 
             } else {
-                e.lda_abs(sym.value);
-                if (width >= 16) e.ldx_abs(sym.value + 1);
+                e.lda_abs(sym->value);
+                if (width >= 16) e.ldx_abs(sym->value + 1);
             }
         }
     }
@@ -142,16 +158,17 @@ struct UnaryExpr : public ExprAST {
     std::string op;
     std::unique_ptr<ExprAST> operand;
     UnaryExpr(std::string o, std::unique_ptr<ExprAST> opnd) : op(o), operand(std::move(opnd)) {}
-    uint32_t getValue() const override {
-        uint32_t val = operand ? operand->getValue() : 0;
+    uint32_t getValue(AssemblerParser* parser) const override {
+        uint32_t val = operand ? operand->getValue(parser) : 0;
         if (op == "!") return val == 0 ? 1 : 0;
         if (op == "~") return ~val;
         if (op == "-") return -val;
         return 0;
     }
-    bool isConstant() const override { return operand ? operand->isConstant() : true; }
-    bool is16Bit() const override { return operand ? operand->is16Bit() : false; }
+    bool isConstant(AssemblerParser* parser) const override { return operand ? operand->isConstant(parser) : true; }
+    bool is16Bit(AssemblerParser* parser) const override { return operand ? operand->is16Bit(parser) : false; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
+        if (!parser || !operand) return;
         operand->emit(binary, parser, width, target);
         M65Emitter e(binary, parser->getZPStart());
         if (op == "!") {
@@ -172,10 +189,11 @@ struct DereferenceNode : public ExprAST {
     std::unique_ptr<ExprAST> address;
     bool isFlat;
     DereferenceNode(std::unique_ptr<ExprAST> addr, bool flat = false) : address(std::move(addr)), isFlat(flat) {}
-    uint32_t getValue() const override { return 0; }
-    bool isConstant() const override { return false; }
-    bool is16Bit() const override { return true; }
+    uint32_t getValue(AssemblerParser* parser) const override { return 0; }
+    bool isConstant(AssemblerParser* parser) const override { return false; }
+    bool is16Bit(AssemblerParser* parser) const override { return true; }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
+        if (!parser || !address) return;
         M65Emitter e(binary, parser->getZPStart());
         address->emit(binary, parser, 16, ".AX");
         e.sta_s(0); e.stx_s(1);
@@ -189,8 +207,8 @@ struct BinaryExpr : public ExprAST {
     std::unique_ptr<ExprAST> left, right;
     BinaryExpr(std::string o, std::unique_ptr<ExprAST> l, std::unique_ptr<ExprAST> r)
         : op(o), left(std::move(l)), right(std::move(r)) {}
-    uint32_t getValue() const override {
-        uint32_t l = left ? left->getValue() : 0; uint32_t r = right ? right->getValue() : 0;
+    uint32_t getValue(AssemblerParser* parser) const override {
+        uint32_t l = left ? left->getValue(parser) : 0; uint32_t r = right ? right->getValue(parser) : 0;
         if (op == "+") return l + r;
         if (op == "-") return l - r;
         if (op == "*") return l * r;
@@ -211,10 +229,10 @@ struct BinaryExpr : public ExprAST {
         if (op == "||") return l || r;
         return 0;
     }
-    bool isConstant() const override { return (left ? left->isConstant() : true) && (right ? right->isConstant() : true); }
-    bool is16Bit() const override { return getValue() > 0xFF || (left && left->is16Bit()) || (right && right->is16Bit()); }
+    bool isConstant(AssemblerParser* parser) const override { return (left ? left->isConstant(parser) : true) && (right ? right->isConstant(parser) : true); }
+    bool is16Bit(AssemblerParser* parser) const override { return getValue(parser) > 0xFF || (left && left->is16Bit(parser)) || (right && right->is16Bit(parser)); }
     void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override {
-        if (!left || !right) return;
+        if (!parser || !left || !right) return;
         M65Emitter e(binary, parser->getZPStart());
         int bytes = width / 8; if (bytes < 1) bytes = 1; if (bytes > 4) bytes = 4;
 
@@ -291,7 +309,7 @@ static uint32_t parseNumericLiteral(const std::string& literal) {
     } catch (...) { return 0; }
 }
 
-std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens, int& idx, std::map<std::string, Symbol>& symbolTable) {
+std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens, int& idx, std::map<std::string, Symbol>& symbolTable, const std::string& scopePrefix = "") {
     auto parsePrimary = [&]() -> std::unique_ptr<ExprAST> {
         if (idx >= (int)tokens.size()) return nullptr;
         const auto& t = tokens[idx++];
@@ -302,7 +320,7 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
                     idx += 2;
                     std::string tempName = "__stack_" + std::to_string(val);
                     symbolTable[tempName] = {val, true, 2, false, 0, true, (int)val};
-                    return std::make_unique<VariableNode>(tempName, symbolTable);
+                    return std::make_unique<VariableNode>(tempName, "");
                 }
             }
         }
@@ -311,11 +329,11 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
         if (t.type == AssemblerTokenType::BINARY_LITERAL) return std::make_unique<ConstantNode>(parseNumericLiteral(t.value));
         if (t.type == AssemblerTokenType::REGISTER) return std::make_unique<RegisterNode>(t.value);
         if (t.type == AssemblerTokenType::FLAG) return std::make_unique<FlagNode>(t.value[0]);
-        if (t.type == AssemblerTokenType::IDENTIFIER) return std::make_unique<VariableNode>(t.value, symbolTable);
-        if (t.type == AssemblerTokenType::STAR) return std::make_unique<DereferenceNode>(parseExprAST(tokens, idx, symbolTable));
-        if (t.type == AssemblerTokenType::OPEN_BRACKET) { auto addr = parseExprAST(tokens, idx, symbolTable); if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::CLOSE_BRACKET) idx++; return std::make_unique<DereferenceNode>(std::move(addr), true); }
-        if (t.type == AssemblerTokenType::BANG || t.type == AssemblerTokenType::TILDE || (t.type == AssemblerTokenType::MINUS && idx < (int)tokens.size() && tokens[idx].type != AssemblerTokenType::DECIMAL_LITERAL)) { std::string op = t.value; return std::make_unique<UnaryExpr>(op, parseExprAST(tokens, idx, symbolTable)); }
-        if (t.type == AssemblerTokenType::OPEN_PAREN) { auto expr = parseExprAST(tokens, idx, symbolTable); if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::CLOSE_PAREN) idx++; return expr; }
+        if (t.type == AssemblerTokenType::IDENTIFIER) return std::make_unique<VariableNode>(t.value, scopePrefix);
+        if (t.type == AssemblerTokenType::STAR) return std::make_unique<DereferenceNode>(parseExprAST(tokens, idx, symbolTable, scopePrefix));
+        if (t.type == AssemblerTokenType::OPEN_BRACKET) { auto addr = parseExprAST(tokens, idx, symbolTable, scopePrefix); if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::CLOSE_BRACKET) idx++; return std::make_unique<DereferenceNode>(std::move(addr), true); }
+        if (t.type == AssemblerTokenType::BANG || t.type == AssemblerTokenType::TILDE || (t.type == AssemblerTokenType::MINUS && idx < (int)tokens.size() && tokens[idx].type != AssemblerTokenType::DECIMAL_LITERAL)) { std::string op = t.value; return std::make_unique<UnaryExpr>(op, parseExprAST(tokens, idx, symbolTable, scopePrefix)); }
+        if (t.type == AssemblerTokenType::OPEN_PAREN) { auto expr = parseExprAST(tokens, idx, symbolTable, scopePrefix); if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::CLOSE_PAREN) idx++; return expr; }
         return nullptr;
     };
 
@@ -346,10 +364,26 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
     return parseShift(); 
 }
 
-uint32_t AssemblerParser::evaluateExpressionAt(int index) {
-    int idx = index; auto ast = parseExprAST(tokens, idx, symbolTable);
+uint32_t AssemblerParser::evaluateExpressionAt(int index, const std::string& scopePrefix) {
+    int idx = index; auto ast = parseExprAST(tokens, idx, symbolTable, scopePrefix);
     if (!ast) return 0;
-    return ast->getValue();
+    return ast->getValue(this);
+}
+
+Symbol* AssemblerParser::resolveSymbol(const std::string& name, const std::string& scopePrefix) {
+    std::string current = scopePrefix;
+    while (true) {
+        std::string fullName = current + name;
+        if (symbolTable.count(fullName)) {
+            return &symbolTable.at(fullName);
+        }
+        if (current.empty()) break;
+        if (current.size() < 2) { current = ""; continue; }
+        size_t pos = current.find_last_of(':', current.size() - 2);
+        if (pos == std::string::npos) current = "";
+        else current = current.substr(0, pos + 1);
+    }
+    return nullptr;
 }
 
 uint32_t AssemblerParser::getZPStart() const {
@@ -360,36 +394,57 @@ uint32_t AssemblerParser::getZPStart() const {
 }
 
 void AssemblerParser::pass1() {
-    pc = 0; pos = 0; statements.clear();
+    pc = 0; pos = 0; statements.clear(); scopeStack.clear(); nextScopeId = 0;
+    std::vector<ProcContext*> pass1ProcStack;
+    auto currentScopePrefix = [&]() {
+        std::string prefix = "";
+        for (const auto& s : scopeStack) prefix += s + ":";
+        return prefix;
+    };
+
     while (pos < tokens.size()) {
         while (match(AssemblerTokenType::NEWLINE));
         if (peek().type == AssemblerTokenType::END_OF_FILE) break;
         auto stmt = std::make_unique<Statement>();
         stmt->address = pc; stmt->line = peek().line;
+        stmt->scopePrefix = currentScopePrefix();
+
         if (peek().type == AssemblerTokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == AssemblerTokenType::COLON) {
-            stmt->label = advance().value; advance(); symbolTable[stmt->label] = {pc, true, 2};
+            stmt->label = stmt->scopePrefix + advance().value; advance(); symbolTable[stmt->label] = {pc, true, 2};
         }
-        if (match(AssemblerTokenType::DIRECTIVE)) {
+
+        if (match(AssemblerTokenType::OPEN_CURLY)) {
+            scopeStack.push_back("_S" + std::to_string(nextScopeId++));
+            stmt->size = 0;
+            statements.push_back(std::move(stmt));
+            continue;
+        } else if (match(AssemblerTokenType::CLOSE_CURLY)) {
+            if (!scopeStack.empty()) scopeStack.pop_back();
+            stmt->size = 0;
+            statements.push_back(std::move(stmt));
+            continue;
+        } else if (match(AssemblerTokenType::DIRECTIVE)) {
             stmt->type = Statement::DIRECTIVE; stmt->dir.name = tokens[pos-1].value;
             if (stmt->dir.name == "var") {
                 std::string varName = expect(AssemblerTokenType::IDENTIFIER, "Expected var name").value;
-                stmt->dir.varName = varName;
+                std::string scopedVarName = stmt->scopePrefix + varName;
+                stmt->dir.varName = scopedVarName;
                 if (match(AssemblerTokenType::EQUALS)) {
                     stmt->dir.varType = Directive::ASSIGN; stmt->dir.tokenIndex = (int)pos;
-                    uint32_t val = evaluateExpressionAt((int)pos);
+                    uint32_t val = evaluateExpressionAt((int)pos, stmt->scopePrefix);
                     while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
-                    symbolTable[varName] = {val, false, 2, true, val};
+                    symbolTable[scopedVarName] = {val, false, 2, true, val};
                 } else if (match(AssemblerTokenType::INCREMENT)) { 
                     stmt->dir.varType = Directive::INC; 
-                    if (symbolTable.count(varName)) symbolTable[varName].value++; 
+                    if (symbolTable.count(scopedVarName)) symbolTable[scopedVarName].value++; 
                 }
                 else if (match(AssemblerTokenType::DECREMENT)) { 
                     stmt->dir.varType = Directive::DEC; 
-                    if (symbolTable.count(varName)) symbolTable[varName].value--; 
+                    if (symbolTable.count(scopedVarName)) symbolTable[scopedVarName].value--; 
                 }
                 stmt->size = 0;
             } else if (stmt->dir.name == "cleanup") {
-                stmt->dir.tokenIndex = (int)pos; uint32_t val = evaluateExpressionAt((int)pos);
+                stmt->dir.tokenIndex = (int)pos; uint32_t val = evaluateExpressionAt((int)pos, stmt->scopePrefix);
                 while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
                 if (currentProc) { currentProc->totalParamSize += val; }
                 stmt->size = 0;
@@ -424,16 +479,32 @@ void AssemblerParser::pass1() {
                     if (peek().type == AssemblerTokenType::IDENTIFIER && (peek().value == "B" || peek().value == "W")) { isByte = (advance().value == "B"); match(AssemblerTokenType::HASH); }
                     std::string argName = advance().value; int size = isByte ? 1 : 2; args.push_back({argName, size}); ctx.totalParamSize += size;
                 }
+
+                scopeStack.push_back(procName);
+                stmt->scopePrefix = currentScopePrefix();
+
                 int currentOffset = 2;
-                // TODO: Implement local scoping for procedure arguments to prevent overwriting global symbols.
                 for (int i = (int)args.size() - 1; i >= 0; --i) {
+                    std::string scopedArg = stmt->scopePrefix + args[i].first;
+                    std::string scopedArgN = stmt->scopePrefix + "ARG" + std::to_string(i + 1);
                     ctx.localArgs[args[i].first] = currentOffset; ctx.localArgs["ARG" + std::to_string(i + 1)] = currentOffset;
-                    symbolTable[args[i].first] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset, false, currentOffset};
-                    symbolTable["ARG" + std::to_string(i + 1)] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset, false, currentOffset};
+                    symbolTable[scopedArg] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset, false, currentOffset};
+                    symbolTable[scopedArgN] = {(uint32_t)currentOffset, false, (int)args[i].second, true, (uint32_t)currentOffset, false, currentOffset};
                     currentOffset += args[i].second;
                 }
-                auto res = procedures.emplace(pc, ctx); currentProc = &res.first->second; stmt->size = 0;
-            } else if (stmt->instr.mnemonic == "ENDPROC") { if (currentProc) { stmt->instr.procParamSize = currentProc->totalParamSize; currentProc = nullptr; } stmt->size = 2; }
+                auto res = procedures.emplace(pc, ctx); 
+                pass1ProcStack.push_back(currentProc);
+                currentProc = &res.first->second; stmt->procCtx = currentProc; stmt->size = 0;
+            } else if (stmt->instr.mnemonic == "ENDPROC") { 
+                if (currentProc) { 
+                    stmt->instr.procParamSize = currentProc->totalParamSize; 
+                    stmt->procCtx = currentProc; 
+                    currentProc = pass1ProcStack.empty() ? nullptr : pass1ProcStack.back();
+                    if (!pass1ProcStack.empty()) pass1ProcStack.pop_back();
+                } 
+                if (!scopeStack.empty()) scopeStack.pop_back();
+                stmt->size = 2; 
+            }
             else if (stmt->instr.mnemonic == "CALL") {
                 stmt->instr.operand = advance().value;
                 while (match(AssemblerTokenType::COMMA)) {
@@ -441,19 +512,19 @@ void AssemblerParser::pass1() {
                     else if (peek().type == AssemblerTokenType::IDENTIFIER && (peek().value == "B" || peek().value == "W")) { std::string p = advance().value; match(AssemblerTokenType::HASH); stmt->instr.callArgs.push_back(p + "#" + advance().value); }
                     else { stmt->instr.callArgs.push_back(advance().value); }
                 }
-                stmt->size = calculateInstructionSize(stmt->instr);
+                stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
             } else if (stmt->instr.mnemonic == "EXPR") {
                 stmt->type = Statement::EXPR; const auto& target = advance(); stmt->exprTarget = (target.type == AssemblerTokenType::REGISTER ? "." : "") + target.value;
                 expect(AssemblerTokenType::COMMA, "Expected ,"); stmt->exprTokenIndex = (int)pos;
                 while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
-                std::vector<uint8_t> dummy; emitExpressionCode(dummy, stmt->exprTarget, stmt->exprTokenIndex); stmt->size = dummy.size();
+                std::vector<uint8_t> dummy; emitExpressionCode(dummy, stmt->exprTarget, stmt->exprTokenIndex, stmt->scopePrefix); stmt->size = dummy.size();
             } else if (stmt->instr.mnemonic.substr(0, 3) == "MUL" || stmt->instr.mnemonic.substr(0, 3) == "DIV") {
                 stmt->type = (stmt->instr.mnemonic.substr(0, 3) == "MUL") ? Statement::MUL : Statement::DIV;
                 std::string m = stmt->instr.mnemonic; if (m.size() > 4 && m[3] == '.') stmt->mulWidth = std::stoi(m.substr(4)); else stmt->mulWidth = 8;
                 const auto& dest = advance(); stmt->instr.operand = (dest.type == AssemblerTokenType::REGISTER ? "." : "") + dest.value;
                 if (!match(AssemblerTokenType::COMMA)) throw std::runtime_error("Expected , after destination");
                 stmt->exprTokenIndex = (int)pos; while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
-                std::vector<uint8_t> dummy; if (stmt->type == Statement::MUL) emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex); else emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex); stmt->size = dummy.size();
+                std::vector<uint8_t> dummy; if (stmt->type == Statement::MUL) emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); else emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); stmt->size = dummy.size();
             } else {
                 if (match(AssemblerTokenType::HASH)) { stmt->instr.operand = advance().value; if (stmt->instr.mnemonic == "PHW") stmt->instr.mode = AddressingMode::IMMEDIATE16; else stmt->instr.mode = AddressingMode::IMMEDIATE; }
                 else if (match(AssemblerTokenType::OPEN_PAREN)) {
@@ -483,7 +554,7 @@ void AssemblerParser::pass1() {
                 }
                 if (stmt->instr.mode == AddressingMode::ABSOLUTE_X && !stmt->instr.operand.empty()) { try { uint32_t val = parseNumericLiteral(stmt->instr.operand); if (val <= 0xFF) stmt->instr.mode = AddressingMode::BASE_PAGE_X; } catch(...) {} }
                 if (stmt->instr.mode == AddressingMode::ABSOLUTE_Y && !stmt->instr.operand.empty()) { try { uint32_t val = parseNumericLiteral(stmt->instr.operand); if (val <= 0xFF) stmt->instr.mode = AddressingMode::BASE_PAGE_Y; } catch(...) {} }
-                stmt->size = calculateInstructionSize(stmt->instr);
+                stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
             }
         } else if (stmt->label.empty()) { advance(); continue; }
         pc += stmt->size; statements.push_back(std::move(stmt));
@@ -499,17 +570,16 @@ void AssemblerParser::pass1() {
                 stmt->address = pc;
                 if (!stmt->label.empty() && symbolTable.count(stmt->label)) { if (symbolTable.at(stmt->label).value != pc) { symbolTable.at(stmt->label).value = pc; changed = true; } }
                 int oldSize = stmt->size;
-                if (stmt->type == Statement::INSTRUCTION) { stmt->size = calculateInstructionSize(stmt->instr, stmt->address); }
-                else if (stmt->type == Statement::MUL) { std::vector<uint8_t> dummy; emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex); stmt->size = dummy.size(); }
-                else if (stmt->type == Statement::DIV) { std::vector<uint8_t> dummy; emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex); stmt->size = dummy.size(); }
-                else if (stmt->type == Statement::EXPR) { std::vector<uint8_t> dummy; emitExpressionCode(dummy, stmt->exprTarget, stmt->exprTokenIndex); stmt->size = dummy.size(); }
+                if (stmt->type == Statement::INSTRUCTION) { stmt->size = calculateInstructionSize(stmt->instr, stmt->address, stmt->scopePrefix); }
+                else if (stmt->type == Statement::MUL) { std::vector<uint8_t> dummy; emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); stmt->size = dummy.size(); }
+                else if (stmt->type == Statement::DIV) { std::vector<uint8_t> dummy; emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); stmt->size = dummy.size(); }
+                else if (stmt->type == Statement::EXPR) { std::vector<uint8_t> dummy; emitExpressionCode(dummy, stmt->exprTarget, stmt->exprTokenIndex, stmt->scopePrefix); stmt->size = dummy.size(); }
                 if (stmt->size != oldSize) changed = true;
                 pc += stmt->size;
             }
         }
     }
 }
-
 int AssemblerParser::calculateDirectiveSize(const Directive& dir) {
     if (dir.name == "byte") return (int)dir.arguments.size();
     if (dir.name == "word") return (int)dir.arguments.size() * 2;
@@ -519,12 +589,12 @@ int AssemblerParser::calculateDirectiveSize(const Directive& dir) {
     return 0;
 }
 
-int AssemblerParser::calculateExprSize(int tokenIndex) {
-    int idx = tokenIndex; auto ast = parseExprAST(tokens, idx, symbolTable); if (!ast) return 0;
+int AssemblerParser::calculateExprSize(int tokenIndex, const std::string& scopePrefix) {
+    int idx = tokenIndex; auto ast = parseExprAST(tokens, idx, symbolTable, scopePrefix); if (!ast) return 0;
     std::vector<uint8_t> dummy; ast->emit(dummy, this, 16, ".AX"); return dummy.size();
 }
 
-int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t currentAddr) {
+int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t currentAddr, const std::string& scopePrefix) {
     if (instr.mnemonic == "PROC") return 0; if (instr.mnemonic == "ENDPROC") return 2;
     if (instr.mnemonic == "CALL") return 3 + (int)instr.callArgs.size() * 3;
     int size = 0; bool isQuad = (instr.mnemonic.size() > 1 && instr.mnemonic.back() == 'Q' && instr.mnemonic != "LDQ" && instr.mnemonic != "STQ" && instr.mnemonic != "BEQ" && instr.mnemonic != "BNE" && instr.mnemonic != "BRA" && instr.mnemonic != "BSR");
@@ -532,8 +602,9 @@ int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t
     if (instr.mnemonic == "PHW") size += 3; else if (instr.mnemonic == "RTN") size += 2; 
     else if (instr.mnemonic == "BSR") size += 3;
     else if (instr.mnemonic == "BRA" || (instr.mnemonic[0] == 'B' && instr.mnemonic.size() == 3 && instr.mnemonic != "BIT" && instr.mnemonic != "BRK" && instr.mnemonic.substr(0,3) != "BBR" && instr.mnemonic.substr(0,3) != "BBS")) {
-        if (symbolTable.count(instr.operand)) {
-            uint32_t target = symbolTable.at(instr.operand).value;
+        Symbol* sym = resolveSymbol(instr.operand, scopePrefix);
+        if (sym) {
+            uint32_t target = sym->value;
             int32_t offset = (int32_t)target - (int32_t)(currentAddr + 2);
             if (offset >= -128 && offset <= 127) size = 2; else size = 3;
         } else size = 3; 
@@ -571,7 +642,8 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
         { {"LDX", AddressingMode::ABSOLUTE}, 0xAE }, { {"LDX", AddressingMode::ABSOLUTE_Y}, 0xBE }, { {"LDX", AddressingMode::BASE_PAGE}, 0xA6 }, { {"LDX", AddressingMode::BASE_PAGE_Y}, 0xB6 }, { {"LDX", AddressingMode::IMMEDIATE}, 0xA2 },
         { {"LDY", AddressingMode::ABSOLUTE}, 0xAC }, { {"LDY", AddressingMode::ABSOLUTE_X}, 0xBC }, { {"LDY", AddressingMode::BASE_PAGE}, 0xA4 }, { {"LDY", AddressingMode::BASE_PAGE_X}, 0xB4 }, { {"LDY", AddressingMode::IMMEDIATE}, 0xA0 },
         { {"LDZ", AddressingMode::ABSOLUTE}, 0xAB }, { {"LDZ", AddressingMode::ABSOLUTE_X}, 0xBB }, { {"LDZ", AddressingMode::IMMEDIATE}, 0xA3 }, { {"LDQ", AddressingMode::BASE_PAGE}, 0xA5 }, { {"LDQ", AddressingMode::ABSOLUTE}, 0xAD }, { {"LDQ", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0xB2 }, { {"LDQ", AddressingMode::FLAT_INDIRECT_Z}, 0xB2 },
-        { {"LSR", AddressingMode::ABSOLUTE}, 0x4E }, { {"LSR", AddressingMode::ABSOLUTE_X}, 0x5E }, { {"LSR", AddressingMode::ACCUMULATOR}, 0x4A }, { {"LSR", AddressingMode::BASE_PAGE}, 0x46 }, { {"LSR", AddressingMode::BASE_PAGE_X}, 0x56 }, { {"MAP", AddressingMode::IMPLIED}, 0x5C }, { {"NEG", AddressingMode::ACCUMULATOR}, 0x42 },
+        { {"LSR", AddressingMode::ABSOLUTE}, 0x4E }, { {"LSR", AddressingMode::ABSOLUTE_X}, 0x5E }, { {"LSR", AddressingMode::ACCUMULATOR}, 0x4A }, { {"LSR", AddressingMode::BASE_PAGE}, 0x46 }, { {"LSR", AddressingMode::BASE_PAGE_X}, 0x56 }, { {"MAP", AddressingMode::IMPLIED}, 0x5C }, { {"NEG", AddressingMode::ACCUMULATOR}, 0x42 }, 
+        // NOTE: NOP ($EA) is not implemented as it is used as a prefix for other sequences (e.g. flat addressing) or as EOM.
         { {"ORA", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0x11 }, { {"ORA", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x12 }, { {"ORA", AddressingMode::STACK_RELATIVE}, 0x12 }, { {"ORA", AddressingMode::BASE_PAGE_X_INDIRECT}, 0x01 }, { {"ORA", AddressingMode::ABSOLUTE}, 0x0D }, { {"ORA", AddressingMode::ABSOLUTE_X}, 0x1D }, { {"ORA", AddressingMode::ABSOLUTE_Y}, 0x19 }, { {"ORA", AddressingMode::BASE_PAGE}, 0x05 }, { {"ORA", AddressingMode::BASE_PAGE_X}, 0x15 }, { {"ORA", AddressingMode::IMMEDIATE}, 0x09 },
         { {"PHA", AddressingMode::IMPLIED}, 0x48 }, { {"PHP", AddressingMode::IMPLIED}, 0x08 }, { {"PHW", AddressingMode::ABSOLUTE}, 0xFC }, { {"PHW", AddressingMode::IMMEDIATE16}, 0xF4 }, { {"PHX", AddressingMode::IMPLIED}, 0xDA }, { {"PHY", AddressingMode::IMPLIED}, 0x5A }, { {"PHZ", AddressingMode::IMPLIED}, 0xDB }, { {"PLA", AddressingMode::IMPLIED}, 0x68 }, { {"PLP", AddressingMode::IMPLIED}, 0x28 }, { {"PLX", AddressingMode::IMPLIED}, 0xFA }, { {"PLY", AddressingMode::IMPLIED}, 0x7A }, { {"PLZ", AddressingMode::IMPLIED}, 0xFB },
         { {"RMB0", AddressingMode::BASE_PAGE}, 0x07 }, { {"RMB1", AddressingMode::BASE_PAGE}, 0x17 }, { {"RMB2", AddressingMode::BASE_PAGE}, 0x27 }, { {"RMB3", AddressingMode::BASE_PAGE}, 0x37 }, { {"RMB4", AddressingMode::BASE_PAGE}, 0x47 }, { {"RMB5", AddressingMode::BASE_PAGE}, 0x57 }, { {"RMB6", AddressingMode::BASE_PAGE}, 0x67 }, { {"RMB7", AddressingMode::BASE_PAGE}, 0x77 },
@@ -588,18 +660,22 @@ uint8_t AssemblerParser::getOpcode(const std::string& m, AddressingMode mode) {
     auto it = opcodes.find({baseM, mode}); if (it != opcodes.end()) return it->second; return 0;
 }
 
-void AssemblerParser::emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex) {
-    int idx = tokenIndex; auto ast = parseExprAST(tokens, idx, symbolTable); if (!ast) return;
+void AssemblerParser::emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix) {
+    int idx = tokenIndex; auto ast = parseExprAST(tokens, idx, symbolTable, scopePrefix); if (!ast) return;
     M65Emitter e(binary, getZPStart());
     int width = 8; if (target == ".AX" || target == ".AY" || target == ".AZ" || target == ".XY") width = 16; else if (target == ".AXY") width = 24; else if (target == ".Q" || target == ".AXYZ") width = 32; else if (target[0] != '.') width = 16;
-    if (ast->isConstant()) { uint32_t val = ast->getValue(); e.lda_imm(val & 0xFF); if (width >= 16) e.ldx_imm((val >> 8) & 0xFF); }
+    if (ast->isConstant(this)) { uint32_t val = ast->getValue(this); e.lda_imm(val & 0xFF); if (width >= 16) e.ldx_imm((val >> 8) & 0xFF); }
     else ast->emit(binary, this, width, target);
     if (target == ".X") e.tax(); else if (target == ".Y") e.tay(); else if (target == ".Z") e.taz();
-    else if (target[0] != '.') { uint32_t addr = symbolTable.count(target) ? symbolTable.at(target).value : parseNumericLiteral(target); e.sta_abs(addr); if (width >= 16) e.stx_abs(addr + 1); }
+    else if (target[0] != '.') { 
+        Symbol* sym = resolveSymbol(target, scopePrefix);
+        uint32_t addr = sym ? sym->value : parseNumericLiteral(target); 
+        e.sta_abs(addr); if (width >= 16) e.stx_abs(addr + 1); 
+    }
 }
 
-void AssemblerParser::emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex) {
-    int idx = tokenIndex; auto srcAst = parseExprAST(tokens, idx, symbolTable); if (!srcAst) return;
+void AssemblerParser::emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    int idx = tokenIndex; auto srcAst = parseExprAST(tokens, idx, symbolTable, scopePrefix); if (!srcAst) return;
     M65Emitter e(binary, getZPStart());
     int bytes = width / 8; if (bytes < 1) bytes = 1; if (bytes > 4) bytes = 4;
 
@@ -608,7 +684,7 @@ void AssemblerParser::emitMulCode(std::vector<uint8_t>& binary, int width, const
     if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) {
         if (idx + 1 < (int)tokens.size() && (tokens[idx + 1].value == "s" || tokens[idx + 1].value == "S")) {
             isStackRel = true;
-            stackOff = srcAst->getValue();
+            stackOff = srcAst->getValue(this);
         }
     }
 
@@ -617,26 +693,31 @@ void AssemblerParser::emitMulCode(std::vector<uint8_t>& binary, int width, const
         else if (src == ".X") e.stx_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Y") e.sty_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Z") e.stz_abs(0xD700 + regAddr + byteIdx);
-        else if (symbolTable.count(src) && symbolTable.at(src).isStackRelative) {
-            e.lda_stack((uint8_t)(symbolTable.at(src).stackOffset + byteIdx));
-            e.sta_abs(0xD700 + regAddr + byteIdx);
+        else {
+            Symbol* sym = resolveSymbol(src, scopePrefix);
+            if (sym && sym->isStackRelative) {
+                e.lda_stack((uint8_t)(sym->stackOffset + byteIdx));
+                e.sta_abs(0xD700 + regAddr + byteIdx);
+            } else {
+                uint32_t addr = sym ? sym->value : parseNumericLiteral(src); 
+                e.lda_abs(addr + byteIdx); e.sta_abs(0xD700 + regAddr + byteIdx); 
+            }
         }
-        else { uint32_t addr = symbolTable.count(src) ? symbolTable.at(src).value : parseNumericLiteral(src); e.lda_abs(addr + byteIdx); e.sta_abs(0xD700 + regAddr + byteIdx); }
     };
 
     if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (bytes >= 1) storeMath(0x70, 0, ".A"); if (bytes >= 2) storeMath(0x70, 1, ".X"); if (bytes >= 3) storeMath(0x70, 2, ".Y"); if (bytes >= 4) storeMath(0x70, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x70, i, dest);
 
     if (isStackRel) {
         for (int i = 0; i < bytes; ++i) { e.lda_stack((uint8_t)(stackOff + i)); e.sta_abs(0xD774 + i); }
-    } else if (srcAst->isConstant()) { 
-        uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD774 + i); } 
+    } else if (srcAst->isConstant(this)) { 
+        uint32_t val = srcAst->getValue(this); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD774 + i); } 
     }
     else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) storeMath(0x74, 0, ".A"); if (bytes >= 2) storeMath(0x74, 1, ".X"); if (bytes >= 3) storeMath(0x74, 2, ".Y"); if (bytes >= 4) storeMath(0x74, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x74, i, srcName); }
-    for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD778 + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { uint32_t addr = symbolTable.count(dest) ? symbolTable.at(dest).value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
+    for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD778 + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { Symbol* sym = resolveSymbol(dest, scopePrefix); uint32_t addr = sym ? sym->value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
 }
 
-void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex) {
-    int idx = tokenIndex; auto srcAst = parseExprAST(tokens, idx, symbolTable); if (!srcAst) return;
+void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    int idx = tokenIndex; auto srcAst = parseExprAST(tokens, idx, symbolTable, scopePrefix); if (!srcAst) return;
     M65Emitter e(binary, getZPStart());
     int bytes = width / 8; if (bytes < 1) bytes = 1; if (bytes > 4) bytes = 4;
 
@@ -645,7 +726,7 @@ void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const
     if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) {
         if (idx + 1 < (int)tokens.size() && (tokens[idx + 1].value == "s" || tokens[idx + 1].value == "S")) {
             isStackRel = true;
-            stackOff = srcAst->getValue();
+            stackOff = srcAst->getValue(this);
         }
     }
 
@@ -654,39 +735,43 @@ void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const
         else if (src == ".X") e.stx_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Y") e.sty_abs(0xD700 + regAddr + byteIdx);
         else if (src == ".Z") e.stz_abs(0xD700 + regAddr + byteIdx);
-        else if (symbolTable.count(src) && symbolTable.at(src).isStackRelative) {
-            e.lda_stack((uint8_t)(symbolTable.at(src).stackOffset + byteIdx));
-            e.sta_abs(0xD700 + regAddr + byteIdx);
+        else {
+            Symbol* sym = resolveSymbol(src, scopePrefix);
+            if (sym && sym->isStackRelative) {
+                e.lda_stack((uint8_t)(sym->stackOffset + byteIdx));
+                e.sta_abs(0xD700 + regAddr + byteIdx);
+            } else {
+                uint32_t addr = sym ? sym->value : parseNumericLiteral(src); 
+                e.lda_abs(addr + byteIdx); e.sta_abs(0xD700 + regAddr + byteIdx); 
+            }
         }
-        else { uint32_t addr = symbolTable.count(src) ? symbolTable.at(src).value : parseNumericLiteral(src); e.lda_abs(addr + byteIdx); e.sta_abs(0xD700 + regAddr + byteIdx); }
     };
 
     if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (bytes >= 1) storeMath(0x60, 0, ".A"); if (bytes >= 2) storeMath(0x60, 1, ".X"); if (bytes >= 3) storeMath(0x60, 2, ".Y"); if (bytes >= 4) storeMath(0x60, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x60, i, dest);
 
     if (isStackRel) {
         for (int i = 0; i < bytes; ++i) { e.lda_stack((uint8_t)(stackOff + i)); e.sta_abs(0xD764 + i); }
-    } else if (srcAst->isConstant()) { 
-        // TODO: Add explicit assembler-time error for division by zero here.
-        uint32_t val = srcAst->getValue(); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD764 + i); } 
+    } else if (srcAst->isConstant(this)) { 
+        uint32_t val = srcAst->getValue(this); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD764 + i); } 
     }
     else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) storeMath(0x64, 0, ".A"); if (bytes >= 2) storeMath(0x64, 1, ".X"); if (bytes >= 3) storeMath(0x64, 2, ".Y"); if (bytes >= 4) storeMath(0x64, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x64, i, srcName); }
     e.bit_abs(0xD70F); e.bne(-5);
-    for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD768 + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { uint32_t addr = symbolTable.count(dest) ? symbolTable.at(dest).value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
+    for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD768 + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { Symbol* sym = resolveSymbol(dest, scopePrefix); uint32_t addr = sym ? sym->value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
 }
 
 std::vector<uint8_t> AssemblerParser::pass2() {
     std::vector<uint8_t> binary; ProcContext* currentPass2Proc = nullptr; bool isDeadCode = false;
+    std::vector<ProcContext*> pass2ProcStack;
     M65Emitter e(binary, getZPStart());
     for (auto& [name, symbol] : symbolTable) if (symbol.isVariable) symbol.value = symbol.initialValue;
     for (auto& stmt : statements) {
         if (!stmt->label.empty()) { isDeadCode = false; }
-        if (procedures.count(stmt->address)) { if (stmt->type == Statement::INSTRUCTION && stmt->instr.mnemonic == "PROC") { currentPass2Proc = &procedures[stmt->address]; isDeadCode = false; } }
-        if (stmt->type == Statement::EXPR) { if (!isDeadCode) emitExpressionCode(binary, stmt->exprTarget, stmt->exprTokenIndex); continue; }
-        if (stmt->type == Statement::MUL) { if (!isDeadCode) emitMulCode(binary, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex); continue; }
-        if (stmt->type == Statement::DIV) { if (!isDeadCode) emitDivCode(binary, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex); continue; }
+        if (stmt->type == Statement::EXPR) { if (!isDeadCode) emitExpressionCode(binary, stmt->exprTarget, stmt->exprTokenIndex, stmt->scopePrefix); continue; }
+        if (stmt->type == Statement::MUL) { if (!isDeadCode) emitMulCode(binary, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); continue; }
+        if (stmt->type == Statement::DIV) { if (!isDeadCode) emitDivCode(binary, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); continue; }
         if (stmt->type == Statement::BASIC_UPSTART) {
             if (!isDeadCode) {
-                uint32_t addr = 0; const auto& t = tokens[stmt->basicUpstartTokenIndex]; if (t.type == AssemblerTokenType::IDENTIFIER) { if (symbolTable.count(t.value)) addr = symbolTable.at(t.value).value; } else addr = parseNumericLiteral(t.value);
+                uint32_t addr = 0; const auto& t = tokens[stmt->basicUpstartTokenIndex]; if (t.type == AssemblerTokenType::IDENTIFIER) { Symbol* sym = resolveSymbol(t.value, stmt->scopePrefix); if (sym) addr = sym->value; } else addr = parseNumericLiteral(t.value);
                 std::string addrStr = std::to_string(addr); while (addrStr.length() < 4) addrStr = " " + addrStr; if (addrStr.length() > 4) addrStr = addrStr.substr(addrStr.length() - 4);
                 uint16_t nextLine = (uint16_t)(stmt->address + 12 - 2); 
                 binary.push_back(nextLine & 0xFF); binary.push_back(nextLine >> 8);
@@ -695,17 +780,31 @@ std::vector<uint8_t> AssemblerParser::pass2() {
             continue;
         }
         if (stmt->type == Statement::INSTRUCTION) {
-            if (stmt->instr.mnemonic == "PROC") continue;
-            else if (stmt->instr.mnemonic == "ENDPROC") { if (!isDeadCode) { if (stmt->instr.procParamSize == 0) e.pha(); /* Placeholder logic */ binary.push_back(0x60); } currentPass2Proc = nullptr; isDeadCode = false; }
+            if (stmt->instr.mnemonic == "PROC") {
+                pass2ProcStack.push_back(currentPass2Proc);
+                currentPass2Proc = stmt->procCtx;
+                continue;
+            }
+            else if (stmt->instr.mnemonic == "ENDPROC") { 
+                if (!isDeadCode) { 
+                    if (stmt->instr.procParamSize == 0) e.pha(); /* Placeholder logic */ 
+                    binary.push_back(0x60); 
+                } 
+                currentPass2Proc = pass2ProcStack.empty() ? nullptr : pass2ProcStack.back();
+                if (!pass2ProcStack.empty()) pass2ProcStack.pop_back();
+                isDeadCode = false; 
+            }
             else if (stmt->instr.mnemonic == "CALL") {
                 if (!isDeadCode) {
                     for (const auto& arg : stmt->instr.callArgs) {
-                        bool isByte = (arg.size() > 2 && arg.substr(0, 2) == "B#"); std::string v = isByte ? arg.substr(2) : (arg.substr(0, 2) == "W#" ? arg.substr(2) : (arg[0] == '#' ? arg.substr(1) : arg));
-                        uint32_t val; if (currentPass2Proc && currentPass2Proc->localArgs.count(v)) val = currentPass2Proc->localArgs.at(v); else if (symbolTable.count(v)) val = symbolTable.at(v).value; else val = parseNumericLiteral(v);
-                        if (!isByte && arg[0] != '#' && arg.substr(0,2) != "W#" && symbolTable.count(v)) isByte = (symbolTable.at(v).size == 1);
+                        bool isByte = (arg.size() >= 2 && arg.substr(0, 2) == "B#"); 
+                        std::string v = isByte ? arg.substr(2) : ( (arg.size() >= 2 && arg.substr(0, 2) == "W#") ? arg.substr(2) : (arg[0] == '#' ? arg.substr(1) : arg));
+                        uint32_t val; Symbol* sym = resolveSymbol(v, stmt->scopePrefix); if (sym) val = sym->value; else val = parseNumericLiteral(v);
+                        if (!isByte && !arg.empty() && arg[0] != '#' && arg.size() >= 2 && arg.substr(0,2) != "W#" && sym) isByte = (sym->size == 1);
                         if (isByte) { e.lda_imm(val & 0xFF); e.pha(); } else { binary.push_back(0xF2); binary.push_back(val & 0xFF); binary.push_back(val >> 8); }
                     }
-                    uint32_t target = symbolTable.count(stmt->instr.operand) ? symbolTable.at(stmt->instr.operand).value : 0;
+                    Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                    uint32_t target = sym ? sym->value : 0;
                     binary.push_back(0x20); binary.push_back(target & 0xFF); binary.push_back(target >> 8);
                 }
             } else {
@@ -716,23 +815,30 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                     bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" || stmt->instr.mnemonic == "BSR");
                     if (!isBranch) { uint8_t op = getOpcode(stmt->instr.mnemonic, stmt->instr.mode); if (op != 0 || stmt->instr.mnemonic == "BRK") binary.push_back(op); }
                     if (stmt->instr.mode == AddressingMode::IMMEDIATE || stmt->instr.mode == AddressingMode::STACK_RELATIVE || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Z || stmt->instr.mode == AddressingMode::FLAT_INDIRECT_Z || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || stmt->instr.mode == AddressingMode::BASE_PAGE_X_INDIRECT || stmt->instr.mode == AddressingMode::BASE_PAGE_INDIRECT_Y || stmt->instr.mode == AddressingMode::BASE_PAGE || stmt->instr.mode == AddressingMode::BASE_PAGE_X || stmt->instr.mode == AddressingMode::BASE_PAGE_Y) {
-                        uint32_t v; if (currentPass2Proc && currentPass2Proc->localArgs.count(stmt->instr.operand)) v = currentPass2Proc->localArgs.at(stmt->instr.operand); else if (symbolTable.count(stmt->instr.operand)) v = symbolTable.at(stmt->instr.operand).value; else v = parseNumericLiteral(stmt->instr.operand);
+                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                        uint32_t v = sym ? sym->value : parseNumericLiteral(stmt->instr.operand);
                         binary.push_back((uint8_t)v);
                     } else if (stmt->instr.mode == AddressingMode::ABSOLUTE || stmt->instr.mode == AddressingMode::ABSOLUTE_X || stmt->instr.mode == AddressingMode::ABSOLUTE_Y || stmt->instr.mode == AddressingMode::ABSOLUTE_INDIRECT || stmt->instr.mode == AddressingMode::ABSOLUTE_X_INDIRECT || stmt->instr.mode == AddressingMode::IMMEDIATE16) {
-                        uint32_t a = symbolTable.count(stmt->instr.operand) ? symbolTable.at(stmt->instr.operand).value : parseNumericLiteral(stmt->instr.operand);
+                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                        uint32_t a = sym ? sym->value : parseNumericLiteral(stmt->instr.operand);
                         binary.push_back(a & 0xFF); binary.push_back(a >> 8);
                     } else if (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS") {
-                        uint32_t t = symbolTable.count(stmt->instr.operand) ? symbolTable.at(stmt->instr.operand).value : 0; int32_t off2 = (int32_t)t - (int32_t)(stmt->address + 2); int32_t off3 = (int32_t)t - (int32_t)(stmt->address + 3);
+                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                        uint32_t t = sym ? sym->value : 0; int32_t off2 = (int32_t)t - (int32_t)(stmt->address + 2); int32_t off3 = (int32_t)t - (int32_t)(stmt->address + 3);
                         if (stmt->size == 2) { binary.push_back(getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE)); binary.push_back((uint8_t)(int8_t)off2); }
                         else { binary.push_back(getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE16)); binary.push_back(off3 & 0xFF); binary.push_back(off3 >> 8); }
                     } else if (stmt->instr.mnemonic == "BSR") {
-                        uint32_t t = symbolTable.count(stmt->instr.operand) ? symbolTable.at(stmt->instr.operand).value : 0; int32_t off = (int32_t)t - (int32_t)(stmt->address + 3);
+                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                        uint32_t t = sym ? sym->value : 0; int32_t off = (int32_t)t - (int32_t)(stmt->address + 3);
                         binary.push_back(0x63); binary.push_back(off & 0xFF); binary.push_back(off >> 8);
                     } else if (stmt->instr.mode == AddressingMode::BASE_PAGE_RELATIVE) {
-                        uint32_t v = symbolTable.count(stmt->instr.operand) ? symbolTable.at(stmt->instr.operand).value : parseNumericLiteral(stmt->instr.operand); binary.push_back((uint8_t)v);
-                        uint32_t t = symbolTable.count(stmt->instr.bitBranchTarget) ? symbolTable.at(stmt->instr.bitBranchTarget).value : 0; int32_t off = (int32_t)t - (int32_t)(stmt->address + 3); binary.push_back((uint8_t)off);
+                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                        uint32_t v = sym ? sym->value : parseNumericLiteral(stmt->instr.operand); binary.push_back((uint8_t)v);
+                        Symbol* tsym = resolveSymbol(stmt->instr.bitBranchTarget, stmt->scopePrefix);
+                        uint32_t t = tsym ? tsym->value : 0; int32_t off = (int32_t)t - (int32_t)(stmt->address + 3); binary.push_back((uint8_t)off);
                     } else if (stmt->instr.mnemonic == "RTN") {
-                        uint32_t v; if (currentPass2Proc && currentPass2Proc->localArgs.count(stmt->instr.operand)) v = currentPass2Proc->localArgs.at(stmt->instr.operand); else if (symbolTable.count(stmt->instr.operand)) v = symbolTable.at(stmt->instr.operand).value; else v = parseNumericLiteral(stmt->instr.operand);
+                        Symbol* sym = resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                        uint32_t v = sym ? sym->value : parseNumericLiteral(stmt->instr.operand);
                         if (v == 0) binary.push_back(0x60); else { binary.push_back(0x62); binary.push_back((uint8_t)v); }
                     }
                 }
@@ -741,10 +847,10 @@ std::vector<uint8_t> AssemblerParser::pass2() {
         } else if (stmt->type == Statement::DIRECTIVE) {
             if (!isDeadCode || stmt->dir.name == "org") {
                 if (stmt->dir.name == "var") {
-                    if (stmt->dir.varType == Directive::ASSIGN) symbolTable[stmt->dir.varName].value = evaluateExpressionAt(stmt->dir.tokenIndex);
+                    if (stmt->dir.varType == Directive::ASSIGN) symbolTable[stmt->dir.varName].value = evaluateExpressionAt(stmt->dir.tokenIndex, stmt->scopePrefix);
                     else if (stmt->dir.varType == Directive::INC) symbolTable[stmt->dir.varName].value++;
                     else if (stmt->dir.varType == Directive::DEC) symbolTable[stmt->dir.varName].value--;
-                } else if (stmt->dir.name == "cleanup") { if (currentPass2Proc) currentPass2Proc->totalParamSize += evaluateExpressionAt(stmt->dir.tokenIndex); }
+                } else if (stmt->dir.name == "cleanup") { if (currentPass2Proc) currentPass2Proc->totalParamSize += evaluateExpressionAt(stmt->dir.tokenIndex, stmt->scopePrefix); }
                 else if (stmt->dir.name == "byte") for (const auto& a : stmt->dir.arguments) binary.push_back((uint8_t)parseNumericLiteral(a));
                 else if (stmt->dir.name == "word") for (const auto& a : stmt->dir.arguments) { uint32_t v = parseNumericLiteral(a); binary.push_back(v & 0xFF); binary.push_back(v >> 8); }
                 else if (stmt->dir.name == "dword" || stmt->dir.name == "long") for (const auto& a : stmt->dir.arguments) { uint32_t v = parseNumericLiteral(a); binary.push_back(v & 0xFF); binary.push_back(v >> 8); binary.push_back(v >> 16); binary.push_back(v >> 24); }

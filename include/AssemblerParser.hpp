@@ -67,12 +67,15 @@ public:
     void pass1();
     std::vector<uint8_t> pass2();
     uint32_t getZPStart() const;
+    Symbol* resolveSymbol(const std::string& name, const std::string& scopePrefix = "");
 
 private:
     std::vector<AssemblerToken> tokens;
     size_t pos;
     uint32_t pc;
     std::map<std::string, Symbol> symbolTable;
+    std::vector<std::string> scopeStack;
+    int nextScopeId = 0;
     
     struct ProcContext {
         std::string name;
@@ -90,6 +93,8 @@ private:
         uint32_t address = 0;
         int size = 0;
         int line = 0;
+        std::string scopePrefix;
+        ProcContext* procCtx = nullptr;
         
         // EXPR specific
         std::string exprTarget;
@@ -108,12 +113,12 @@ private:
     bool match(AssemblerTokenType type);
     const AssemblerToken& expect(AssemblerTokenType type, const std::string& message);
     
-    int calculateInstructionSize(const Instruction& instr, uint32_t currentAddr = 0);
+    int calculateInstructionSize(const Instruction& instr, uint32_t currentAddr = 0, const std::string& scopePrefix = "");
     int calculateDirectiveSize(const Directive& dir);
-    int calculateExprSize(int tokenIndex);
+    int calculateExprSize(int tokenIndex, const std::string& scopePrefix = "");
     uint8_t getOpcode(const std::string& mnemonic, AddressingMode mode);
-    uint32_t evaluateExpressionAt(int index);
-    void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex);
-    void emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex);
-    void emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex);
+    uint32_t evaluateExpressionAt(int index, const std::string& scopePrefix = "");
+    void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix = "");
+    void emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
 };
