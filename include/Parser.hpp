@@ -18,6 +18,13 @@ private:
     bool match(TokenType type);
     const Token& expect(TokenType type, const std::string& message);
 
+    template<typename T>
+    std::unique_ptr<T> setPos(std::unique_ptr<T> node, const Token& token) {
+        node->line = token.line;
+        node->column = token.column;
+        return node;
+    }
+
     std::unique_ptr<FunctionDeclaration> parseFunctionDeclaration();
     std::unique_ptr<CompoundStatement> parseCompoundStatement();
     std::unique_ptr<Statement> parseStatement();

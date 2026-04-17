@@ -5,6 +5,18 @@
 
 CodeGenerator::CodeGenerator(std::ostream& out) : out(out) {}
 
+void CodeGenerator::setSourceInfo(const std::string& filename, const std::vector<std::string>& lines) {
+    sourceFilename = filename;
+    sourceLines = lines;
+}
+
+void CodeGenerator::embedSource(ASTNode& node) {
+    if (node.line <= 0 || node.line > (int)sourceLines.size()) return;
+    if (node.line == lastEmbeddedLine) return;
+    lastEmbeddedLine = node.line;
+    out << "; [" << sourceFilename << ":" << node.line << "] " << sourceLines[node.line - 1] << std::endl;
+}
+
 void CodeGenerator::generate(TranslationUnit& unit) {
     emitter = std::make_unique<M65Emitter>(out, zeroPageStart);
     unit.accept(*this);
@@ -93,6 +105,7 @@ void CodeGenerator::visit(TranslationUnit& node) {
 }
 
 void CodeGenerator::visit(FunctionDeclaration& node) {
+    embedSource(node);
     std::string procLine = "PROC " + node.name;
     currentVars.clear();
     variableTypes.clear();
@@ -118,6 +131,7 @@ void CodeGenerator::visit(CompoundStatement& node) {
 }
 
 void CodeGenerator::visit(VariableDeclaration& node) {
+    embedSource(node);
     variableTypes[node.name] = {node.type, node.pointerLevel};
     int size = 0;
     if (node.pointerLevel > 0) size = 2;
@@ -146,6 +160,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
 }
 
 void CodeGenerator::visit(Assignment& node) {
+    embedSource(node);
     emitAddress(node.target.get());
     emitter->sta_s(0); emitter->stx_s(1); // target addr in ZP 0,1
     node.expression->accept(*this);
@@ -162,13 +177,18 @@ void CodeGenerator::visit(Assignment& node) {
 }
 
 void CodeGenerator::visit(ReturnStatement& node) {
+    embedSource(node);
     if (node.expression) node.expression->accept(*this);
     emit("ENDPROC");
 }
 
-void CodeGenerator::visit(ExpressionStatement& node) { node.expression->accept(*this); }
+void CodeGenerator::visit(ExpressionStatement& node) {
+    embedSource(node);
+    node.expression->accept(*this);
+}
 
 void CodeGenerator::visit(IfStatement& node) {
+    embedSource(node);
     std::string labelElse = newLabel(); std::string labelEnd = newLabel();
     node.condition->accept(*this);
     emit("CMP #$00"); emit("BEQ " + labelElse);
@@ -178,6 +198,7 @@ void CodeGenerator::visit(IfStatement& node) {
 }
 
 void CodeGenerator::visit(WhileStatement& node) {
+    embedSource(node);
     std::string labelStart = newLabel(); std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
     node.condition->accept(*this);
@@ -188,6 +209,7 @@ void CodeGenerator::visit(WhileStatement& node) {
 }
 
 void CodeGenerator::visit(DoWhileStatement& node) {
+    embedSource(node);
     std::string labelStart = newLabel();
     out << labelStart << ":" << std::endl;
     node.body->accept(*this);
@@ -196,6 +218,7 @@ void CodeGenerator::visit(DoWhileStatement& node) {
 }
 
 void CodeGenerator::visit(ForStatement& node) {
+    embedSource(node);
     if (node.initializer) node.initializer->accept(*this);
     std::string labelStart = newLabel(); std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
@@ -207,6 +230,7 @@ void CodeGenerator::visit(ForStatement& node) {
 }
 
 void CodeGenerator::visit(StructDefinition& node) {
+    embedSource(node);
     StructInfo info;
     info.name = node.name;
     int currentOffset = 0;
@@ -432,4 +456,7 @@ void CodeGenerator::visit(UnaryOperation& node) {
     }
 }
 
-void CodeGenerator::visit(AsmStatement& node) { emit(node.code); }
+void CodeGenerator::visit(AsmStatement& node) {
+    embedSource(node);
+    emit(node.code);
+}

@@ -7,6 +7,8 @@ class ASTVisitor;
 
 class ASTNode {
 public:
+    int line = 0;
+    int column = 0;
     virtual ~ASTNode() = default;
     virtual void accept(ASTVisitor& visitor) = 0;
 };
@@ -185,6 +187,7 @@ public:
     FunctionDeclaration(const std::string& n, const std::string& rt) : name(n), returnType(rt) {}
     void accept(ASTVisitor& visitor) override;
 };
+
 
 class TranslationUnit : public ASTNode {
 public:

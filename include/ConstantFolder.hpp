@@ -21,19 +21,19 @@ public:
     }
 
     void visit(IntegerLiteral& node) override {
-        lastExpr = std::make_unique<IntegerLiteral>(node.value);
+        lastExpr = copyPos(std::make_unique<IntegerLiteral>(node.value), node);
     }
 
     void visit(StringLiteral& node) override {
-        lastExpr = std::make_unique<StringLiteral>(node.value);
+        lastExpr = copyPos(std::make_unique<StringLiteral>(node.value), node);
     }
 
     void visit(VariableReference& node) override {
-        lastExpr = std::make_unique<VariableReference>(node.name);
+        lastExpr = copyPos(std::make_unique<VariableReference>(node.name), node);
     }
 
     void visit(Assignment& node) override {
-        lastExpr = std::make_unique<Assignment>(fold(std::move(node.target)), fold(std::move(node.expression)));
+        lastExpr = copyPos(std::make_unique<Assignment>(fold(std::move(node.target)), fold(std::move(node.expression))), node);
     }
 
     void visit(BinaryOperation& node) override {
@@ -53,7 +53,7 @@ public:
                 else {
                     // Division by zero at compile time, keep as is or error?
                     // The user asked for an error previously, but for now let's just NOT fold it.
-                    lastExpr = std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right));
+                    lastExpr = copyPos(std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right)), node);
                     return;
                 }
             }
@@ -71,12 +71,12 @@ public:
             else if (node.op == "&&") result = leftLit->value && rightLit->value;
             else if (node.op == "||") result = leftLit->value || rightLit->value;
             else {
-                lastExpr = std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right));
+                lastExpr = copyPos(std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right)), node);
                 return;
             }
-            lastExpr = std::make_unique<IntegerLiteral>(result);
+            lastExpr = copyPos(std::make_unique<IntegerLiteral>(result), node);
         } else {
-            lastExpr = std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right));
+            lastExpr = copyPos(std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right)), node);
         }
     }
 
@@ -90,17 +90,17 @@ public:
             else if (node.op == "!") result = !lit->value;
             else if (node.op == "~") result = ~lit->value;
             else {
-                lastExpr = std::make_unique<UnaryOperation>(node.op, std::move(operand));
+                lastExpr = copyPos(std::make_unique<UnaryOperation>(node.op, std::move(operand)), node);
                 return;
             }
-            lastExpr = std::make_unique<IntegerLiteral>(result);
+            lastExpr = copyPos(std::make_unique<IntegerLiteral>(result), node);
         } else {
-            lastExpr = std::make_unique<UnaryOperation>(node.op, std::move(operand));
+            lastExpr = copyPos(std::make_unique<UnaryOperation>(node.op, std::move(operand)), node);
         }
     }
 
     void visit(FunctionCall& node) override {
-        auto call = std::make_unique<FunctionCall>(node.name);
+        auto call = copyPos(std::make_unique<FunctionCall>(node.name), node);
         for (auto& arg : node.arguments) {
             call->arguments.push_back(fold(std::move(arg)));
         }
@@ -108,11 +108,11 @@ public:
     }
 
     void visit(MemberAccess& node) override {
-        lastExpr = std::make_unique<MemberAccess>(fold(std::move(node.structExpr)), node.memberName, node.isArrow);
+        lastExpr = copyPos(std::make_unique<MemberAccess>(fold(std::move(node.structExpr)), node.memberName, node.isArrow), node);
     }
 
     void visit(VariableDeclaration& node) override {
-        auto decl = std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel);
+        auto decl = copyPos(std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel), node);
         if (node.initializer) {
             decl->initializer = fold(std::move(node.initializer));
         }
@@ -120,11 +120,11 @@ public:
     }
 
     void visit(ReturnStatement& node) override {
-        lastStmt = std::make_unique<ReturnStatement>(fold(std::move(node.expression)));
+        lastStmt = copyPos(std::make_unique<ReturnStatement>(fold(std::move(node.expression))), node);
     }
 
     void visit(ExpressionStatement& node) override {
-        lastStmt = std::make_unique<ExpressionStatement>(fold(std::move(node.expression)));
+        lastStmt = copyPos(std::make_unique<ExpressionStatement>(fold(std::move(node.expression))), node);
     }
 
     void visit(IfStatement& node) override {
@@ -141,7 +141,7 @@ public:
                 }
             }
         } else {
-            lastStmt = std::make_unique<IfStatement>(std::move(condition), fold(std::move(node.thenBranch)), fold(std::move(node.elseBranch)));
+            lastStmt = copyPos(std::make_unique<IfStatement>(std::move(condition), fold(std::move(node.thenBranch)), fold(std::move(node.elseBranch))), node);
         }
     }
 
@@ -151,12 +151,12 @@ public:
         if (lit && lit->value == 0) {
             lastStmt = nullptr;
         } else {
-            lastStmt = std::make_unique<WhileStatement>(std::move(condition), fold(std::move(node.body)));
+            lastStmt = copyPos(std::make_unique<WhileStatement>(std::move(condition), fold(std::move(node.body))), node);
         }
     }
 
     void visit(DoWhileStatement& node) override {
-        lastStmt = std::make_unique<DoWhileStatement>(fold(std::move(node.body)), fold(std::move(node.condition)));
+        lastStmt = copyPos(std::make_unique<DoWhileStatement>(fold(std::move(node.body)), fold(std::move(node.condition))), node);
     }
 
     void visit(ForStatement& node) override {
@@ -170,22 +170,22 @@ public:
             // If condition is constantly false, only initializer executes once (if it exists)
             lastStmt = std::move(initializer);
         } else {
-            lastStmt = std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body));
+            lastStmt = copyPos(std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body)), node);
         }
     }
 
     void visit(AsmStatement& node) override {
-        lastStmt = std::make_unique<AsmStatement>(node.code);
+        lastStmt = copyPos(std::make_unique<AsmStatement>(node.code), node);
     }
 
     void visit(StructDefinition& node) override {
-        auto def = std::make_unique<StructDefinition>(node.name);
+        auto def = copyPos(std::make_unique<StructDefinition>(node.name), node);
         def->members = node.members;
         lastStmt = std::move(def);
     }
 
     void visit(CompoundStatement& node) override {
-        auto compound = std::make_unique<CompoundStatement>();
+        auto compound = copyPos(std::make_unique<CompoundStatement>(), node);
         for (auto& stmt : node.statements) {
             auto folded = fold(std::move(stmt));
             if (folded) {
@@ -205,5 +205,13 @@ public:
         for (auto& decl : node.topLevelDecls) {
             decl->accept(*this);
         }
+    }
+
+private:
+    template<typename T, typename U>
+    std::unique_ptr<T> copyPos(std::unique_ptr<T> newNode, const U& oldNode) {
+        newNode->line = oldNode.line;
+        newNode->column = oldNode.column;
+        return newNode;
     }
 };

@@ -11,6 +11,7 @@ class CodeGenerator : public ASTVisitor {
 public:
     CodeGenerator(std::ostream& out);
     void generate(TranslationUnit& unit);
+    void setSourceInfo(const std::string& filename, const std::vector<std::string>& lines);
 
     struct VarInfo {
         std::string type;
@@ -54,18 +55,22 @@ public:
     void visit(CompoundStatement& node) override;
     void visit(FunctionDeclaration& node) override;
     void visit(TranslationUnit& node) override;
+    void emitAddress(Expression* expr);
+    void embedSource(ASTNode& node);
 
-private:
+    private:
     std::ostream& out;
     std::unique_ptr<M65Emitter> emitter;
     int stringCount = 0;
     int labelCount = 0;
     std::map<std::string, std::string> stringPool;
     std::vector<std::string> currentVars;
+    std::string sourceFilename;
+    std::vector<std::string> sourceLines;
+    int lastEmbeddedLine = -1;
 
     void emit(const std::string& line);
     void emitData();
     std::string newLabel();
     ExpressionType getExprType(Expression* expr);
-    void emitAddress(Expression* expr);
 };

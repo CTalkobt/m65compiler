@@ -229,6 +229,15 @@ int main(int argc, char** argv) {
     buffer << file.rdbuf();
     std::string source = buffer.str();
 
+    std::vector<std::string> sourceLines;
+    {
+        std::stringstream ss(source);
+        std::string line;
+        while (std::getline(ss, line)) {
+            sourceLines.push_back(line);
+        }
+    }
+
     if (verbose) {
         std::cout << "Lexing " << input_file << "..." << std::endl;
     }
@@ -269,6 +278,7 @@ int main(int argc, char** argv) {
 
         CodeGenerator codegen(asmOut);
         codegen.zeroPageStart = zeroPageStart;
+        codegen.setSourceInfo(input_file, sourceLines);
         codegen.generate(*ast);
         if (verbose) {
             std::cout << "Generated assembly in " << output_file << std::endl;
