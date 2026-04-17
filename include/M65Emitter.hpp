@@ -57,6 +57,7 @@ public:
     void stx_s(uint8_t index) { stx_zp(getZP(index)); }
     void stz_s(uint8_t index) { stz_zp(getZP(index)); }
     void lda_ind_zs(uint8_t index, bool flat = false) { lda_ind_z(getZP(index), flat); }
+    void sta_ind_zs(uint8_t index, bool flat = false) { sta_ind_z(getZP(index), flat); }
     void adc_s(uint8_t index) { adc_zp(getZP(index)); }
     void sbc_s(uint8_t index) { sbc_zp(getZP(index)); }
     void and_s(uint8_t index) { and_zp(getZP(index)); }
@@ -70,6 +71,7 @@ public:
     void lda_stack(uint8_t offset);
     void sta_stack(uint8_t offset);
     void lda_ind_z(uint8_t addr, bool flat = false);
+    void sta_ind_z(uint8_t addr, bool flat = false);
     void bit_abs(uint16_t addr);
 
     // --- Register Transfers ---

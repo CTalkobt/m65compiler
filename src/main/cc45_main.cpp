@@ -18,8 +18,9 @@ public:
     void visit(StringLiteral& node) override { printIndent(); std::cout << "StringLiteral: \"" << node.value << "\"" << std::endl; }
     void visit(VariableReference& node) override { printIndent(); std::cout << "VariableReference: " << node.name << std::endl; }
     void visit(Assignment& node) override {
-        printIndent(); std::cout << "Assignment: " << node.name << std::endl;
+        printIndent(); std::cout << "Assignment: " << std::endl;
         indent++;
+        node.target->accept(*this);
         node.expression->accept(*this);
         indent--;
     }
@@ -149,7 +150,9 @@ public:
         printIndent(); std::cout << "FunctionDeclaration: " << node.name << " (" << node.returnType << ")" << std::endl;
         indent++;
         for (const auto& param : node.parameters) {
-            printIndent(); std::cout << "Parameter: " << param.name << " (" << param.type << (param.isPointer ? "*" : "") << ")" << std::endl;
+            std::string ptrs = "";
+            for (int i = 0; i < param.pointerLevel; i++) ptrs += "*";
+            printIndent(); std::cout << "Parameter: " << param.name << " (" << param.type << ptrs << ")" << std::endl;
         }
         node.body->accept(*this);
         indent--;

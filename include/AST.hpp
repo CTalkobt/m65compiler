@@ -45,9 +45,9 @@ public:
 
 class Assignment : public Expression {
 public:
-    std::string name;
+    std::unique_ptr<Expression> target;
     std::unique_ptr<Expression> expression;
-    Assignment(const std::string& n, std::unique_ptr<Expression> e) : name(n), expression(std::move(e)) {}
+    Assignment(std::unique_ptr<Expression> t, std::unique_ptr<Expression> e) : target(std::move(t)), expression(std::move(e)) {}
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -73,10 +73,10 @@ public:
 class VariableDeclaration : public Statement {
 public:
     std::string type;
-    bool isPointer;
+    int pointerLevel;
     std::string name;
     std::unique_ptr<Expression> initializer;
-    VariableDeclaration(const std::string& t, const std::string& n, bool p = false) : type(t), isPointer(p), name(n) {}
+    VariableDeclaration(const std::string& t, const std::string& n, int p = 0) : type(t), pointerLevel(p), name(n) {}
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -148,7 +148,7 @@ public:
 
 struct Parameter {
     std::string type;
-    bool isPointer;
+    int pointerLevel;
     std::string name;
 };
 

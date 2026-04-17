@@ -64,10 +64,11 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
                 throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type (int, char). Found '" + foundStr + "' instead.");
             }
 
-            bool pIsPtr = match(TokenType::STAR);
+            int pPtrLevel = 0;
+            while (match(TokenType::STAR)) pPtrLevel++;
 
             std::string pName = expect(TokenType::IDENTIFIER, "Expected parameter name").value;
-            params.push_back({pType, pIsPtr, pName});
+            params.push_back({pType, pPtrLevel, pName});
         } while (match(TokenType::COMMA));
     }
     expect(TokenType::CLOSE_PAREN, "Expected ')'");
@@ -93,9 +94,10 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     if (peek().type == TokenType::INT || peek().type == TokenType::CHAR) {
         // TODO: Implement complex nested pointer types and struct types.
         std::string type = (advance().type == TokenType::INT) ? "int" : "char";
-        bool isPtr = match(TokenType::STAR);
+        int ptrLevel = 0;
+        while (match(TokenType::STAR)) ptrLevel++;
         std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
-        auto decl = std::make_unique<VariableDeclaration>(type, name, isPtr);
+        auto decl = std::make_unique<VariableDeclaration>(type, name, ptrLevel);
         if (match(TokenType::EQUALS)) {
             decl->initializer = parseExpression();
         }
@@ -180,13 +182,11 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 }
 
 std::unique_ptr<Expression> Parser::parseExpression() {
-    // Assignment has lowest precedence
-    if (peek().type == TokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::EQUALS) {
-        std::string name = advance().value;
-        advance(); // consume =
-        return std::make_unique<Assignment>(name, parseExpression());
+    auto expr = parseLogicalOr();
+    if (match(TokenType::EQUALS)) {
+        return std::make_unique<Assignment>(std::move(expr), parseExpression());
     }
-    return parseLogicalOr();
+    return expr;
 }
 
 std::unique_ptr<Expression> Parser::parseLogicalOr() {
@@ -291,7 +291,7 @@ std::unique_ptr<Expression> Parser::parseMultiplicative() {
 }
 
 std::unique_ptr<Expression> Parser::parseUnary() {
-    if (match(TokenType::BANG) || match(TokenType::TILDE) || match(TokenType::MINUS)) {
+    if (match(TokenType::BANG) || match(TokenType::TILDE) || match(TokenType::MINUS) || match(TokenType::STAR) || match(TokenType::AMPERSAND)) {
         std::string op = tokens[pos-1].value;
         return std::make_unique<UnaryOperation>(op, parseUnary());
     }

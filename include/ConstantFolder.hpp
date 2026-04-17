@@ -33,7 +33,7 @@ public:
     }
 
     void visit(Assignment& node) override {
-        lastExpr = std::make_unique<Assignment>(node.name, fold(std::move(node.expression)));
+        lastExpr = std::make_unique<Assignment>(fold(std::move(node.target)), fold(std::move(node.expression)));
     }
 
     void visit(BinaryOperation& node) override {
@@ -108,7 +108,7 @@ public:
     }
 
     void visit(VariableDeclaration& node) override {
-        auto decl = std::make_unique<VariableDeclaration>(node.type, node.name, node.isPointer);
+        auto decl = std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel);
         if (node.initializer) {
             decl->initializer = fold(std::move(node.initializer));
         }

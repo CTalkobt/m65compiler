@@ -14,7 +14,11 @@ public:
 
     struct VarInfo {
         std::string type;
-        bool isPointer;
+        int pointerLevel;
+    };
+    struct ExpressionType {
+        std::string type;
+        int pointerLevel;
     };
     std::map<std::string, VarInfo> variableTypes;
     uint32_t zeroPageStart = 0x02;

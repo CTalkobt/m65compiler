@@ -21,6 +21,7 @@ TEST_FILES=(
     "src/test-resources/hello_world.c"
     "src/test-resources/test_ptr_arith.c"
     "src/test-resources/test_constant_folding.c"
+    "src/test-resources/test_ptr_ptr.c"
 )
 
 mkdir -p build/test

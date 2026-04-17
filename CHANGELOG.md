@@ -2,8 +2,31 @@
 
 All notable changes to the cc45 / ca45 suite will be documented in this file.
 
-## [Unreleased] - 2026-04-14
+## [Unreleased] - 2026-04-17
 
+### Added
+- **Compiler (cc45)**:
+    - Added support for pointers to pointers (multiple levels of indirection).
+    - Implemented dereference (`*`) and address-of (`&`) unary operators.
+    - Updated assignment logic to support arbitrary targets (e.g., `*ptr = value`).
+- **Assembler (ca45)**:
+    - Added support for `FLAT_INDIRECT_Z` (`[zp],Z`) addressing mode for `ADC`, `AND`, `CMP`, `EOR`, `LDA`, `ORA`, `SBC`, and `STA`.
+    - Added support for `IDENTIFIER = expression` equates in `pass1`.
+    - Improved `ACCUMULATOR` mode detection to correctly distinguish between registers and labels.
+
+### Fixed
+- **Assembler (ca45)**:
+    - Fixed branch instruction emission order (opcode now correctly precedes the relative offset).
+    - Fixed `SEE` instruction opcode (corrected to `0x03`).
+    - Fixed `BSR` 16-bit relative offset calculation.
+    - Fixed `pass1` re-evaluation loop to correctly handle `org` and `* =` directives, ensuring accurate address calculation for subsequent labels.
+    - Fixed object file mismatch issues by ensuring clean builds.
+- **Compiler (cc45)**:
+    - Fixed 16-bit pointer arithmetic scaling for `char` and `int` pointer types.
+    - Improved hex formatting for ZP scratchpad addresses in generated assembly.
+
+## [Unreleased] - 2026-04-14
+...
 ### Added
 - **Compiler (cc45)**:
     - Added support for `do-while` loops.

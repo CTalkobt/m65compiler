@@ -69,7 +69,24 @@ void M65Emitter::bit_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("BIT", 
 // --- Other Addressing Modes ---
 void M65Emitter::lda_stack(uint8_t offset) { if (mode == Mode::TEXT) emitText("LDA", std::to_string((int)offset) + ", s"); else { emitByte(0xE2); emitByte(offset); } }
 void M65Emitter::sta_stack(uint8_t offset) { if (mode == Mode::TEXT) emitText("STA", std::to_string((int)offset) + ", s"); else { emitByte(0x82); emitByte(offset); } }
-void M65Emitter::lda_ind_z(uint8_t addr, bool flat) { if (mode == Mode::TEXT) emitText("LDA", (flat ? "[" : "(") + hex8(addr) + "],Z"); else { if (flat) emitByte(0xEA); emitByte(0xB2); emitByte(addr); } }
+void M65Emitter::lda_ind_z(uint8_t addr, bool flat) {
+    if (mode == Mode::TEXT) {
+        if (flat) emitText("LDA", "[" + hex8(addr) + "],Z");
+        else { emitText("LDY", "#$00"); emitText("LDA", "(" + hex8(addr) + "),Y"); }
+    } else {
+        if (flat) { eom(); emitByte(0xB2); emitByte(addr); }
+        else { ldy_imm(0); emitByte(0xB1); emitByte(addr); }
+    }
+}
+void M65Emitter::sta_ind_z(uint8_t addr, bool flat) {
+    if (mode == Mode::TEXT) {
+        if (flat) emitText("STA", "[" + hex8(addr) + "],Z");
+        else { emitText("LDY", "#$00"); emitText("STA", "(" + hex8(addr) + "),Y"); }
+    } else {
+        if (flat) { eom(); emitByte(0x92); emitByte(addr); }
+        else { ldy_imm(0); emitByte(0x91); emitByte(addr); }
+    }
+}
 void M65Emitter::bit_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("BIT", hex16(addr)); else { emitByte(0x2C); emitWord(addr); } }
 
 // --- Register Transfers ---
