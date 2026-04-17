@@ -47,6 +47,7 @@ struct Instruction {
     std::string mnemonic;
     AddressingMode mode;
     std::string operand;
+    int operandTokenIndex = -1;
     std::string bitBranchTarget;
     std::vector<std::string> callArgs;
     int procParamSize = 0; 

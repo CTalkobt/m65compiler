@@ -540,6 +540,7 @@ void AssemblerParser::pass1() {
                 std::vector<uint8_t> dummy; if (stmt->type == Statement::MUL) emitMulCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); else emitDivCode(dummy, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix); stmt->size = dummy.size();
             } else {
                 if (match(AssemblerTokenType::HASH)) {
+                    stmt->instr.operandTokenIndex = (int)pos;
                     std::string op;
                     while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE && peek().type != AssemblerTokenType::COMMA) {
                         op += advance().value;
@@ -548,6 +549,7 @@ void AssemblerParser::pass1() {
                     if (stmt->instr.mnemonic == "PHW") stmt->instr.mode = AddressingMode::IMMEDIATE16; else stmt->instr.mode = AddressingMode::IMMEDIATE;
                 }
                 else if (match(AssemblerTokenType::OPEN_PAREN)) {
+                    stmt->instr.operandTokenIndex = (int)pos;
                     stmt->instr.operand = advance().value;
                     if (match(AssemblerTokenType::COMMA)) {
                         std::string r = advance().value; if (r == "X" || r == "x") { expect(AssemblerTokenType::CLOSE_PAREN, "Expected )"); try { uint32_t val = parseNumericLiteral(stmt->instr.operand); if (val > 0xFF || stmt->instr.mnemonic == "JSR" || stmt->instr.mnemonic == "JMP") stmt->instr.mode = AddressingMode::ABSOLUTE_X_INDIRECT; else stmt->instr.mode = AddressingMode::BASE_PAGE_X_INDIRECT; } catch(...) { stmt->instr.mode = AddressingMode::ABSOLUTE_X_INDIRECT; } }
@@ -557,9 +559,10 @@ void AssemblerParser::pass1() {
                         if (match(AssemblerTokenType::COMMA)) { std::string r = advance().value; if (r == "Y" || r == "y") stmt->instr.mode = AddressingMode::BASE_PAGE_INDIRECT_Y; else if (r == "Z" || r == "z") stmt->instr.mode = AddressingMode::BASE_PAGE_INDIRECT_Z; }
                         else { try { uint32_t val = parseNumericLiteral(stmt->instr.operand); if (val > 0xFF || stmt->instr.mnemonic == "JSR" || stmt->instr.mnemonic == "JMP") stmt->instr.mode = AddressingMode::ABSOLUTE_INDIRECT; else stmt->instr.mode = AddressingMode::INDIRECT; } catch(...) { stmt->instr.mode = AddressingMode::ABSOLUTE_INDIRECT; } }
                     }
-                } else if (match(AssemblerTokenType::OPEN_BRACKET)) { stmt->instr.operand = advance().value; expect(AssemblerTokenType::CLOSE_BRACKET, "Expected ]"); expect(AssemblerTokenType::COMMA, "Expected ,"); advance(); stmt->instr.mode = AddressingMode::FLAT_INDIRECT_Z; }
+                } else if (match(AssemblerTokenType::OPEN_BRACKET)) { stmt->instr.operandTokenIndex = (int)pos; stmt->instr.operand = advance().value; expect(AssemblerTokenType::CLOSE_BRACKET, "Expected ]"); expect(AssemblerTokenType::COMMA, "Expected ,"); advance(); stmt->instr.mode = AddressingMode::FLAT_INDIRECT_Z; }
                 else if (peek().type == AssemblerTokenType::REGISTER && (peek().value == "A" || peek().value == "a")) { advance(); stmt->instr.mode = AddressingMode::ACCUMULATOR; }
                 else if (peek().type == AssemblerTokenType::IDENTIFIER || peek().type == AssemblerTokenType::HEX_LITERAL || peek().type == AssemblerTokenType::DECIMAL_LITERAL) {
+                    stmt->instr.operandTokenIndex = (int)pos;
                     std::string op = advance().value;
                     while (peek().type != AssemblerTokenType::COMMA && peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
                         op += advance().value;
@@ -832,9 +835,26 @@ void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const
     if (isStackRel) {
         for (int i = 0; i < bytes; ++i) { e.lda_stack((uint8_t)(stackOff + i)); e.sta_abs(0xD764 + i); }
     } else if (srcAst->isConstant(this)) { 
-        uint32_t val = srcAst->getValue(this); for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD764 + i); } 
+        uint32_t val = srcAst->getValue(this); 
+        if (val == 0) {
+            throw std::runtime_error("Division by zero at assembly time (constant divisor 0) at line " + std::to_string(tokens[tokenIndex].line));
+        }
+        for (int i = 0; i < bytes; ++i) { e.lda_imm((val >> (i * 8)) & 0xFF); e.sta_abs(0xD764 + i); }
+    } else { 
+        // Note: Runtime division by zero results in undefined behavior.
+
+        int tIdx = tokenIndex; 
+        std::string srcName = tokens[tIdx].value; 
+        if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; 
+        if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { 
+            if (bytes >= 1) storeMath(0x64, 0, ".A"); 
+            if (bytes >= 2) storeMath(0x64, 1, ".X"); 
+            if (bytes >= 3) storeMath(0x64, 2, ".Y"); 
+            if (bytes >= 4) storeMath(0x64, 3, ".Z"); 
+        } else {
+            for (int i = 0; i < bytes; ++i) storeMath(0x64, i, srcName); 
+        }
     }
-    else { int tIdx = tokenIndex; std::string srcName = tokens[tIdx].value; if (tokens[tIdx].type == AssemblerTokenType::REGISTER) srcName = "." + srcName; if (srcName == ".A" || srcName == ".AX" || srcName == ".AXY" || srcName == ".AXYZ" || srcName == ".Q") { if (bytes >= 1) storeMath(0x64, 0, ".A"); if (bytes >= 2) storeMath(0x64, 1, ".X"); if (bytes >= 3) storeMath(0x64, 2, ".Y"); if (bytes >= 4) storeMath(0x64, 3, ".Z"); } else for (int i = 0; i < bytes; ++i) storeMath(0x64, i, srcName); }
     e.bit_abs(0xD70F); e.bne(-5);
     for (int i = 0; i < bytes; ++i) { e.lda_abs(0xD768 + i); if (dest == ".A" || dest == ".AX" || dest == ".AXY" || dest == ".AXYZ" || dest == ".Q") { if (i == 1) e.tax(); else if (i == 2) e.tay(); else if (i == 3) e.taz(); } else { Symbol* sym = resolveSymbol(dest, scopePrefix); uint32_t addr = sym ? sym->value : parseNumericLiteral(dest); e.sta_abs(addr + i); } }
 }
@@ -917,8 +937,15 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                         if (!op.empty() && op[0] == '<') { lowByte = true; op = op.substr(1); }
                         else if (!op.empty() && op[0] == '>') { highByte = true; op = op.substr(1); }
                         
-                        Symbol* sym = resolveSymbol(op, stmt->scopePrefix);
-                        uint32_t v = sym ? sym->value : parseNumericLiteral(op);
+                        uint32_t v;
+                        if (stmt->instr.operandTokenIndex != -1) {
+                            int tIdx = stmt->instr.operandTokenIndex;
+                            if (lowByte || highByte) tIdx++; 
+                            v = evaluateExpressionAt(tIdx, stmt->scopePrefix);
+                        } else {
+                            Symbol* sym = resolveSymbol(op, stmt->scopePrefix);
+                            v = sym ? sym->value : parseNumericLiteral(op);
+                        }
                         
                         if (lowByte) v = v & 0xFF;
                         else if (highByte) v = (v >> 8) & 0xFF;
@@ -930,8 +957,15 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                         if (!op.empty() && op[0] == '<') { lowByte = true; op = op.substr(1); }
                         else if (!op.empty() && op[0] == '>') { highByte = true; op = op.substr(1); }
                         
-                        Symbol* sym = resolveSymbol(op, stmt->scopePrefix);
-                        uint32_t a = sym ? sym->value : parseNumericLiteral(op);
+                        uint32_t a;
+                        if (stmt->instr.operandTokenIndex != -1) {
+                            int tIdx = stmt->instr.operandTokenIndex;
+                            if (lowByte || highByte) tIdx++;
+                            a = evaluateExpressionAt(tIdx, stmt->scopePrefix);
+                        } else {
+                            Symbol* sym = resolveSymbol(op, stmt->scopePrefix);
+                            a = sym ? sym->value : parseNumericLiteral(op);
+                        }
                         
                         if (lowByte) a = a & 0xFF;
                         else if (highByte) a = (a >> 8) & 0xFF;
