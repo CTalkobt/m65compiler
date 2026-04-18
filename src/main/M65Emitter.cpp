@@ -97,6 +97,12 @@ void M65Emitter::tya() { if (mode == Mode::TEXT) emitText("TYA"); else emitByte(
 void M65Emitter::taz() { if (mode == Mode::TEXT) emitText("TAZ"); else emitByte(0x4B); }
 void M65Emitter::tza() { if (mode == Mode::TEXT) emitText("TZA"); else emitByte(0x6B); }
 void M65Emitter::tsx() { if (mode == Mode::TEXT) emitText("TSX"); else emitByte(0xBA); }
+void M65Emitter::inx() { if (mode == Mode::TEXT) emitText("INX"); else emitByte(0xE8); }
+void M65Emitter::dex() { if (mode == Mode::TEXT) emitText("DEX"); else emitByte(0xCA); }
+void M65Emitter::iny() { if (mode == Mode::TEXT) emitText("INY"); else emitByte(0xC8); }
+void M65Emitter::dey() { if (mode == Mode::TEXT) emitText("DEY"); else emitByte(0x88); }
+void M65Emitter::inz() { if (mode == Mode::TEXT) emitText("INZ"); else emitByte(0x1B); }
+void M65Emitter::dez() { if (mode == Mode::TEXT) emitText("DEZ"); else emitByte(0x3B); }
 
 // --- Stack Operations ---
 void M65Emitter::pha() { if (mode == Mode::TEXT) emitText("PHA"); else emitByte(0x48); }
@@ -127,8 +133,48 @@ void M65Emitter::bcc(int8_t offset) { if (mode == Mode::TEXT) emitText("BCC", "*
 void M65Emitter::bcs(int8_t offset) { if (mode == Mode::TEXT) emitText("BCS", "*+" + std::to_string((int)offset)); else { emitByte(0xB0); emitByte((uint8_t)offset); } }
 
 // --- Semantic Helpers ---
-void M65Emitter::add_16_imm(uint16_t val) { clc(); adc_imm(val & 0xFF); pha(); txa(); adc_imm(val >> 8); tax(); pla(); }
-void M65Emitter::sub_16_imm(uint16_t val) { sec(); sbc_imm(val & 0xFF); pha(); txa(); sbc_imm(val >> 8); tax(); pla(); }
+void M65Emitter::add_16_imm(uint16_t val) {
+    if (val == 0) return;
+    if (val == 1) {
+        inc_a();
+        if (mode == Mode::TEXT) emitText("BNE", "*+3"); else { emitByte(0xD0); emitByte(0x01); }
+        inx();
+    } else if (val < 256) {
+        clc();
+        adc_imm(val & 0xFF);
+        if (mode == Mode::TEXT) emitText("BCC", "*+3"); else { emitByte(0x90); emitByte(0x01); }
+        inx();
+    } else {
+        clc();
+        adc_imm(val & 0xFF);
+        pha();
+        txa();
+        adc_imm(val >> 8);
+        tax();
+        pla();
+    }
+}
+void M65Emitter::sub_16_imm(uint16_t val) {
+    if (val == 0) return;
+    if (val == 1) {
+        if (mode == Mode::TEXT) emitText("BNE", "*+3"); else { emitByte(0xD0); emitByte(0x01); }
+        dex();
+        dec_a();
+    } else if (val < 256) {
+        sec();
+        sbc_imm(val & 0xFF);
+        if (mode == Mode::TEXT) emitText("BCS", "*+3"); else { emitByte(0xB0); emitByte(0x01); }
+        dex();
+    } else {
+        sec();
+        sbc_imm(val & 0xFF);
+        pha();
+        txa();
+        sbc_imm(val >> 8);
+        tax();
+        pla();
+    }
+}
 void M65Emitter::neg_16() { neg_a(); pha(); txa(); eor_imm(0xFF); adc_imm(0); tax(); pla(); }
 void M65Emitter::not_16() { eor_imm(0xFF); pha(); txa(); eor_imm(0xFF); tax(); pla(); }
 void M65Emitter::push_ax() { phx(); pha(); }

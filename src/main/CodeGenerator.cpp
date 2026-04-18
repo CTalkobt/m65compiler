@@ -80,13 +80,7 @@ void CodeGenerator::emitAddress(Expression* expr) {
         StructInfo& sInfo = structs[sName];
         MemberInfo& mInfo = sInfo.members[ma->memberName];
         if (mInfo.offset > 0) {
-            emitter->clc();
-            emitter->adc_imm(mInfo.offset & 0xFF);
-            emitter->pha();
-            emitter->txa();
-            emitter->adc_imm(mInfo.offset >> 8);
-            emitter->tax();
-            emitter->pla();
+            emitter->add_16_imm(mInfo.offset);
         }
     } else if (auto* un = dynamic_cast<UnaryOperation*>(expr)) {
         if (un->op == "*") {
@@ -161,6 +155,40 @@ void CodeGenerator::visit(VariableDeclaration& node) {
 
 void CodeGenerator::visit(Assignment& node) {
     embedSource(node);
+    
+    // Optimization 1.1: Direct stack-relative store
+    if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
+        node.expression->accept(*this);
+        emit("STA " + ref->name + ", s");
+        VarInfo vi = variableTypes[ref->name];
+        ExpressionType varType = {vi.type, vi.pointerLevel};
+        if (varType.pointerLevel > 0 || varType.type == "int" || (varType.type.substr(0, 7) == "struct " && structs[varType.type.substr(7)].totalSize > 1)) {
+            emitter->pha();
+            emitter->txa();
+            emit("STA " + ref->name + "+1, s");
+            emitter->pla();
+        }
+        return;
+    } else if (auto* ma = dynamic_cast<MemberAccess*>(node.target.get())) {
+        if (!ma->isArrow) {
+            if (auto* ref = dynamic_cast<VariableReference*>(ma->structExpr.get())) {
+                ExpressionType baseType = getExprType(ref);
+                std::string sName = baseType.type.substr(7);
+                MemberInfo& mInfo = structs[sName].members[ma->memberName];
+                
+                node.expression->accept(*this);
+                emit("STA " + ref->name + "+" + std::to_string(mInfo.offset) + ", s");
+                if (mInfo.pointerLevel > 0 || mInfo.type == "int" || (mInfo.type.substr(0, 7) == "struct " && structs[mInfo.type.substr(7)].totalSize > 1)) {
+                    emitter->pha();
+                    emitter->txa();
+                    emit("STA " + ref->name + "+" + std::to_string(mInfo.offset + 1) + ", s");
+                    emitter->pla();
+                }
+                return;
+            }
+        }
+    }
+
     emitAddress(node.target.get());
     emitter->sta_s(0); emitter->stx_s(1); // target addr in ZP 0,1
     node.expression->accept(*this);
@@ -252,15 +280,7 @@ void CodeGenerator::visit(StructDefinition& node) {
 }
 
 void CodeGenerator::visit(MemberAccess& node) {
-    // 1. Get base address of struct
-    if (node.isArrow) {
-        node.structExpr->accept(*this);
-    } else {
-        emitAddress(node.structExpr.get());
-    }
-    // address in AX
-
-    // 2. Determine struct type
+    // 1. Determine struct type and member info
     ExpressionType baseType = getExprType(node.structExpr.get());
     std::string sName;
     if (node.isArrow) {
@@ -280,15 +300,34 @@ void CodeGenerator::visit(MemberAccess& node) {
         throw std::runtime_error("Member " + node.memberName + " not found in struct " + sName);
     MemberInfo& mInfo = sInfo.members[node.memberName];
 
+    // Optimization 1.1: Direct stack-relative access for local structs
+    if (!node.isArrow) {
+        if (auto* ref = dynamic_cast<VariableReference*>(node.structExpr.get())) {
+            embedSource(node);
+            emit("LDA " + ref->name + "+" + std::to_string(mInfo.offset) + ", s");
+            if (mInfo.pointerLevel > 0 || mInfo.type == "int" || (mInfo.type.substr(0, 7) == "struct " && structs[mInfo.type.substr(7)].totalSize > 1)) {
+                emitter->pha();
+                emit("LDA " + ref->name + "+" + std::to_string(mInfo.offset + 1) + ", s");
+                emitter->tax();
+                emitter->pla();
+            } else {
+                emitter->ldx_imm(0);
+            }
+            return;
+        }
+    }
+
+    // Fallback: Address-based access
+    if (node.isArrow) {
+        node.structExpr->accept(*this);
+    } else {
+        emitAddress(node.structExpr.get());
+    }
+    // address in AX
+
     // 3. Add offset
     if (mInfo.offset > 0) {
-        emitter->clc();
-        emitter->adc_imm(mInfo.offset & 0xFF);
-        emitter->pha();
-        emitter->txa();
-        emitter->adc_imm(mInfo.offset >> 8);
-        emitter->tax();
-        emitter->pla();
+        emitter->add_16_imm(mInfo.offset);
     }
     
     // Now AX contains the absolute address of the member.

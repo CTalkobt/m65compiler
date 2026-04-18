@@ -82,6 +82,12 @@ public:
     void taz();
     void tza();
     void tsx();
+    void inx();
+    void dex();
+    void iny();
+    void dey();
+    void inz();
+    void dez();
 
     // --- Stack Operations ---
     void pha();
