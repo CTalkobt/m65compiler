@@ -73,12 +73,17 @@ void CodeGenerator::emitAddress(Expression* expr) {
     if (auto* ref = dynamic_cast<VariableReference*>(expr)) {
         emitter->tsx();
         emitter->txa();
-        emitter->clc();
+        if (flags.carry != TriState::CLEAR) emitter->clc();
+        updateFlags(TriState::CLEAR, TriState::UNKNOWN, TriState::UNKNOWN);
         emit("ADC #" + ref->name);
+        invalidateFlags();
         emitter->pha();
         emitter->lda_imm(0);
+        updateRegA(0);
         emitter->adc_imm(0);
+        invalidateFlags();
         emitter->tax();
+        updateRegXVar("unknown", 0);
         emitter->pla();
     } else if (auto* ma = dynamic_cast<MemberAccess*>(expr)) {
         if (ma->isArrow) {
@@ -302,16 +307,27 @@ void CodeGenerator::visit(IfStatement& node) {
     resultNeeded = true;
     node.condition->accept(*this);
     resultNeeded = oldNeeded;
+
     std::string labelElse = newLabel();
     std::string labelEnd = newLabel();
-    emit("CMP #$00");
+
+    if (flags.znSource == FlagSource::A) {
+        // Flags already set for A, skip CMP #0
+    } else {
+        emit("CMP #$00");
+        updateZNFlags(FlagSource::A);
+    }
+
     emit("BNE *+5");
     emitter->txa();
+    updateZNFlags(FlagSource::A); // TXA sets flags for A
     emit("BEQ " + labelElse);
+
     node.thenBranch->accept(*this);
     if (node.elseBranch) {
         emit("BRA " + labelEnd);
         out << labelElse << ":" << std::endl;
+        invalidateRegs();
         node.elseBranch->accept(*this);
         out << labelEnd << ":" << std::endl;
     } else {
@@ -325,14 +341,23 @@ void CodeGenerator::visit(WhileStatement& node) {
     std::string labelStart = newLabel();
     std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
+    invalidateRegs();
+    
     bool oldNeeded = resultNeeded;
     resultNeeded = true;
     node.condition->accept(*this);
     resultNeeded = oldNeeded;
-    emit("CMP #$00");
+
+    if (flags.znSource == FlagSource::A) {
+    } else {
+        emit("CMP #$00");
+        updateZNFlags(FlagSource::A);
+    }
     emit("BNE *+5");
     emitter->txa();
+    updateZNFlags(FlagSource::A);
     emit("BEQ " + labelEnd);
+
     node.body->accept(*this);
     emit("BRA " + labelStart);
     out << labelEnd << ":" << std::endl;
@@ -344,13 +369,18 @@ void CodeGenerator::visit(DoWhileStatement& node) {
     std::string labelStart = newLabel();
     out << labelStart << ":" << std::endl;
     node.body->accept(*this);
+    
     bool oldNeeded = resultNeeded;
     resultNeeded = true;
     node.condition->accept(*this);
     resultNeeded = oldNeeded;
-    emit("CMP #$00");
+
+    if (flags.znSource != FlagSource::A) {
+        emit("CMP #$00");
+    }
     emit("BNE " + labelStart);
     emitter->txa();
+    updateZNFlags(FlagSource::A);
     emit("BNE " + labelStart);
     invalidateRegs();
 }
@@ -371,9 +401,15 @@ void CodeGenerator::visit(ForStatement& node) {
         resultNeeded = true;
         node.condition->accept(*this);
         resultNeeded = oldNeeded;
-        emit("CMP #$00");
+
+        if (flags.znSource == FlagSource::A) {
+        } else {
+            emit("CMP #$00");
+            updateZNFlags(FlagSource::A);
+        }
         emit("BNE *+5");
         emitter->txa();
+        updateZNFlags(FlagSource::A);
         emit("BEQ " + labelEnd);
     }
     node.body->accept(*this);
@@ -598,19 +634,24 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emitter->pla();
     }
     if (node.op == "+") {
-        emitter->clc();
+        if (flags.carry != TriState::CLEAR) emitter->clc();
+        updateFlags(TriState::CLEAR, TriState::UNKNOWN, TriState::UNKNOWN);
         emitter->adc_zp(emitter->getZP(zpIdx));
+        invalidateFlags();
         emitter->pha();
         emitter->txa();
         emitter->adc_zp(emitter->getZP(zpIdx + 1));
         emitter->tax();
         emitter->pla();
+        invalidateFlags();
     } else if (node.op == "-") {
         int tempIdx = allocateZP(1);
         emitter->sta_zp(emitter->getZP(tempIdx)); 
         emitter->lda_zp(emitter->getZP(zpIdx));
-        emitter->sec();
+        if (flags.carry != TriState::SET) emitter->sec();
+        updateFlags(TriState::SET, TriState::UNKNOWN, TriState::UNKNOWN);
         emitter->sbc_zp(emitter->getZP(tempIdx));
+        invalidateFlags();
         emitter->pha();
         emitter->txa(); 
         emitter->sta_zp(emitter->getZP(tempIdx)); 
@@ -618,6 +659,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emitter->sbc_zp(emitter->getZP(tempIdx));
         emitter->tax();
         emitter->pla();
+        invalidateFlags();
         freeZP(tempIdx, 1);
     } else if (node.op == "&") {
         emitter->and_zp(emitter->getZP(zpIdx));
@@ -642,14 +684,20 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emitter->pla();
     } else if (node.op == "==" || node.op == "!=") {
         emitter->cmp_zp(emitter->getZP(zpIdx));
+        invalidateFlags();
         std::string labelFalse = newLabel(); std::string labelEnd = newLabel();
         if (node.op == "==") emit("BNE " + labelFalse); else emit("BEQ " + labelFalse);
         emitter->txa();
+        invalidateFlags();
         emitter->cmp_zp(emitter->getZP(zpIdx + 1));
+        invalidateFlags();
         if (node.op == "==") emit("BNE " + labelFalse); else emit("BEQ " + labelFalse);
         emitter->lda_imm(1); emitter->bra(0x02);
         out << labelFalse << ":" << std::endl; emitter->lda_imm(0);
-        out << labelEnd << ":" << std::endl; emitter->ldx_imm(0);
+        out << labelEnd << ":" << std::endl; 
+        invalidateRegs();
+        emitter->ldx_imm(0);
+        updateRegX(0);
     }
     freeZP(zpIdx, 2);
     invalidateRegs();
@@ -745,10 +793,20 @@ void CodeGenerator::visit(UnaryOperation& node) {
         resultNeeded = oldNeeded;
         if (node.op == "!") {
             std::string labelFalse = newLabel(); std::string labelEnd = newLabel();
-            emit("CMP #$00"); emit("BNE " + labelFalse); emitter->txa(); emit("BNE " + labelFalse);
+            if (flags.znSource != FlagSource::A) {
+                emit("CMP #$00");
+                updateZNFlags(FlagSource::A);
+            }
+            emit("BNE " + labelFalse); 
+            emitter->txa(); 
+            updateZNFlags(FlagSource::A);
+            emit("BNE " + labelFalse);
             emitter->lda_imm(1); emitter->bra(0x02);
             out << labelFalse << ":" << std::endl; emitter->lda_imm(0);
-            out << labelEnd << ":" << std::endl; emitter->ldx_imm(0);
+            out << labelEnd << ":" << std::endl; 
+            invalidateRegs();
+            emitter->ldx_imm(0);
+            updateRegX(0);
         } else if (node.op == "~") { emitter->not_16(); }
         else if (node.op == "-") { emitter->neg_16(); }
     }
@@ -766,16 +824,63 @@ void CodeGenerator::invalidateRegs() {
     regX.known = false; regX.isVariable = false; regX.varName = ""; regX.varOffset = 0; regX.value = 0;
     regY.known = false; regY.isVariable = false; regY.varName = ""; regY.varOffset = 0; regY.value = 0;
     regZ.known = false; regZ.isVariable = false; regZ.varName = ""; regZ.varOffset = 0; regZ.value = 0;
+    invalidateFlags();
 }
 
-void CodeGenerator::updateRegA(uint8_t val) { regA.known = true; regA.isVariable = false; regA.value = val; }
-void CodeGenerator::updateRegX(uint8_t val) { regX.known = true; regX.isVariable = false; regX.value = val; }
-void CodeGenerator::updateRegY(uint8_t val) { regY.known = true; regY.isVariable = false; regY.value = val; }
-void CodeGenerator::updateRegZ(uint8_t val) { regZ.known = true; regZ.isVariable = false; regZ.value = val; }
-void CodeGenerator::updateRegAVar(const std::string& name, int offset) { regA.known = true; regA.isVariable = true; regA.varName = name; regA.varOffset = offset; }
-void CodeGenerator::updateRegXVar(const std::string& name, int offset) { regX.known = true; regX.isVariable = true; regX.varName = name; regX.varOffset = offset; }
-void CodeGenerator::updateRegYVar(const std::string& name, int offset) { regY.known = true; regY.isVariable = true; regY.varName = name; regY.varOffset = offset; }
-void CodeGenerator::updateRegZVar(const std::string& name, int offset) { regZ.known = true; regZ.isVariable = true; regZ.varName = name; regZ.varOffset = offset; }
+void CodeGenerator::updateFlags(TriState c, TriState z, TriState n, TriState v) {
+    if (c != TriState::UNKNOWN) flags.carry = c;
+    if (z != TriState::UNKNOWN) flags.zero = z;
+    if (n != TriState::UNKNOWN) flags.negative = n;
+    if (v != TriState::UNKNOWN) flags.overflow = v;
+    if (z != TriState::UNKNOWN || n != TriState::UNKNOWN) flags.znSource = FlagSource::NONE;
+}
+
+void CodeGenerator::updateZNFlags(FlagSource source, TriState z, TriState n) {
+    flags.znSource = source;
+    flags.zero = z;
+    flags.negative = n;
+}
+
+void CodeGenerator::invalidateFlags() {
+    flags.carry = TriState::UNKNOWN;
+    flags.zero = TriState::UNKNOWN;
+    flags.negative = TriState::UNKNOWN;
+    flags.overflow = TriState::UNKNOWN;
+    flags.znSource = FlagSource::NONE;
+}
+
+void CodeGenerator::updateRegA(uint8_t val) { 
+    regA.known = true; regA.isVariable = false; regA.value = val; 
+    updateZNFlags(FlagSource::A, val == 0 ? TriState::SET : TriState::CLEAR, (val & 0x80) ? TriState::SET : TriState::CLEAR);
+}
+void CodeGenerator::updateRegX(uint8_t val) { 
+    regX.known = true; regX.isVariable = false; regX.value = val; 
+    updateZNFlags(FlagSource::X, val == 0 ? TriState::SET : TriState::CLEAR, (val & 0x80) ? TriState::SET : TriState::CLEAR);
+}
+void CodeGenerator::updateRegY(uint8_t val) { 
+    regY.known = true; regY.isVariable = false; regY.value = val; 
+    updateZNFlags(FlagSource::Y, val == 0 ? TriState::SET : TriState::CLEAR, (val & 0x80) ? TriState::SET : TriState::CLEAR);
+}
+void CodeGenerator::updateRegZ(uint8_t val) { 
+    regZ.known = true; regZ.isVariable = false; regZ.value = val; 
+    updateZNFlags(FlagSource::Z, val == 0 ? TriState::SET : TriState::CLEAR, (val & 0x80) ? TriState::SET : TriState::CLEAR);
+}
+void CodeGenerator::updateRegAVar(const std::string& name, int offset) { 
+    regA.known = true; regA.isVariable = true; regA.varName = name; regA.varOffset = offset; 
+    updateZNFlags(FlagSource::A);
+}
+void CodeGenerator::updateRegXVar(const std::string& name, int offset) { 
+    regX.known = true; regX.isVariable = true; regX.varName = name; regX.varOffset = offset; 
+    updateZNFlags(FlagSource::X);
+}
+void CodeGenerator::updateRegYVar(const std::string& name, int offset) { 
+    regY.known = true; regY.isVariable = true; regY.varName = name; regY.varOffset = offset; 
+    updateZNFlags(FlagSource::Y);
+}
+void CodeGenerator::updateRegZVar(const std::string& name, int offset) { 
+    regZ.known = true; regZ.isVariable = true; regZ.varName = name; regZ.varOffset = offset; 
+    updateZNFlags(FlagSource::Z);
+}
 
 int CodeGenerator::allocateZP(int size) {
     for (int i = 0; i <= (int)zpRegs.size() - size; ++i) {

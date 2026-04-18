@@ -78,6 +78,21 @@ public:
     void updateRegZVar(const std::string& name, int offset);
     void invalidateRegs();
 
+    // Flag tracking
+    enum class TriState { UNKNOWN, SET, CLEAR };
+    enum class FlagSource { NONE, A, X, Y, Z };
+    struct ProcessorStatus {
+        TriState carry = TriState::UNKNOWN;
+        TriState zero = TriState::UNKNOWN;
+        TriState negative = TriState::UNKNOWN;
+        TriState overflow = TriState::UNKNOWN;
+        FlagSource znSource = FlagSource::NONE;
+    };
+    ProcessorStatus flags;
+    void updateFlags(TriState c, TriState z, TriState n, TriState v = TriState::UNKNOWN);
+    void updateZNFlags(FlagSource source, TriState z = TriState::UNKNOWN, TriState n = TriState::UNKNOWN);
+    void invalidateFlags();
+
     private:
     std::ostream& out;
     std::unique_ptr<M65Emitter> emitter;
