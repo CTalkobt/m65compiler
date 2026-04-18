@@ -50,6 +50,7 @@ public:
     void inc_zp(uint8_t addr);
     void dec_zp(uint8_t addr);
     void bit_zp(uint8_t addr);
+    void cmp_zp(uint8_t addr);
 
     // --- Scratchpad (Relative to zeroPageStart) ---
     void lda_s(uint8_t index) { lda_zp(getZP(index)); }
@@ -66,6 +67,7 @@ public:
     void inc_s(uint8_t index) { inc_zp(getZP(index)); }
     void dec_s(uint8_t index) { dec_zp(getZP(index)); }
     void bit_s(uint8_t index) { bit_zp(getZP(index)); }
+    void cmp_s(uint8_t index) { cmp_zp(getZP(index)); }
 
     // --- Other Addressing Modes ---
     void lda_stack(uint8_t offset);

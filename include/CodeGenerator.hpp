@@ -34,6 +34,7 @@ public:
     std::map<std::string, VarInfo> variableTypes;
     std::map<std::string, StructInfo> structs;
     uint32_t zeroPageStart = 0x02;
+    uint32_t zeroPageAvail = 4;
 
     void visit(IntegerLiteral& node) override;
     void visit(StringLiteral& node) override;
@@ -73,4 +74,26 @@ public:
     void emitData();
     std::string newLabel();
     ExpressionType getExprType(Expression* expr);
+
+    // Register tracking
+    struct RegState {
+        bool known = false;
+        bool isVariable = false;
+        std::string varName;
+        int varOffset = 0;
+        uint8_t value = 0;
+    };
+    RegState regA, regX;
+
+    // ZP Register Allocation
+    struct ZPReg {
+        bool inUse = false;
+        bool isVariable = false;
+        std::string varName;
+        int varOffset = 0;
+    };
+    std::vector<ZPReg> zpRegs;
+    void invalidateRegs();
+    int allocateZP(int size);
+    void freeZP(int index, int size);
 };

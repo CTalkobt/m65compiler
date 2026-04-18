@@ -65,6 +65,7 @@ void M65Emitter::eor_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("EOR", 
 void M65Emitter::inc_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("INC", hex8(addr)); else { emitByte(0xE6); emitByte(addr); } }
 void M65Emitter::dec_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("DEC", hex8(addr)); else { emitByte(0xC6); emitByte(addr); } }
 void M65Emitter::bit_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("BIT", hex8(addr)); else { emitByte(0x24); emitByte(addr); } }
+void M65Emitter::cmp_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("CMP", hex8(addr)); else { emitByte(0xC5); emitByte(addr); } }
 
 // --- Other Addressing Modes ---
 void M65Emitter::lda_stack(uint8_t offset) { if (mode == Mode::TEXT) emitText("LDA", std::to_string((int)offset) + ", s"); else { emitByte(0xE2); emitByte(offset); } }

@@ -58,16 +58,16 @@ else
     failed=$((failed + 1))
 fi
 
-echo "Testing -Dca45.zeroPageStart=\$10..."
+echo "Testing -Dcc45.zeroPageStart=\$10..."
 # Use a dereference which is guaranteed to use ZP scratch $02/$03
 echo -e ".var ptr = \$20\nexpr .A, *ptr" > build/test_zp_shift.s
-$AS "-Dca45.zeroPageStart=\$10" -o build/test_zp_shift.bin build/test_zp_shift.s
+$AS "-Dcc45.zeroPageStart=\$10" -o build/test_zp_shift.bin build/test_zp_shift.s
 # 85 10 (STA $10) should be in there (saving eval'd ptr address to ZP scratch)
 ACTUAL_ZP=$(hexdump -v -e '1/1 "%02x "' build/test_zp_shift.bin)
 if [ -f build/test_zp_shift.bin ] && echo "$ACTUAL_ZP" | grep -q "85 10"; then
-    echo "SUCCESS: -Dca45.zeroPageStart correctly shifted ZP addresses."
+    echo "SUCCESS: -Dcc45.zeroPageStart correctly shifted ZP addresses."
 else
-    echo "FAIL: -Dca45.zeroPageStart did not shift ZP addresses correctly."
+    echo "FAIL: -Dcc45.zeroPageStart did not shift ZP addresses correctly."
     echo "Actual bytes: $ACTUAL_ZP"
     failed=$((failed + 1))
 fi

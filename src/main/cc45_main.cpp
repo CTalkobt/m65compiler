@@ -187,11 +187,21 @@ int main(int argc, char** argv) {
     bool assemble = false;
     bool verbose = false;
     uint32_t zeroPageStart = 0x02;
+    uint32_t zeroPageAvail = 10;
     std::string defineFlag = "";
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-c") {
+        if (arg == "-?" || arg == "--help") {
+            std::cout << "Usage: cc45 [options] <input_file.c>" << std::endl;
+            std::cout << "Options:" << std::endl;
+            std::cout << "  -c             Assemble the output with ca45" << std::endl;
+            std::cout << "  -o <filename>  Specify output assembly filename (default: out.s)" << std::endl;
+            std::cout << "  -v             Enable verbose output" << std::endl;
+            std::cout << "  -Dname=val     Define a symbol (e.g., -Dcc45.zeroPageStart=$10)" << std::endl;
+            std::cout << "  -?             Display this help message" << std::endl;
+            return 0;
+        } else if (arg == "-c") {
             assemble = true;
         } else if (arg == "-o" && i + 1 < argc) {
             output_file = argv[++i];
@@ -202,11 +212,17 @@ int main(int argc, char** argv) {
             size_t eq = arg.find('=');
             if (eq != std::string::npos) {
                 std::string name = arg.substr(2, eq - 2);
-                if (name == "ca45.zeroPageStart") {
-                    std::string valStr = arg.substr(eq + 1);
-                    if (valStr.substr(0, 1) == "$") zeroPageStart = std::stoul(valStr.substr(1), nullptr, 16);
-                    else if (valStr.substr(0, 1) == "%") zeroPageStart = std::stoul(valStr.substr(1), nullptr, 2);
-                    else zeroPageStart = std::stoul(valStr);
+                std::string valStr = arg.substr(eq + 1);
+                uint32_t val = 0;
+                if (valStr.empty()) {}
+                else if (valStr.substr(0, 1) == "$") val = std::stoul(valStr.substr(1), nullptr, 16);
+                else if (valStr.substr(0, 1) == "%") val = std::stoul(valStr.substr(1), nullptr, 2);
+                else val = std::stoul(valStr);
+
+                if (name == "cc45.zeroPageStart") {
+                    zeroPageStart = val;
+                } else if (name == "cc45.zeroPageAvail") {
+                    zeroPageAvail = val;
                 }
             }
         } else {
@@ -216,6 +232,7 @@ int main(int argc, char** argv) {
 
     if (input_file.empty()) {
         std::cerr << "Usage: cc45 [options] <input_file.c>" << std::endl;
+        std::cerr << "Use -? for a list of options." << std::endl;
         return 1;
     }
 
@@ -278,6 +295,7 @@ int main(int argc, char** argv) {
 
         CodeGenerator codegen(asmOut);
         codegen.zeroPageStart = zeroPageStart;
+        codegen.zeroPageAvail = zeroPageAvail;
         codegen.setSourceInfo(input_file, sourceLines);
         codegen.generate(*ast);
         if (verbose) {

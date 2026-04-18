@@ -939,8 +939,7 @@ Symbol* AssemblerParser::resolveSymbol(const std::string& name, const std::strin
 
 
 uint32_t AssemblerParser::getZPStart() const {
- if (symbolTable.count("ca45.zeroPageStart")) return symbolTable.at("ca45.zeroPageStart").value;
- return 0x02;
+ if (symbolTable.count("cc45.zeroPageStart")) return symbolTable.at("cc45.zeroPageStart").value; return 0x02;
  
 }
 

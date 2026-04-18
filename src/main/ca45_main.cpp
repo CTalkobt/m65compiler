@@ -14,7 +14,15 @@ int main(int argc, char** argv) {
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-o" && i + 1 < argc) {
+        if (arg == "-?" || arg == "--help") {
+            std::cout << "Usage: ca45 [options] <input_file.s>" << std::endl;
+            std::cout << "Options:" << std::endl;
+            std::cout << "  -o <filename>  Specify output binary filename (default: out.bin)" << std::endl;
+            std::cout << "  -v             Enable verbose output" << std::endl;
+            std::cout << "  -Dname=val     Define a symbol (e.g., -Dcc45.zeroPageStart=$10)" << std::endl;
+            std::cout << "  -?             Display this help message" << std::endl;
+            return 0;
+        } else if (arg == "-o" && i + 1 < argc) {
             output_file = argv[++i];
         } else if (arg == "-v") {
             verbose = true;
@@ -35,12 +43,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (predefinedSymbols.find("ca45.zeroPageStart") == predefinedSymbols.end()) {
-        predefinedSymbols["ca45.zeroPageStart"] = 0x02;
+    if (predefinedSymbols.find("cc45.zeroPageStart") == predefinedSymbols.end()) {
+        predefinedSymbols["cc45.zeroPageStart"] = 0x02;
     }
 
     if (input_file.empty()) {
         std::cerr << "Usage: ca45 [options] <input_file.s>" << std::endl;
+        std::cerr << "Use -? for a list of options." << std::endl;
         return 1;
     }
 
