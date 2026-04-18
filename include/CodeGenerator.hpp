@@ -69,6 +69,7 @@ public:
     std::string sourceFilename;
     std::vector<std::string> sourceLines;
     int lastEmbeddedLine = -1;
+    bool resultNeeded = true;
 
     void emit(const std::string& line);
     void emitData();

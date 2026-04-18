@@ -34,6 +34,8 @@ public:
     void stx_abs(uint16_t addr);
     void sty_abs(uint16_t addr);
     void stz_abs(uint16_t addr);
+    void lda_abs_x(uint16_t addr);
+    void sta_abs_x(uint16_t addr);
     void adc_abs(uint16_t addr);
     void sbc_abs(uint16_t addr);
 
@@ -51,6 +53,8 @@ public:
     void dec_zp(uint8_t addr);
     void bit_zp(uint8_t addr);
     void cmp_zp(uint8_t addr);
+    void inc_abs_x(uint16_t addr);
+    void dec_abs_x(uint16_t addr);
 
     // --- Scratchpad (Relative to zeroPageStart) ---
     void lda_s(uint8_t index) { lda_zp(getZP(index)); }

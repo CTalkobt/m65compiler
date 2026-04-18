@@ -49,6 +49,8 @@ enum class TokenType {
     OR,            // ||
     DOT,           // .
     ARROW,         // ->
+    PLUS_PLUS,     // ++
+    MINUS_MINUS,   // --
     
     // Special
     END_OF_FILE,
@@ -105,6 +107,8 @@ struct Token {
             case TokenType::OR: return "OR";
             case TokenType::DOT: return "DOT";
             case TokenType::ARROW: return "ARROW";
+            case TokenType::PLUS_PLUS: return "PLUS_PLUS";
+            case TokenType::MINUS_MINUS: return "MINUS_MINUS";
             case TokenType::END_OF_FILE: return "EOF";
             default: return "UNKNOWN";
         }

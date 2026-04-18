@@ -366,7 +366,8 @@ std::unique_ptr<Expression> Parser::parseMultiplicative() {
 }
 
 std::unique_ptr<Expression> Parser::parseUnary() {
-    if (match(TokenType::BANG) || match(TokenType::TILDE) || match(TokenType::MINUS) || match(TokenType::STAR) || match(TokenType::AMPERSAND)) {
+    if (match(TokenType::BANG) || match(TokenType::TILDE) || match(TokenType::MINUS) || match(TokenType::STAR) || match(TokenType::AMPERSAND) ||
+        match(TokenType::PLUS_PLUS) || match(TokenType::MINUS_MINUS)) {
         const Token& opToken = tokens[pos-1];
         std::string op = opToken.value;
         return setPos(std::make_unique<UnaryOperation>(op, parseUnary()), opToken);
@@ -405,11 +406,15 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected expression. Found '" + foundStr + "' (" + peek().typeToString() + ") instead.");
     }
 
-    while (match(TokenType::DOT) || match(TokenType::ARROW)) {
+    while (match(TokenType::DOT) || match(TokenType::ARROW) || match(TokenType::PLUS_PLUS) || match(TokenType::MINUS_MINUS)) {
         const Token& opToken = tokens[pos-1];
-        bool isArrow = (opToken.type == TokenType::ARROW);
-        std::string memberName = expect(TokenType::IDENTIFIER, "Expected member name").value;
-        expr = setPos(std::make_unique<MemberAccess>(std::move(expr), memberName, isArrow), opToken);
+        if (opToken.type == TokenType::PLUS_PLUS || opToken.type == TokenType::MINUS_MINUS) {
+            expr = setPos(std::make_unique<UnaryOperation>(opToken.value + "_POST", std::move(expr)), opToken);
+        } else {
+            bool isArrow = (opToken.type == TokenType::ARROW);
+            std::string memberName = expect(TokenType::IDENTIFIER, "Expected member name").value;
+            expr = setPos(std::make_unique<MemberAccess>(std::move(expr), memberName, isArrow), opToken);
+        }
     }
     return expr;
 }

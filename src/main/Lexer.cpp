@@ -94,9 +94,12 @@ Token Lexer::nextToken() {
         case '=': 
             if (peek() == '=') { get(); return {TokenType::EQUALS_EQUALS, "==", startLine, startCol}; }
             return {TokenType::EQUALS, "=", startLine, startCol};
-        case '+': return {TokenType::PLUS, "+", startLine, startCol};
+        case '+': 
+            if (peek() == '+') { get(); return {TokenType::PLUS_PLUS, "++", startLine, startCol}; }
+            return {TokenType::PLUS, "+", startLine, startCol};
         case '-': 
             if (peek() == '>') { get(); return {TokenType::ARROW, "->", startLine, startCol}; }
+            if (peek() == '-') { get(); return {TokenType::MINUS_MINUS, "--", startLine, startCol}; }
             return {TokenType::MINUS, "-", startLine, startCol};
         case '*': return {TokenType::STAR, "*", startLine, startCol};
         case '/': return {TokenType::SLASH, "/", startLine, startCol};

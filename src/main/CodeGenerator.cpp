@@ -22,6 +22,7 @@ void CodeGenerator::generate(TranslationUnit& unit) {
     zpRegs.clear();
     for (uint32_t i = 0; i < zeroPageAvail; ++i) zpRegs.push_back({false, false, "", 0});
     invalidateRegs();
+    resultNeeded = true;
     unit.accept(*this);
     emitData();
 }
@@ -75,7 +76,10 @@ void CodeGenerator::emitAddress(Expression* expr) {
         emitter->pla();
     } else if (auto* ma = dynamic_cast<MemberAccess*>(expr)) {
         if (ma->isArrow) {
+            bool oldNeeded = resultNeeded;
+            resultNeeded = true;
             ma->structExpr->accept(*this);
+            resultNeeded = oldNeeded;
         } else {
             emitAddress(ma->structExpr.get());
         }
@@ -88,7 +92,10 @@ void CodeGenerator::emitAddress(Expression* expr) {
         }
     } else if (auto* un = dynamic_cast<UnaryOperation*>(expr)) {
         if (un->op == "*") {
+            bool oldNeeded = resultNeeded;
+            resultNeeded = true;
             un->operand->accept(*this);
+            resultNeeded = oldNeeded;
         }
     }
     invalidateRegs();
@@ -140,7 +147,10 @@ void CodeGenerator::visit(VariableDeclaration& node) {
     }
 
     if (node.initializer) {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
         node.initializer->accept(*this);
+        resultNeeded = oldNeeded;
         if (size == 2) emitter->push_ax();
         else emitter->pha();
     } else {
@@ -161,7 +171,35 @@ void CodeGenerator::visit(Assignment& node) {
     
     // Optimization 1.1: Direct stack-relative store
     if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
+        // Optimization: x = x + 1 or x = x - 1
+        if (auto* bin = dynamic_cast<BinaryOperation*>(node.expression.get())) {
+            if ((bin->op == "+" || bin->op == "-") && 
+                dynamic_cast<IntegerLiteral*>(bin->right.get()) && 
+                dynamic_cast<IntegerLiteral*>(bin->right.get())->value == 1) {
+                if (auto* sourceRef = dynamic_cast<VariableReference*>(bin->left.get())) {
+                    if (ref->name == sourceRef->name) {
+                        VarInfo vi = variableTypes[ref->name];
+                        bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (vi.type.substr(0, 7) == "struct " && structs[vi.type.substr(7)].totalSize > 1));
+                        if (bin->op == "+") {
+                            if (is16Bit) emit("INW " + ref->name + ", s");
+                            else emit("INC " + ref->name + ", s");
+                        } else {
+                            if (is16Bit) emit("DEW " + ref->name + ", s");
+                            else emit("DEC " + ref->name + ", s");
+                        }
+                        invalidateRegs();
+                        if (resultNeeded) ref->accept(*this);
+                        return;
+                    }
+                }
+            }
+        }
+
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
         node.expression->accept(*this);
+        resultNeeded = oldNeeded;
+
         emit("STA " + ref->name + ", s");
         regA.known = true;
         regA.isVariable = true;
@@ -188,7 +226,11 @@ void CodeGenerator::visit(Assignment& node) {
                 std::string sName = baseType.type.substr(7);
                 MemberInfo& mInfo = structs[sName].members[ma->memberName];
                 
+                bool oldNeeded = resultNeeded;
+                resultNeeded = true;
                 node.expression->accept(*this);
+                resultNeeded = oldNeeded;
+
                 emit("STA " + ref->name + "+" + std::to_string(mInfo.offset) + ", s");
                 regA.known = true;
                 regA.isVariable = true;
@@ -214,7 +256,12 @@ void CodeGenerator::visit(Assignment& node) {
     int zpIdx = allocateZP(2);
     emitter->sta_zp(emitter->getZP(zpIdx));
     emitter->stx_zp(emitter->getZP(zpIdx + 1));
+    
+    bool oldNeeded = resultNeeded;
+    resultNeeded = true;
     node.expression->accept(*this);
+    resultNeeded = oldNeeded;
+
     // value in AX
     emitter->sta_ind_z(emitter->getZP(zpIdx), false);
     ExpressionType targetType = getExprType(node.target.get());
@@ -231,19 +278,31 @@ void CodeGenerator::visit(Assignment& node) {
 
 void CodeGenerator::visit(ReturnStatement& node) {
     embedSource(node);
-    if (node.expression) node.expression->accept(*this);
+    if (node.expression) {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
+        node.expression->accept(*this);
+        resultNeeded = oldNeeded;
+    }
     emit("RTN #$00"); // Return from procedure
     invalidateRegs();
 }
 
 void CodeGenerator::visit(ExpressionStatement& node) {
     embedSource(node);
+    bool oldNeeded = resultNeeded;
+    resultNeeded = false;
     node.expression->accept(*this);
+    resultNeeded = oldNeeded;
 }
 
 void CodeGenerator::visit(IfStatement& node) {
     embedSource(node);
+    bool oldNeeded = resultNeeded;
+    resultNeeded = true;
     node.condition->accept(*this);
+    resultNeeded = oldNeeded;
+
     std::string labelElse = newLabel();
     std::string labelEnd = newLabel();
     emit("CMP #$00");
@@ -267,7 +326,12 @@ void CodeGenerator::visit(WhileStatement& node) {
     std::string labelStart = newLabel();
     std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
+    
+    bool oldNeeded = resultNeeded;
+    resultNeeded = true;
     node.condition->accept(*this);
+    resultNeeded = oldNeeded;
+
     emit("CMP #$00");
     emit("BNE *+5");
     emitter->txa();
@@ -283,7 +347,12 @@ void CodeGenerator::visit(DoWhileStatement& node) {
     std::string labelStart = newLabel();
     out << labelStart << ":" << std::endl;
     node.body->accept(*this);
+    
+    bool oldNeeded = resultNeeded;
+    resultNeeded = true;
     node.condition->accept(*this);
+    resultNeeded = oldNeeded;
+
     emit("CMP #$00");
     emit("BNE " + labelStart);
     emitter->txa();
@@ -293,19 +362,32 @@ void CodeGenerator::visit(DoWhileStatement& node) {
 
 void CodeGenerator::visit(ForStatement& node) {
     embedSource(node);
-    if (node.initializer) node.initializer->accept(*this);
+    if (node.initializer) {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = false;
+        node.initializer->accept(*this);
+        resultNeeded = oldNeeded;
+    }
     std::string labelStart = newLabel();
     std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
     if (node.condition) {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
         node.condition->accept(*this);
+        resultNeeded = oldNeeded;
         emit("CMP #$00");
         emit("BNE *+5");
         emitter->txa();
         emit("BEQ " + labelEnd);
     }
     node.body->accept(*this);
-    if (node.increment) node.increment->accept(*this);
+    if (node.increment) {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = false;
+        node.increment->accept(*this);
+        resultNeeded = oldNeeded;
+    }
     emit("BRA " + labelStart);
     out << labelEnd << ":" << std::endl;
     invalidateRegs();
@@ -359,6 +441,8 @@ void CodeGenerator::visit(MemberAccess& node) {
     if (!node.isArrow) {
         if (auto* ref = dynamic_cast<VariableReference*>(node.structExpr.get())) {
             embedSource(node);
+            if (!resultNeeded) return;
+
             if (regA.known && regA.isVariable && regA.varName == ref->name && regA.varOffset == mInfo.offset) {
                 // Already in A
             } else {
@@ -395,11 +479,19 @@ void CodeGenerator::visit(MemberAccess& node) {
 
     // Fallback: Address-based access
     if (node.isArrow) {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
         node.structExpr->accept(*this);
+        resultNeeded = oldNeeded;
     } else {
         emitAddress(node.structExpr.get());
     }
     // address in AX
+
+    if (!resultNeeded) {
+        invalidateRegs();
+        return;
+    }
 
     // 3. Add offset
     if (mInfo.offset > 0) {
@@ -429,6 +521,7 @@ void CodeGenerator::visit(MemberAccess& node) {
 }
 
 void CodeGenerator::visit(IntegerLiteral& node) {
+    if (!resultNeeded) return;
     uint8_t low = node.value & 0xFF;
     uint8_t high = (node.value >> 8) & 0xFF;
 
@@ -447,6 +540,7 @@ void CodeGenerator::visit(IntegerLiteral& node) {
 }
 
 void CodeGenerator::visit(StringLiteral& node) {
+    if (!resultNeeded) return;
     if (stringPool.find(node.value) == stringPool.end()) stringPool[node.value] = "STR" + std::to_string(stringCount++);
     std::string label = stringPool[node.value];
     emit("LDA #<" + label); emit("LDX #>" + label);
@@ -454,6 +548,7 @@ void CodeGenerator::visit(StringLiteral& node) {
 }
 
 void CodeGenerator::visit(VariableReference& node) {
+    if (!resultNeeded) return;
     if (regA.known && regA.isVariable && regA.varName == node.name && regA.varOffset == 0) {
         // Already in A
     } else {
@@ -488,10 +583,13 @@ void CodeGenerator::visit(VariableReference& node) {
 }
 
 void CodeGenerator::visit(FunctionCall& node) {
+    bool oldNeeded = resultNeeded;
+    resultNeeded = true;
     for (auto& arg : node.arguments) {
         arg->accept(*this);
         emitter->push_ax();
     }
+    resultNeeded = oldNeeded;
     emit("JSR " + node.name);
     if (!node.arguments.empty()) emit("RTN #" + std::to_string(node.arguments.size() * 2));
     invalidateRegs();
@@ -522,7 +620,11 @@ void CodeGenerator::visit(BinaryOperation& node) {
     }
 
     if (isLiteralOne && (node.op == "+" || node.op == "-")) {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
         node.left->accept(*this);
+        resultNeeded = oldNeeded;
+
         if (node.op == "+") {
             std::string label = newLabel();
             emitter->inc_a(); emitter->bne(0x02); emit("INX");
@@ -536,12 +638,16 @@ void CodeGenerator::visit(BinaryOperation& node) {
         return;
     }
 
+    bool oldNeeded = resultNeeded;
+    resultNeeded = true;
     node.left->accept(*this);
     int zpIdx = allocateZP(2);
     emitter->sta_zp(emitter->getZP(zpIdx));
     emitter->stx_zp(emitter->getZP(zpIdx + 1));
     
     node.right->accept(*this);
+    resultNeeded = oldNeeded;
+
     if (scale > 1) {
         emitter->asl_a();
         emitter->pha();
@@ -615,7 +721,16 @@ void CodeGenerator::visit(BinaryOperation& node) {
 
 void CodeGenerator::visit(UnaryOperation& node) {
     if (node.op == "*") {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
         node.operand->accept(*this);
+        resultNeeded = oldNeeded;
+
+        if (!resultNeeded) {
+            invalidateRegs();
+            return;
+        }
+
         // address in AX
         int zpIdx = allocateZP(2);
         emitter->sta_zp(emitter->getZP(zpIdx));
@@ -636,8 +751,60 @@ void CodeGenerator::visit(UnaryOperation& node) {
         freeZP(zpIdx, 2);
     } else if (node.op == "&") {
         emitAddress(node.operand.get());
+    } else if (node.op == "++" || node.op == "--" || node.op == "++_POST" || node.op == "--_POST") {
+        bool isInc = (node.op.substr(0, 2) == "++");
+        bool isPost = (node.op.find("_POST") != std::string::npos);
+        
+        if (auto* ref = dynamic_cast<VariableReference*>(node.operand.get())) {
+            VarInfo vi = variableTypes[ref->name];
+            bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (vi.type.substr(0, 7) == "struct " && structs[vi.type.substr(7)].totalSize > 1));
+            if (isPost && resultNeeded) ref->accept(*this);
+            invalidateRegs();
+            if (is16Bit) {
+                if (isInc) emit("INW " + ref->name + ", s");
+                else emit("DEW " + ref->name + ", s");
+            } else {
+                if (isInc) emit("INC " + ref->name + ", s");
+                else emit("DEC " + ref->name + ", s");
+            }
+            if (!isPost && resultNeeded) ref->accept(*this);
+        } else if (auto* ma = dynamic_cast<MemberAccess*>(node.operand.get())) {
+            if (!ma->isArrow) {
+                if (auto* ref = dynamic_cast<VariableReference*>(ma->structExpr.get())) {
+                    ExpressionType baseType = getExprType(ref);
+                    std::string sName = baseType.type.substr(7);
+                    MemberInfo& mInfo = structs[sName].members[ma->memberName];
+                    bool is16Bit = (mInfo.pointerLevel > 0 || mInfo.type == "int" || (mInfo.type.substr(0, 7) == "struct " && structs[mInfo.type.substr(7)].totalSize > 1));
+                    if (isPost && resultNeeded) node.operand->accept(*this);
+                    invalidateRegs();
+                    if (is16Bit) {
+                        if (isInc) emit("INW " + ref->name + "+" + std::to_string(mInfo.offset) + ", s");
+                        else emit("DEW " + ref->name + "+" + std::to_string(mInfo.offset) + ", s");
+                    } else {
+                        if (isInc) emit("INC " + ref->name + "+" + std::to_string(mInfo.offset) + ", s");
+                        else emit("DEC " + ref->name + "+" + std::to_string(mInfo.offset) + ", s");
+                    }
+                    if (!isPost && resultNeeded) node.operand->accept(*this);
+                }
+            } else {
+                bool oldNeeded = resultNeeded;
+                resultNeeded = true;
+                node.operand->accept(*this);
+                resultNeeded = oldNeeded;
+                invalidateRegs();
+            }
+        } else {
+            bool oldNeeded = resultNeeded;
+            resultNeeded = true;
+            node.operand->accept(*this);
+            resultNeeded = oldNeeded;
+            invalidateRegs();
+        }
     } else {
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
         node.operand->accept(*this);
+        resultNeeded = oldNeeded;
         if (node.op == "!") {
             std::string labelFalse = newLabel(); std::string labelEnd = newLabel();
             emit("CMP #$00"); emit("BNE " + labelFalse); emitter->txa(); emit("BNE " + labelFalse);

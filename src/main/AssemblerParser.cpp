@@ -2973,6 +2973,29 @@ void AssemblerParser::emitDivCode(std::vector<uint8_t>& binary, int width, const
 }
 
 
+void AssemblerParser::emitStackIncDecCode(std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix) {
+
+    uint32_t offset = evaluateExpressionAt(tokenIndex, scopePrefix);
+ M65Emitter e(binary, getZPStart());
+ e.tsx();
+ if (isInc) {
+ e.inc_abs_x(0x0101 + offset);
+ e.bne(0x03);
+ e.inc_abs_x(0x0101 + offset + 1);
+ 
+}
+ else {
+ e.lda_abs_x(0x0101 + offset);
+ e.bne(0x03);
+ e.dec_abs_x(0x0101 + offset + 1);
+ e.dec_abs_x(0x0101 + offset);
+ 
+}
+
+
+}
+
+
 void AssemblerParser::pass1() {
 
     pc = 0;
@@ -3432,7 +3455,12 @@ aN, sz
                 
 }
 
-                stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
+                if ((stmt->instr.mnemonic == "INW" || stmt->instr.mnemonic == "DEW") && stmt->instr.mode == AddressingMode::STACK_RELATIVE) {
+                    stmt->type = (stmt->instr.mnemonic == "INW") ? Statement::STACK_INC : Statement::STACK_DEC;
+                    stmt->size = (stmt->type == Statement::STACK_INC) ? 9 : 12;
+                } else {
+                    stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
+                }
 
             
 }
@@ -3615,6 +3643,18 @@ std::vector<uint8_t> AssemblerParser::pass2() {
 
         if (stmt->type == Statement::DIV) {
  if (!isDeadCode) emitDivCode(binary, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+ continue;
+ 
+}
+
+        if (stmt->type == Statement::STACK_INC) {
+ if (!isDeadCode) emitStackIncDecCode(binary, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+ continue;
+ 
+}
+
+        if (stmt->type == Statement::STACK_DEC) {
+ if (!isDeadCode) emitStackIncDecCode(binary, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
  continue;
  
 }

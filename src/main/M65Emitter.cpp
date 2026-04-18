@@ -49,6 +49,8 @@ void M65Emitter::sta_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("STA"
 void M65Emitter::stx_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("STX", hex16(addr)); else { emitByte(0x8E); emitWord(addr); } }
 void M65Emitter::sty_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("STY", hex16(addr)); else { emitByte(0x8C); emitWord(addr); } }
 void M65Emitter::stz_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("STZ", hex16(addr)); else { emitByte(0x9C); emitWord(addr); } }
+void M65Emitter::lda_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("LDA", hex16(addr) + ",X"); else { emitByte(0xBD); emitWord(addr); } }
+void M65Emitter::sta_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("STA", hex16(addr) + ",X"); else { emitByte(0x9D); emitWord(addr); } }
 void M65Emitter::adc_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("ADC", hex16(addr)); else { emitByte(0x6D); emitWord(addr); } }
 void M65Emitter::sbc_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("SBC", hex16(addr)); else { emitByte(0xED); emitWord(addr); } }
 
@@ -66,6 +68,8 @@ void M65Emitter::inc_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("INC", 
 void M65Emitter::dec_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("DEC", hex8(addr)); else { emitByte(0xC6); emitByte(addr); } }
 void M65Emitter::bit_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("BIT", hex8(addr)); else { emitByte(0x24); emitByte(addr); } }
 void M65Emitter::cmp_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("CMP", hex8(addr)); else { emitByte(0xC5); emitByte(addr); } }
+void M65Emitter::inc_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("INC", hex16(addr) + ",X"); else { emitByte(0xFE); emitWord(addr); } }
+void M65Emitter::dec_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("DEC", hex16(addr) + ",X"); else { emitByte(0xDE); emitWord(addr); } }
 
 // --- Other Addressing Modes ---
 void M65Emitter::lda_stack(uint8_t offset) { if (mode == Mode::TEXT) emitText("LDA", std::to_string((int)offset) + ", s"); else { emitByte(0xE2); emitByte(offset); } }
