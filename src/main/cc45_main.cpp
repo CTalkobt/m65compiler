@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
     bool assemble = false;
     bool verbose = false;
     uint32_t zeroPageStart = 0x02;
-    uint32_t zeroPageAvail = 10;
+    uint32_t zeroPageAvail = 9;
     std::string defineFlag = "";
 
     for (int i = 1; i < argc; ++i) {

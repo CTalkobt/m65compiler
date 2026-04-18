@@ -31,6 +31,11 @@ enum class AddressingMode {
     FLAT_INDIRECT_Z,
     QUAD_Q,
     STACK_RELATIVE,
+    STACK_RELATIVE_INDIRECT_Y,
+    LINEAR_ABSOLUTE,
+    LINEAR_ABSOLUTE_X,
+    LINEAR_ABSOLUTE_Y,
+    NONE
 };
 
 struct Symbol {
@@ -88,7 +93,11 @@ private:
     std::map<uint32_t, std::shared_ptr<ProcContext>> procedures;
 
     struct Statement {
-        enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV, STACK_INC, STACK_DEC, STACK_INC8, STACK_DEC8 } type = NONE;
+        enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV, STACK_INC, STACK_DEC, STACK_INC8, STACK_DEC8,
+                    ADD16, SUB16, AND16, ORA16, EOR16, CPW, LDW, STW, SWAP, ZERO,
+                    NEG16, NOT16, CHKZERO8, CHKZERO16, CHKNONZERO8, CHKNONZERO16, BRANCH16, SELECT,
+                    PTRSTACK, PTRDEREF, LDWF, STWF, INCF, DECF, PHW_STACK,
+                    LDAX, LDAY, LDAZ, STAX, STAY, STAZ } type = NONE;
         Instruction instr;
         Directive dir;
         std::string label;
@@ -129,4 +138,20 @@ private:
     void emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
     void emitStackIncDecCode(std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix = "");
     void emitStackIncDec8Code(std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix = "");
+    void emitAddSub16Code(std::vector<uint8_t>& binary, bool isAdd, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitBitwise16Code(std::vector<uint8_t>& binary, const std::string& mnemonic, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitCPWCode(std::vector<uint8_t>& binary, const std::string& src1, int tokenIndex, const std::string& scopePrefix = "");
+    void emitLDWCode(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "", bool forceStack = false);
+    void emitSTWCode(std::vector<uint8_t>& binary, const std::string& src, int tokenIndex, const std::string& scopePrefix = "", bool forceStack = false);
+    void emitSwapCode(std::vector<uint8_t>& binary, const std::string& r1, int tokenIndex, const std::string& scopePrefix = "");
+    void emitZeroCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
+    void emitNegNot16Code(std::vector<uint8_t>& binary, bool isNeg, const std::string& operand, int tokenIndex, const std::string& scopePrefix = "");
+    void emitChkZeroCode(std::vector<uint8_t>& binary, bool is16, bool isInverse, int tokenIndex, const std::string& scopePrefix = "");
+    void emitBranch16Code(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
+    void emitSelectCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
+    void emitPtrStackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
+    void emitPtrDerefCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
+    void emitFlatMemoryCode(std::vector<uint8_t>& binary, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix = "");
+    void emitPHWStackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
+    bool isStackRelativeOperand(int tokenIndex, uint32_t& offset, const std::string& scopePrefix);
 };

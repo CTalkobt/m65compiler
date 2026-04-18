@@ -24,6 +24,7 @@ public:
     void and_imm(uint8_t val);
     void ora_imm(uint8_t val);
     void eor_imm(uint8_t val);
+    void cmp_imm(uint8_t val);
 
     // --- Absolute Mode ---
     void lda_abs(uint16_t addr);
@@ -36,8 +37,13 @@ public:
     void stz_abs(uint16_t addr);
     void lda_abs_x(uint16_t addr);
     void sta_abs_x(uint16_t addr);
+    void stz_abs_x(uint16_t addr);
     void adc_abs(uint16_t addr);
     void sbc_abs(uint16_t addr);
+    void and_abs(uint16_t addr);
+    void ora_abs(uint16_t addr);
+    void eor_abs(uint16_t addr);
+    void cmp_abs(uint16_t addr);
 
     // --- Zero Page Mode ---
     void lda_zp(uint8_t addr);
@@ -51,6 +57,8 @@ public:
     void eor_zp(uint8_t addr);
     void inc_zp(uint8_t addr);
     void dec_zp(uint8_t addr);
+    void inc_abs(uint16_t addr);
+    void dec_abs(uint16_t addr);
     void bit_zp(uint8_t addr);
     void cmp_zp(uint8_t addr);
     void inc_abs_x(uint16_t addr);
@@ -76,6 +84,9 @@ public:
     // --- Other Addressing Modes ---
     void lda_stack(uint8_t offset);
     void sta_stack(uint8_t offset);
+    void stx_stack(uint8_t offset);
+    void sty_stack(uint8_t offset);
+    void stz_stack(uint8_t offset);
     void lda_ind_z(uint8_t addr, bool flat = false);
     void sta_ind_z(uint8_t addr, bool flat = false);
     void bit_abs(uint16_t addr);
@@ -108,6 +119,10 @@ public:
     // --- ALU & Branching ---
     void clc();
     void sec();
+    void cla();
+    void clx();
+    void cly();
+    void clz();
     void neg_a();
     void asl_a();
     void rol_a();
@@ -116,14 +131,14 @@ public:
     void inc_a();
     void dec_a();
     void eom();
-    
+
     void bra(int8_t offset);
     void bne(int8_t offset);
     void beq(int8_t offset);
     void bcc(int8_t offset);
     void bcs(int8_t offset);
 
-    // --- High-Level Semantic Helpers ---
+    // --- High-level Helpers ---
     void add_16_imm(uint16_t val);
     void sub_16_imm(uint16_t val);
     void neg_16();
@@ -133,11 +148,10 @@ public:
     void transfer_ax_to_zp(uint8_t addr);
 
 private:
-    Mode mode;
     std::ostream* out = nullptr;
     std::vector<uint8_t>* binary = nullptr;
+    Mode mode;
     uint32_t zeroPageStart;
-
     void emitByte(uint8_t b);
     void emitWord(uint16_t w);
     void emitText(const std::string& mnemonic, const std::string& operand = "");

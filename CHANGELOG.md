@@ -2,7 +2,47 @@
 
 All notable changes to the cc45 / ca45 suite will be documented in this file.
 
-## [Unreleased] - 2026-04-17
+## [Unreleased] - 2026-04-18
+
+### Added
+- **Assembler (ca45)**:
+    - Implemented a suite of high-level simulated opcodes:
+        - `ldax / lday / ldaz`: 16-bit word loads with support for immediate (`#`), stack-relative (`offset, s`), zero page, and absolute addressing.
+        - `stax / stay / staz`: 16-bit word stores with support for stack-relative, zero page, and absolute addressing.
+        - `phw`: 16-bit word push, now supports stack-relative `offset, s` using an optimized `tsx` sequence.
+        - `add.16 / sub.16`: 16-bit addition/subtraction on the `.ax` register pair.
+        - `and.16 / ora.16 / eor.16`: 16-bit bitwise logic on the `.ax` register pair.
+        - `neg.16 / not.16`: 16-bit negation and bitwise NOT, now supports `.ax`, stack-relative, and memory operands.
+        - `cpw`: 16-bit word comparison on the `.ax` register pair.
+        - `branch.16`: High-level 16-bit zero-check branching (`beq`, `bne`).
+        - `chkzero.8 / .16`: Truthiness check returning a boolean in `.a`.
+        - `ptrstack`: Efficiently calculates and loads a stack variable address into `.ax`.
+        - `ptrderef`: De-references a 16-bit pointer stored in Zero Page.
+        - `ldw.f / stw.f / inc.f / dec.f`: Linear 28-bit memory access (using hardware `eom` prefixes).
+        - `swap / zero`: Multi-register manipulation helpers.
+    - Added `@` prefix for "don't care" labels to define local optimization windows.
+
+### Changed
+- **Compiler (cc45)**:
+    - Updated all code generation to utilize the new simulated opcodes, resulting in significantly more compact assembly.
+    - Implemented **Parameter Prefixing**: All function parameters are now prefixed with `_p_` to avoid collisions with CPU registers or flags.
+    - Implemented **Local Variable Prefixing**: All local variables are now prefixed with `_l_`.
+    - Integrated `ldax #value` for more efficient 16-bit constant and string address loading.
+    - Changed default `cc45.zeroPageAvail` to `9`.
+- **Assembler (ca45)**:
+    - Renamed legacy `ldw .ax` syntax to preferred `ldax` mnemonic.
+
+### Optimized
+- **Compiler (cc45)**:
+    - **Constant Initialization**: Uses native `phw #value` for declaring local variables with constant initializers, saving 3 instructions and 3 bytes per declaration.
+    - **Constant Assignment**: Optimized 16-bit constant assignments to stack variables to use a "lda twice" sequence, avoiding clobbering the `x` register and reducing code size.
+    - **Zero Optimization**: Integrated `zero a, x` simulated opcode for more efficient handling of zero literals.
+    - **Surgical Loading**: Improved `VariableReference` loading to surgically update only the required registers if part of the word is already in the correct state.
+- **Assembler (ca45)**:
+    - **Stack-relative Logic**: Extended `stz`, `stx`, and `sty` with `tsx` absolute indexed addressing simulations where native stack-relative variants are missing.
+    - **Word Load Tracking**: Enhanced the optimizer to track register states across high-level word load/store operations.
+
+## [Unreleased] - 2026-04-18
 
 ### Added
 - **Compiler (cc45)**:

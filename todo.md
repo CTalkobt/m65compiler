@@ -14,6 +14,8 @@ Legend:
 - [X] **Register Allocation**: Better usage of A, X, Y, Z to reduce stack traffic. (Tracking implemented).
 - [X] **Increment Optimization**: Use `INC A`, `INX`, `INW`, etc. for `+ 1`.
 - [X] **Tiered Branching**: Automatic selection of short/long branches.
+- [X] **Logical Short-circuiting**: Implement `&&` and `||` short-circuiting in control flow and expressions.
+- [X] **Parameter/Local Mangling**: Prefix variables with `_p_` and `_l_` to avoid CPU register collisions.
 
 ---
 
@@ -22,6 +24,7 @@ Steps required to bring the C compiler closer to C11 standards.
 
 ### 1. Keyword & Syntax Support
 - [X] **Control Flow**: Implement `if`, `else`, `while`, `do-while`, and `for` statements.
+- [X] **Logical Operators**: Full support for `&&`, `||`, `!` with short-circuiting.
 - [X] **Comparison Operators**: Support `==`, `!=`, `<`, `>`, `<=`, `>=`.
 - [X] **Regression Testing**: Implement automated build and test runner (`test_compiler.sh`).
 - [ ] **Static Assertions**: Implement `_Static_assert(const-expr, string)` parsing and validation.
@@ -32,13 +35,10 @@ Steps required to bring the C compiler closer to C11 standards.
 
 ### 2. Type System Enhancements
 - [X] **Structures**: Support `struct` definitions, members, and dot/arrow operators.
+- [X] **Pointers**: Multi-level indirection, dereferencing (`*`), and address-of (`&`).
 - [ ] **Anonymous Structures & Unions**: Support nested structs/unions without names.
 - [ ] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
 - [ ] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
-
-### 3. Preprocessor
-- [ ] **Standard Macros**: Define `__STDC_VERSION__` as `201112L`.
-- [ ] **Feature Macros**: Implement `__STDC_NO_ATOMICS__`, `__STDC_NO_THREADS__`, etc., based on target capabilities.
 
 ---
 
@@ -48,18 +48,21 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Mega65 Multiplication**: Simulated `mul.<width> <dest>, <src>` opcode leveraging hardware multiplier.
 - [X] **Mega65 Division**: Simulated `div.<width> <dest>, <src>` opcode leveraging hardware divider.
 - [X] **Stack-Relative Word Ops**: Simulated `INW/DEW offset, s` leveraging `TSX`.
+- [X] **Other 16 bit registers**: Full support for `.AX`, `.AY`, `.AZ`, `.XY` in simulated high-level opcodes.
 - [ ] **Mega65 Memory**: Allow use of the Mega65 DMA for operations involving memory > 5 bytes for common routines such as memory movement, copy, swap and fill. Implement as built-in opcodes. 
 - [ ] **PC Register**: Treat current program counter as a register named .PC similar to how .A, .X etc are defined. 
-- [ ] **Other 16 bit registers**: Allow support for other psuedo-16 bit registers such as '.AZ', '.XY', '.YZ'. 
 
 ### 2. Segments
+- [I] **Local Optimization Windows**: Implemented `@` labels to define boundaries for register/flag tracking.
 - [ ] **Segment handling**: Ability to define segments to enforce local scope. 
       Also, allow anonymous segments where scope is merely defined. 
 - [ ] **Segment Address**: For named segments, allow mapping to various regions of memory. (eg: .segment "READONLY", .segment "CODE", etc. ). Have certain built-in segments pre-defined. Allow usage of other custom segments however. 
 
 ### 3. Memory & Alignment
+- [X] **Stack-relative Simulation**: Extended `STX/STY/STZ offset, s` with `TSX` sequences for thread-safety.
 - [ ] **Alignment Directive**: Implement `.align <n>` or `.balign <n>` to support C11 `_Alignas`.
 - [ ] **Segment Management**: Implement `.section` or `.segment` to support `_Thread_local` storage and separate data/text areas.
+
 
 ### 4. Expanded Literals
 - [X] **Dword/Long**: Support `.dword` and `.long` for 32-bit unsigned data.

@@ -34,7 +34,7 @@ public:
     std::map<std::string, VarInfo> variableTypes;
     std::map<std::string, StructInfo> structs;
     uint32_t zeroPageStart = 0x02;
-    uint32_t zeroPageAvail = 10;
+    uint32_t zeroPageAvail = 9;
 
     void visit(IntegerLiteral& node) override;
     void visit(StringLiteral& node) override;
@@ -107,10 +107,13 @@ public:
 
     void emit(const std::string& line);
     void emitData();
+    void emitJumpIfTrue(Expression* cond, const std::string& labelTrue);
+    void emitJumpIfFalse(Expression* cond, const std::string& labelElse);
     std::string newLabel();
     std::string newDontCareLabel();
     ExpressionType getExprType(Expression* expr);
     bool isStruct(const std::string& type);
+    std::string resolveVarName(const std::string& name);
 
     int allocateZP(int size);
     void freeZP(int index, int size);

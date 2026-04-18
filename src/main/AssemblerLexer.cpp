@@ -203,7 +203,12 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
         "SMB3", "SMB4", "SMB5", "SMB6", "SMB7", "STA", "STQ", "STX", "STY",
         "STZ", "TAB", "TAY", "TAZ", "TBA", "TAX", "TAY", "TSX", "TSY", "TXA",
         "TXS", "TYA", "TYS", "TZA", "TRB", "TSB",
-        "CALL", "PROC", "ENDPROC", "EXPR", "MUL", "DIV"
+        "CALL", "PROC", "ENDPROC", "EXPR", "MUL", "DIV",
+        "LDAX", "LDAY", "LDAZ", "STAX", "STAY", "STAZ",
+        "ADD.16", "SUB.16", "AND.16", "ORA.16", "EOR.16", "NEG.16", "NOT.16", "CPW", "LDW", "STW", "SWAP", "ZERO",
+        "STW.SP", "LDW.SP",
+        "CHKZERO.8", "CHKZERO.16", "CHKNONZERO.8", "CHKNONZERO.16", "BRANCH.16", "SELECT",
+        "PTRSTACK", "PTRDEREF", "LDW.F", "STW.F", "INC.F", "DEC.F"
     };
 
     std::string upperValue = value;

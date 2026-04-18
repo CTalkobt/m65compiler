@@ -38,6 +38,7 @@ AS_TEST_FILES=(
     "src/test-resources/test_accumulator_labels.s"
     "src/test-resources/test_multi_org.s"
     "src/test-resources/test_peephole.s"
+    "src/test-resources/test_simulated_ops.s"
 )
 
 for f in "${AS_TEST_FILES[@]}"; do

@@ -740,12 +740,8 @@ AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens) : to
 
 }
 
-AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols) : tokens(tokens), pos(0), pc(0) {
- for (const auto& [name, val] : predefinedSymbols) symbolTable[name] = {
-val, false, 2
-}
-;
- 
+AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols) : tokens(tokens), pos(0), pc(0), nextScopeId(0) {
+    for (const auto& [name, val] : predefinedSymbols) symbolTable[name] = {val, false, 2, false, 0, false, 0};
 }
 
 const AssemblerToken& AssemblerParser::peek() const {
@@ -767,12 +763,6 @@ bool AssemblerParser::match(AssemblerTokenType type) {
  
 }
  return false;
- 
-}
-
-const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std::string& message) {
- if (peek().type == type) return advance();
- throw std::runtime_error(message + " at " + std::to_string(peek().line) + ":" + std::to_string(peek().column));
  
 }
 
@@ -809,12 +799,9 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
  if (idx + 1 < (int)tokens.size() && (tokens[idx + 1].value == "s" || tokens[idx + 1].value == "S")) {
  uint32_t val = (t.type == AssemblerTokenType::HEX_LITERAL) ? std::stoul(t.value.substr(1), nullptr, 16) : std::stoul(t.value);
  idx += 2;
- std::string tempName = "__stack_" + std::to_string(val);
- symbolTable[tempName] = {
-val, true, 2, false, 0, true, (int)val
-}
-;
- return std::make_unique<VariableNode>(tempName, "");
+                 std::string tempName = "__stack_" + std::to_string(val);
+                 symbolTable[tempName] = {val, true, 2, false, 0, true, (int)val};
+                 return std::make_unique<VariableNode>(tempName, "");
  
 }
  
@@ -943,40 +930,59 @@ uint32_t AssemblerParser::getZPStart() const {
  
 }
 
+const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std::string& message) {
+    if (peek().type == type) return advance();
+    throw std::runtime_error(message + " at " + std::to_string(peek().line) + ":" + std::to_string(peek().column));
+}
 
-std::string AssemblerParser::AddressingModeToString(AddressingMode mode) {
-
-    switch (mode) {
-
-        case AddressingMode::IMPLIED: return "Implied";
- case AddressingMode::ACCUMULATOR: return "A";
- case AddressingMode::IMMEDIATE: return "#imm";
- case AddressingMode::IMMEDIATE16: return "#imm16";
- case AddressingMode::BASE_PAGE: return "zp";
- case AddressingMode::BASE_PAGE_X: return "zp,X";
- case AddressingMode::BASE_PAGE_Y: return "zp,Y";
- case AddressingMode::ABSOLUTE: return "abs";
- case AddressingMode::ABSOLUTE_X: return "abs,X";
- case AddressingMode::ABSOLUTE_Y: return "abs,Y";
- case AddressingMode::INDIRECT: return "(zp)";
- case AddressingMode::BASE_PAGE_X_INDIRECT: return "(zp,X)";
- case AddressingMode::BASE_PAGE_INDIRECT_Y: return "(zp),Y";
- case AddressingMode::BASE_PAGE_INDIRECT_Z: return "(zp),Z";
- case AddressingMode::BASE_PAGE_INDIRECT_SP_Y: return "(zp,SP),Y";
- case AddressingMode::ABSOLUTE_INDIRECT: return "(abs)";
- case AddressingMode::ABSOLUTE_X_INDIRECT: return "(abs,X)";
- case AddressingMode::RELATIVE: return "rel";
- case AddressingMode::RELATIVE16: return "rel16";
- case AddressingMode::BASE_PAGE_RELATIVE: return "zp,rel";
- case AddressingMode::FLAT_INDIRECT_Z: return "[zp],Z";
- case AddressingMode::QUAD_Q: return "Q";
- case AddressingMode::STACK_RELATIVE: return "offset,S";
- default: return "Unknown";
-
-    
+bool AssemblerParser::isStackRelativeOperand(int tokenIndex, uint32_t& offset, const std::string& scopePrefix) {
+    if (tokenIndex < 0 || tokenIndex >= (int)tokens.size()) return false;
+    int idx = tokenIndex;
+    try {
+        auto ast = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+        if (ast && idx + 1 < (int)tokens.size() && 
+            tokens[idx].type == AssemblerTokenType::COMMA &&
+            (tokens[idx+1].value == "s" || tokens[idx+1].value == "S")) {
+            offset = ast->getValue(this);
+            return true;
+        }
+    } catch (...) {}
+    return false;
 }
 
 
+std::string AssemblerParser::AddressingModeToString(AddressingMode mode) {
+    switch (mode) {
+        case AddressingMode::IMPLIED: return "Implied";
+        case AddressingMode::ACCUMULATOR: return "A";
+        case AddressingMode::IMMEDIATE: return "#imm";
+        case AddressingMode::IMMEDIATE16: return "#imm16";
+        case AddressingMode::BASE_PAGE: return "zp";
+        case AddressingMode::BASE_PAGE_X: return "zp,X";
+        case AddressingMode::BASE_PAGE_Y: return "zp,Y";
+        case AddressingMode::ABSOLUTE: return "abs";
+        case AddressingMode::ABSOLUTE_X: return "abs,X";
+        case AddressingMode::ABSOLUTE_Y: return "abs,Y";
+        case AddressingMode::INDIRECT: return "(zp)";
+        case AddressingMode::BASE_PAGE_X_INDIRECT: return "(zp,X)";
+        case AddressingMode::BASE_PAGE_INDIRECT_Y: return "(zp),Y";
+        case AddressingMode::BASE_PAGE_INDIRECT_Z: return "(zp),Z";
+        case AddressingMode::BASE_PAGE_INDIRECT_SP_Y: return "(zp,SP),Y";
+        case AddressingMode::ABSOLUTE_INDIRECT: return "(abs)";
+        case AddressingMode::ABSOLUTE_X_INDIRECT: return "(abs,X)";
+        case AddressingMode::RELATIVE: return "rel";
+        case AddressingMode::RELATIVE16: return "rel16";
+        case AddressingMode::BASE_PAGE_RELATIVE: return "zp,rel";
+        case AddressingMode::STACK_RELATIVE: return "offset,s";
+        case AddressingMode::STACK_RELATIVE_INDIRECT_Y: return "(offset,s),y";
+        case AddressingMode::LINEAR_ABSOLUTE: return "lin_abs";
+        case AddressingMode::LINEAR_ABSOLUTE_X: return "lin_abs,X";
+        case AddressingMode::LINEAR_ABSOLUTE_Y: return "lin_abs,Y";
+        case AddressingMode::FLAT_INDIRECT_Z: return "[zp],Z";
+        case AddressingMode::QUAD_Q: return "Q";
+        case AddressingMode::NONE: return "None";
+        default: return "Unknown";
+    }
 }
 
 
@@ -3021,12 +3027,35 @@ void AssemblerParser::optimize() {
             invalidate(regA); invalidate(regX); invalidate(regY); invalidate(regZ);
         }
 
-        if (s->type == Statement::INSTRUCTION) {
-            std::string m = s->instr.mnemonic;
+        if (s->type == Statement::INSTRUCTION || s->type == Statement::LDW || s->type == Statement::STW) {
+            std::string m = (s->type == Statement::INSTRUCTION) ? s->instr.mnemonic : (s->type == Statement::LDW ? "LDAX" : "STAX");
             AddressingMode mode = s->instr.mode;
             std::string op = s->instr.operand;
+            
+            if (s->type == Statement::LDW) {
+                std::string regStr = s->instr.operand; 
+                std::transform(regStr.begin(), regStr.end(), regStr.begin(), ::toupper);
+                char r2 = 'X';
+                if (regStr == ".AY") r2 = 'Y';
+                else if (regStr == ".AZ") r2 = 'Z';
+                
+                // Track A and the second register
+                regA.known = true; regA.mode = AddressingMode::NONE; // Word loads are complex
+                if (r2 == 'X') regX.known = true;
+                else if (r2 == 'Y') regY.known = true;
+                else if (r2 == 'Z') regZ.known = true;
+                
+                // If it's immediate, we can track the values
+                // But simulated LDW doesn't store the value in s->instr.operand if it's not a simple literal
+                // For now, just invalidate to be safe but track that they ARE known variables if applicable
+                continue;
+            }
 
-            // 4.2 Load-after-Store
+            if (s->type == Statement::STW) {
+                continue; // Storing doesn't necessarily clobber (if simulated correctly)
+            }
+
+            // 4.2 Load-after-Store (Existing logic)
             if (m == "LDA" && ( (regA.known && regA.mode == mode && regA.var == op) || (mode == AddressingMode::IMMEDIATE && regA.imm == op) )) {
                 s->deleted = true; s->size = 0; continue;
             }
@@ -3129,6 +3158,531 @@ void AssemblerParser::emitStackIncDec8Code(std::vector<uint8_t>& binary, bool is
 }
 
 
+void AssemblerParser::emitAddSub16Code(std::vector<uint8_t>& binary, bool isAdd, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    auto srcAst = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+    if (!srcAst) return;
+
+    std::string DEST = dest;
+    if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+
+    if (DEST == ".AX") {
+        if (isAdd) e.clc(); else e.sec();
+        
+        if (srcAst->isConstant(this)) {
+            uint32_t val = srcAst->getValue(this);
+            if (isAdd) e.adc_imm(val & 0xFF); else e.sbc_imm(val & 0xFF);
+            e.pha();
+            e.txa();
+            if (isAdd) e.adc_imm((val >> 8) & 0xFF); else e.sbc_imm((val >> 8) & 0xFF);
+            e.tax();
+            e.pla();
+        } else {
+            // Memory or other src
+            std::string src = tokens[tokenIndex].value;
+            if (tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src = "." + src;
+            else if (!src.empty() && src[0] != '.' && (src=="A"||src=="X"||src=="Y"||src=="Z"||src=="a"||src=="x"||src=="y"||src=="z")) src = "." + src;
+            
+            Symbol* sym = resolveSymbol(src, scopePrefix);
+            uint32_t addr = sym ? sym->value : parseNumericLiteral(src);
+            
+            if (isAdd) e.adc_abs(addr); else e.sbc_abs(addr);
+            e.pha();
+            e.txa();
+            if (isAdd) e.adc_abs(addr + 1); else e.sbc_abs(addr + 1);
+            e.tax();
+            e.pla();
+        }
+    } else {
+        throw std::runtime_error("Simulated ADD.16/SUB.16 currently only supports .AX destination, found " + DEST);
+    }
+}
+
+void AssemblerParser::emitBitwise16Code(std::vector<uint8_t>& binary, const std::string& mnemonic, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    auto srcAst = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+    if (!srcAst) return;
+
+    std::string DEST = dest;
+    if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+
+    std::string M = mnemonic;
+    std::transform(M.begin(), M.end(), M.begin(), ::toupper);
+
+    if (DEST == ".AX") {
+        if (srcAst->isConstant(this)) {
+            uint32_t val = srcAst->getValue(this);
+            if (M == "AND.16") e.and_imm(val & 0xFF);
+            else if (M == "ORA.16") e.ora_imm(val & 0xFF);
+            else if (M == "EOR.16") e.eor_imm(val & 0xFF);
+
+            e.pha();
+            e.txa();
+            
+            if (M == "AND.16") e.and_imm((val >> 8) & 0xFF);
+            else if (M == "ORA.16") e.ora_imm((val >> 8) & 0xFF);
+            else if (M == "EOR.16") e.eor_imm((val >> 8) & 0xFF);
+            
+            e.tax();
+            e.pla();
+        } else {
+            std::string src = tokens[tokenIndex].value;
+            if (tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src = "." + src;
+            else if (!src.empty() && src[0] != '.' && (src=="A"||src=="X"||src=="Y"||src=="Z"||src=="a"||src=="x"||src=="y"||src=="z")) src = "." + src;
+            Symbol* sym = resolveSymbol(src, scopePrefix);
+            uint32_t addr = sym ? sym->value : parseNumericLiteral(src);
+            
+            if (M == "AND.16") e.and_abs(addr);
+            else if (M == "ORA.16") e.ora_abs(addr);
+            else if (M == "EOR.16") e.eor_abs(addr);
+
+            e.pha();
+            e.txa();
+
+            if (M == "AND.16") e.and_abs(addr + 1);
+            else if (M == "ORA.16") e.ora_abs(addr + 1);
+            else if (M == "EOR.16") e.eor_abs(addr + 1);
+
+            e.tax();
+            e.pla();
+        }
+    } else {
+        throw std::runtime_error("Simulated bitwise 16-bit currently only supports .AX destination");
+    }
+}
+
+void AssemblerParser::emitCPWCode(std::vector<uint8_t>& binary, const std::string& src1, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    auto src2Ast = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+    if (!src2Ast) return;
+
+    std::string SRC1 = src1;
+    if (!SRC1.empty() && SRC1[0] != '.') SRC1 = "." + SRC1;
+    std::transform(SRC1.begin(), SRC1.end(), SRC1.begin(), ::toupper);
+
+    if (SRC1 == ".AX") {
+        if (src2Ast->isConstant(this)) {
+            uint32_t val = src2Ast->getValue(this);
+            e.cmp_imm(val & 0xFF);
+            e.bne(0x03); 
+            e.txa();
+            e.cmp_imm((val >> 8) & 0xFF);
+        } else {
+            std::string src2 = tokens[tokenIndex].value;
+            if (tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src2 = "." + src2;
+            else if (!src2.empty() && src2[0] != '.' && (src2=="A"||src2=="X"||src2=="Y"||src2=="Z"||src2=="a"||src2=="x"||src2=="y"||src2=="z")) src2 = "." + src2;
+            Symbol* sym = resolveSymbol(src2, scopePrefix);
+            uint32_t addr = sym ? sym->value : parseNumericLiteral(src2);
+            e.cmp_abs(addr);
+            e.bne(0x04);
+            e.txa();
+            e.cmp_abs(addr + 1);
+        }
+    } else {
+        throw std::runtime_error("Simulated CPW currently only supports .AX as first operand, found " + SRC1);
+    }
+}
+
+void AssemblerParser::emitLDWCode(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    
+    uint32_t offset = 0;
+    bool isStack = false;
+    if (forceStack) {
+        isStack = true;
+        offset = evaluateExpressionAt(tokenIndex, scopePrefix);
+    } else {
+        isStack = isStackRelativeOperand(tokenIndex, offset, scopePrefix);
+    }
+
+    std::string DEST = dest;
+    if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+
+    if (DEST == ".AX" || DEST == ".AY" || DEST == ".AZ") {
+        char reg2 = DEST[2]; // 'X', 'Y' or 'Z'
+        if (isStack) {
+            e.lda_stack(offset);
+            e.pha();
+            e.lda_stack(offset + 1);
+            if (reg2 == 'X') e.tax();
+            else if (reg2 == 'Y') e.tya();
+            else if (reg2 == 'Z') e.tza();
+            e.pla();
+        } else {
+            bool isImm = false;
+            if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::HASH) {
+                isImm = true;
+                idx++;
+            }
+            auto srcAst = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+            if (!srcAst) return;
+            if (isImm || srcAst->isConstant(this)) {
+                uint32_t val = srcAst->getValue(this);
+                e.lda_imm(val & 0xFF);
+                uint8_t val2 = (val >> 8) & 0xFF;
+                if (reg2 == 'X') e.ldx_imm(val2);
+                else if (reg2 == 'Y') e.ldy_imm(val2);
+                else if (reg2 == 'Z') e.ldz_imm(val2);
+            } else {
+                std::string src = tokens[tokenIndex].value;
+                if (tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src = "." + src;
+                else if (!src.empty() && src[0] != '.' && (src=="A"||src=="X"||src=="Y"||src=="Z"||src=="a"||src=="x"||src=="y"||src=="z")) src = "." + src;
+                Symbol* sym = resolveSymbol(src, scopePrefix);
+                uint32_t addr = sym ? sym->value : parseNumericLiteral(src);
+                e.lda_abs(addr);
+                uint32_t addr2 = addr + 1;
+                if (reg2 == 'X') e.ldx_abs(addr2);
+                else if (reg2 == 'Y') e.ldy_abs(addr2);
+                else if (reg2 == 'Z') e.ldz_abs(addr2);
+            }
+        }
+    } else {
+        throw std::runtime_error("Simulated LDW currently only supports .AX, .AY, .AZ destinations, found " + DEST);
+    }
+}
+
+void AssemblerParser::emitSTWCode(std::vector<uint8_t>& binary, const std::string& src, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    
+    uint32_t offset = 0;
+    bool isStack = false;
+    if (forceStack) {
+        isStack = true;
+        offset = evaluateExpressionAt(tokenIndex, scopePrefix);
+    } else {
+        isStack = isStackRelativeOperand(tokenIndex, offset, scopePrefix);
+    }
+
+    std::string SRC = src;
+    if (!SRC.empty() && SRC[0] != '.' && SRC[0] != '#') SRC = "." + SRC;
+    std::transform(SRC.begin(), SRC.end(), SRC.begin(), ::toupper);
+
+    if (SRC[0] == '#') {
+        // STW #imm, dest
+        int valIdx = tokenIndex - 1;
+        while (valIdx >= 0 && tokens[valIdx].type != AssemblerTokenType::HASH) valIdx--;
+        if (valIdx >= 0) valIdx++;
+        else valIdx = tokenIndex - 2; // Fallback
+
+        uint32_t val = evaluateExpressionAt(valIdx, scopePrefix);
+        uint8_t low = val & 0xFF;
+        uint8_t high = (val >> 8) & 0xFF;
+
+        if (isStack) {
+            e.lda_imm(low);
+            e.sta_stack(offset);
+            if (high == 0) e.stz_stack(offset + 1);
+            else { e.lda_imm(high); e.sta_stack(offset + 1); }
+        } else {
+            std::string dest = tokens[tokenIndex].value;
+            if (tokens[tokenIndex].type == AssemblerTokenType::REGISTER) dest = "." + dest;
+            Symbol* sym = resolveSymbol(dest, scopePrefix);
+            uint32_t addr = sym ? sym->value : parseNumericLiteral(dest);
+            e.lda_imm(low);
+            e.sta_abs(addr);
+            if (high == 0) e.stz_abs(addr + 1);
+            else { e.lda_imm(high); e.sta_abs(addr + 1); }
+        }
+        return;
+    }
+
+    if (SRC == ".AX" || SRC == ".AY" || SRC == ".AZ") {
+        char reg2 = SRC[2];
+        if (isStack) {
+            e.sta_stack(offset);
+            e.pha();
+            if (reg2 == 'X') e.txa();
+            else if (reg2 == 'Y') e.tya();
+            else if (reg2 == 'Z') e.tza();
+            e.sta_stack(offset + 1);
+            e.pla();
+        } else {
+            std::string dest = tokens[tokenIndex].value;
+            if (tokens[tokenIndex].type == AssemblerTokenType::REGISTER) dest = "." + dest;
+            else if (!dest.empty() && dest[0] != '.' && (dest=="A"||dest=="X"||dest=="Y"||dest=="Z"||dest=="a"||dest=="x"||dest=="y"||dest=="z")) dest = "." + dest;
+            Symbol* sym = resolveSymbol(dest, scopePrefix);
+            uint32_t addr = sym ? sym->value : parseNumericLiteral(dest);
+            e.sta_abs(addr);
+            uint32_t addr2 = addr + 1;
+            if (reg2 == 'X') e.stx_abs(addr2);
+            else if (reg2 == 'Y') e.sty_abs(addr2);
+            else if (reg2 == 'Z') e.stz_abs(addr2);
+        }
+    } else {
+        throw std::runtime_error("Simulated STW currently only supports .AX, .AY, .AZ sources, found " + SRC);
+    }
+}
+
+void AssemblerParser::emitSwapCode(std::vector<uint8_t>& binary, const std::string& r1, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    std::string r2 = tokens[tokenIndex].value;
+    if (!r2.empty() && r2[0] != '.') r2 = "." + r2;
+    std::transform(r2.begin(), r2.end(), r2.begin(), ::toupper);
+    
+    std::string R1 = r1;
+    if (!R1.empty() && R1[0] != '.') R1 = "." + R1;
+    std::transform(R1.begin(), R1.end(), R1.begin(), ::toupper);
+
+    if (R1 == ".A" || r2 == ".A") {
+        std::string other = (R1 == ".A") ? r2 : R1;
+        if (other == ".X") { e.pha(); e.txa(); e.plx(); }
+        else if (other == ".Y") { e.pha(); e.tya(); e.ply(); }
+        else if (other == ".Z") { e.pha(); e.tza(); e.plz(); }
+        else throw std::runtime_error("SWAP only supports A, X, Y, Z registers: found " + R1 + ", " + r2);
+    } else {
+        if ((R1 == ".X" && r2 == ".Y") || (R1 == ".Y" && r2 == ".X")) { e.phx(); e.tya(); e.tax(); e.ply(); }
+        else if ((R1 == ".X" && r2 == ".Z") || (R1 == ".Z" && r2 == ".X")) { e.phx(); e.tza(); e.tax(); e.plz(); }
+        else if ((R1 == ".Y" && r2 == ".Z") || (R1 == ".Z" && r2 == ".Y")) { e.phy(); e.tza(); e.tay(); e.plz(); }
+        else throw std::runtime_error("SWAP only supports A, X, Y, Z registers: found " + R1 + ", " + r2);
+    }
+}
+
+void AssemblerParser::emitZeroCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string&) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    while (idx < tokens.size()) {
+        std::string reg = tokens[idx].value;
+        std::transform(reg.begin(), reg.end(), reg.begin(), ::toupper);
+        if (reg == "A") e.cla();
+        else if (reg == "X") e.clx();
+        else if (reg == "Y") e.cly();
+        else if (reg == "Z") e.clz();
+        else throw std::runtime_error("ZERO only supports A, X, Y, Z registers: found " + reg);
+
+        if (idx + 1 < tokens.size() && tokens[idx+1].type == AssemblerTokenType::COMMA) {
+            idx += 2;
+        } else {
+            break;
+        }
+    }
+}
+
+void AssemblerParser::emitNegNot16Code(std::vector<uint8_t>& binary, bool isNeg, const std::string& operand, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    
+    std::string OP = operand;
+    if (!OP.empty() && OP[0] != '.') OP = "." + OP;
+    std::transform(OP.begin(), OP.end(), OP.begin(), ::toupper);
+
+    if (OP == ".AX" || OP == "") {
+        if (isNeg) e.neg_16();
+        else e.not_16();
+        return;
+    }
+
+    uint32_t offset = 0;
+    if (isStackRelativeOperand(tokenIndex, offset, scopePrefix)) {
+        if (isNeg) {
+            // NEG: Complement and Add 1
+            e.tsx();
+            e.lda_abs_x(0x0101 + offset);
+            e.eor_imm(0xFF);
+            e.clc();
+            e.adc_imm(1);
+            e.sta_abs_x(0x0101 + offset);
+            e.lda_abs_x(0x0102 + offset);
+            e.eor_imm(0xFF);
+            e.adc_imm(0);
+            e.sta_abs_x(0x0102 + offset);
+        } else {
+            // NOT: Just complement
+            e.tsx();
+            e.lda_abs_x(0x0101 + offset);
+            e.eor_imm(0xFF);
+            e.sta_abs_x(0x0101 + offset);
+            e.lda_abs_x(0x0102 + offset);
+            e.eor_imm(0xFF);
+            e.sta_abs_x(0x0102 + offset);
+        }
+    } else {
+        // Memory (ZP or Absolute)
+        Symbol* sym = resolveSymbol(operand, scopePrefix);
+        uint32_t addr = sym ? sym->value : parseNumericLiteral(operand);
+        bool isZP = (addr < 0x100);
+
+        if (isNeg) {
+            if (isZP) {
+                e.lda_zp(addr); e.eor_imm(0xFF); e.clc(); e.adc_imm(1); e.sta_zp(addr);
+                e.lda_zp(addr + 1); e.eor_imm(0xFF); e.adc_imm(0); e.sta_zp(addr + 1);
+            } else {
+                e.lda_abs(addr); e.eor_imm(0xFF); e.clc(); e.adc_imm(1); e.sta_abs(addr);
+                e.lda_abs(addr + 1); e.eor_imm(0xFF); e.adc_imm(0); e.sta_abs(addr + 1);
+            }
+        } else {
+            if (isZP) {
+                e.lda_zp(addr); e.eor_imm(0xFF); e.sta_zp(addr);
+                e.lda_zp(addr + 1); e.eor_imm(0xFF); e.sta_zp(addr + 1);
+            } else {
+                e.lda_abs(addr); e.eor_imm(0xFF); e.sta_abs(addr);
+                e.lda_abs(addr + 1); e.eor_imm(0xFF); e.sta_abs(addr + 1);
+            }
+        }
+    }
+}
+
+void AssemblerParser::emitChkZeroCode(std::vector<uint8_t>& binary, bool is16, bool isInverse, int, const std::string&) {
+    M65Emitter e(binary, getZPStart());
+    if (is16) {
+        // Optimized 16-bit zero check
+        e.cmp_imm(0); // Check low byte (A)
+        e.bne(0x03);  // If A != 0, it's non-zero, skip high check
+        e.txa();      // Move high byte to A
+        // Flags now reflect high byte. If both were zero, Z is set.
+    } else {
+        e.cmp_imm(0); // Standard 8-bit check
+    }
+    
+    if (isInverse) {
+        // Convert Z flag to boolean in A (True if non-zero)
+        e.bne(0x03); 
+        e.lda_imm(0); 
+        e.bra(0x02);
+        e.lda_imm(1);
+    } else {
+        // Convert Z flag to boolean in A (True if zero)
+        e.beq(0x03);
+        e.lda_imm(0);
+        e.bra(0x02);
+        e.lda_imm(1);
+    }
+}
+
+void AssemblerParser::emitBranch16Code(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    if (idx >= (int)tokens.size()) return;
+    std::string condition = tokens[idx++].value;
+    std::transform(condition.begin(), condition.end(), condition.begin(), ::toupper);
+    
+    if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) idx++;
+    
+    if (idx >= (int)tokens.size()) return;
+    std::string target = tokens[idx].value;
+
+    Symbol* sym = resolveSymbol(target, scopePrefix);
+    // ... Simplified ...
+    if (condition == "BEQ") e.beq(0x00);
+    else if (condition == "BNE") e.bne(0x00);
+}
+
+void AssemblerParser::emitSelectCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    if (idx >= (int)tokens.size()) return;
+    std::string reg = tokens[idx++].value;
+    
+    if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) idx++;
+    
+    auto val1Ast = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+    if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) idx++;
+    auto val2Ast = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+
+    // If flags are set, load val1, else val2
+    e.bne(0x03); 
+    e.lda_imm(val2Ast->getValue(this));
+    e.bra(0x02);
+    e.lda_imm(val1Ast->getValue(this));
+}
+
+void AssemblerParser::emitPtrStackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    uint32_t offset = evaluateExpressionAt(idx, scopePrefix);
+    e.tsx();
+    e.txa();
+    e.clc();
+    e.adc_imm(0x0101 + offset);
+    e.pha();
+    e.lda_imm(0);
+    e.adc_imm(0);
+    e.tax();
+    e.pla();
+}
+
+void AssemblerParser::emitPtrDerefCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    std::string src = tokens[idx].value;
+    if (tokens[idx].type == AssemblerTokenType::REGISTER) src = "." + src;
+    
+    // Assume src is ZP for now
+    Symbol* sym = resolveSymbol(src, scopePrefix);
+    uint32_t addr = sym ? sym->value : parseNumericLiteral(src);
+    
+    e.ldy_imm(0);
+    e.lda_ind_z(addr, false);
+    e.pha();
+    e.ldy_imm(1);
+    e.lda_ind_z(addr, false);
+    e.tax();
+    e.pla();
+}
+
+void AssemblerParser::emitFlatMemoryCode(std::vector<uint8_t>& binary, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    std::string op = tokens[idx].value;
+    Symbol* sym = resolveSymbol(op, scopePrefix);
+    uint32_t addr = sym ? sym->value : parseNumericLiteral(op);
+
+    // EOM prefix for linear 28-bit access
+    e.eom();
+    if (mnemonic == "LDW.F") {
+        e.lda_abs(addr);
+        e.eom();
+        e.ldx_abs(addr + 1);
+    } else if (mnemonic == "STW.F") {
+        e.sta_abs(addr);
+        e.eom();
+        e.stx_abs(addr + 1);
+    } else if (mnemonic == "INC.F") {
+        e.inc_abs(addr);
+    } else if (mnemonic == "DEC.F") {
+        e.dec_abs(addr);
+    }
+}
+
+void AssemblerParser::emitPHWStackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    uint32_t offset = evaluateExpressionAt(idx, scopePrefix);
+    
+    // PHW pushes high byte then low byte.
+    // To push a word from the stack at 'offset, s':
+    // 1. Load high byte from offset+1
+    // 2. Push it
+    // 3. Load low byte from offset+1 (because SP moved!)
+    // Better: use TSX
+    e.tsx();
+    e.lda_abs_x(0x0102 + offset); // High byte (original offset+1)
+    e.pha();
+    e.lda_abs_x(0x0102 + offset); // Low byte (original offset+0, but SP moved so it's still at same X-relative)
+    // Wait, let's trace:
+    // S was $FE. X = $FE. High byte is at $01FE. Low byte is at $01FD.
+    // LDA $0101+1, X -> LDA $0102, $FE -> LDA $0200. WRONG.
+    // Trace again:
+    // If offset is 0, we want to push the word at S+1, S+2.
+    // High byte is at S+2. Low byte is at S+1.
+    // TSX -> X = S.
+    // LDA $0102, X -> High byte. Correct.
+    // PHA -> S = S-1. X is still original S.
+    // Low byte is at original S+1.
+    // LDA $0101, X -> Low byte.
+    // So:
+    e.lda_abs_x(0x0102 + offset);
+    e.pha();
+    e.lda_abs_x(0x0101 + offset);
+    e.pha();
+}
+
 void AssemblerParser::pass1() {
 
     pc = 0;
@@ -3164,10 +3718,7 @@ void AssemblerParser::pass1() {
         if (peek().type == AssemblerTokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == AssemblerTokenType::COLON) {
  stmt->label = stmt->scopePrefix + advance().value;
  advance();
- symbolTable[stmt->label] = {
-pc, true, 2
-}
-;
+ symbolTable[stmt->label] = {pc, true, 2, false, 0, false, 0};
  
 }
 
@@ -3175,7 +3726,7 @@ pc, true, 2
             std::string name = advance().value;
             advance(); // =
             uint32_t val = evaluateExpressionAt((int)pos, stmt->scopePrefix);
-            symbolTable[stmt->scopePrefix + name] = {val, false, 2};
+            symbolTable[stmt->scopePrefix + name] = {val, false, 2, false, 0, false, 0};
             while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
             continue;
         }
@@ -3212,10 +3763,7 @@ pc, true, 2
  stmt->dir.tokenIndex = (int)pos;
  uint32_t val = evaluateExpressionAt((int)pos, stmt->scopePrefix);
  while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
- symbolTable[scVN] = {
-val, false, 2, true, val
-}
-;
+ symbolTable[scVN] = {val, false, 2, true, val};
  
 }
 
@@ -3307,10 +3855,7 @@ val, false, 2, true, val
 
                 stmt->label = pN;
 
-                symbolTable[pN] = {
-pc, true, 2
-}
-;
+                symbolTable[pN] = {pc, true, 2, false, 0, false, 0};
 
                 auto ctx = std::make_shared<ProcContext>();
 
@@ -3365,15 +3910,8 @@ aN, sz
 
                     ctx->localArgs["ARG" + std::to_string(i + 1)] = cO;
 
-                    symbolTable[scA] = {
-(uint32_t)cO, false, (int)args[i].second, true, (uint32_t)cO, false, cO
-}
-;
-
-                    symbolTable[scAN] = {
-(uint32_t)cO, false, (int)args[i].second, true, (uint32_t)cO, false, cO
-}
-;
+                                        symbolTable[scA] = {(uint32_t)cO, false, (int)args[i].second, true, (uint32_t)cO, false, cO};
+                    symbolTable[scAN] = {(uint32_t)cO, false, (int)args[i].second, true, (uint32_t)cO, false, cO};
 
                     cO += args[i].second;
 
@@ -3443,21 +3981,155 @@ aN, sz
 }
 
             else if (stmt->instr.mnemonic.substr(0, 3) == "MUL" || stmt->instr.mnemonic.substr(0, 3) == "DIV") {
- stmt->type = (stmt->instr.mnemonic.substr(0, 3) == "MUL") ? Statement::MUL : Statement::DIV;
- std::string m = stmt->instr.mnemonic;
- if (m.size() > 4 && m[3] == '.') stmt->mulWidth = std::stoi(m.substr(4));
- else stmt->mulWidth = 8;
- const auto& dst = advance();
- stmt->instr.operand = (dst.type == AssemblerTokenType::REGISTER ? "." : "") + dst.value;
- expect(AssemblerTokenType::COMMA, "Expected , after destination");
- stmt->exprTokenIndex = (int)pos;
- while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
- std::vector<uint8_t> d;
- if (stmt->type == Statement::MUL) emitMulCode(d, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
- else emitDivCode(d, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
- stmt->size = d.size();
- 
-}
+                stmt->type = (stmt->instr.mnemonic.substr(0, 3) == "MUL") ? Statement::MUL : Statement::DIV;
+                std::string m = stmt->instr.mnemonic;
+                if (m.size() > 4 && m[3] == '.') stmt->mulWidth = std::stoi(m.substr(4));
+                else stmt->mulWidth = 8;
+                const auto& dst = advance();
+                stmt->instr.operand = (dst.type == AssemblerTokenType::REGISTER ? "." : "") + dst.value;
+                expect(AssemblerTokenType::COMMA, "Expected , after destination");
+                stmt->exprTokenIndex = (int)pos;
+                while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
+                std::vector<uint8_t> d;
+                if (stmt->type == Statement::MUL) emitMulCode(d, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                else emitDivCode(d, stmt->mulWidth, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                stmt->size = d.size();
+            }
+            else if (stmt->instr.mnemonic == "LDAX" || stmt->instr.mnemonic == "LDAY" || stmt->instr.mnemonic == "LDAZ" ||
+                     stmt->instr.mnemonic == "STAX" || stmt->instr.mnemonic == "STAY" || stmt->instr.mnemonic == "STAZ") {
+                std::string m = stmt->instr.mnemonic;
+                std::string reg = "." + m.substr(2); // AX, AY, AZ
+                bool isLoad = (m.substr(0, 2) == "LD");
+                stmt->type = isLoad ? Statement::LDW : Statement::STW;
+                stmt->instr.operand = reg;
+                stmt->exprTokenIndex = (int)pos;
+                while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
+                
+                std::vector<uint8_t> d;
+                if (isLoad) emitLDWCode(d, reg, stmt->exprTokenIndex, stmt->scopePrefix);
+                else emitSTWCode(d, reg, stmt->exprTokenIndex, stmt->scopePrefix);
+                stmt->size = d.size();
+            }
+            else if (stmt->instr.mnemonic == "ADD.16" || stmt->instr.mnemonic == "SUB.16" || 
+                     stmt->instr.mnemonic == "AND.16" || stmt->instr.mnemonic == "ORA.16" || stmt->instr.mnemonic == "EOR.16" || 
+                     stmt->instr.mnemonic == "CPW" || stmt->instr.mnemonic == "LDW" || stmt->instr.mnemonic == "STW" || 
+                     stmt->instr.mnemonic == "SWAP" || stmt->instr.mnemonic == "NEG.16" || stmt->instr.mnemonic == "NOT.16" ||
+                     stmt->instr.mnemonic == "CHKZERO.8" || stmt->instr.mnemonic == "CHKZERO.16" ||
+                     stmt->instr.mnemonic == "CHKNONZERO.8" || stmt->instr.mnemonic == "CHKNONZERO.16" ||
+                     stmt->instr.mnemonic == "BRANCH.16" || stmt->instr.mnemonic == "SELECT" ||
+                     stmt->instr.mnemonic == "PTRSTACK" || stmt->instr.mnemonic == "PTRDEREF" ||
+                     stmt->instr.mnemonic == "LDW.F" || stmt->instr.mnemonic == "STW.F" ||
+                     stmt->instr.mnemonic == "STW.SP" || stmt->instr.mnemonic == "LDW.SP" ||
+                     stmt->instr.mnemonic == "INC.F" || stmt->instr.mnemonic == "DEC.F" ||
+                     stmt->instr.mnemonic == "PHW") {
+                
+                if (stmt->instr.mnemonic == "ADD.16") stmt->type = Statement::ADD16;
+                else if (stmt->instr.mnemonic == "SUB.16") stmt->type = Statement::SUB16;
+                else if (stmt->instr.mnemonic == "AND.16") stmt->type = Statement::AND16;
+                else if (stmt->instr.mnemonic == "ORA.16") stmt->type = Statement::ORA16;
+                else if (stmt->instr.mnemonic == "EOR.16") stmt->type = Statement::EOR16;
+                else if (stmt->instr.mnemonic == "CPW") stmt->type = Statement::CPW;
+                else if (stmt->instr.mnemonic == "LDW" || stmt->instr.mnemonic == "LDW.SP") stmt->type = Statement::LDW;
+                else if (stmt->instr.mnemonic == "STW" || stmt->instr.mnemonic == "STW.SP") stmt->type = Statement::STW;
+                else if (stmt->instr.mnemonic == "SWAP") stmt->type = Statement::SWAP;
+                else if (stmt->instr.mnemonic == "NEG.16") stmt->type = Statement::NEG16;
+                else if (stmt->instr.mnemonic == "NOT.16") stmt->type = Statement::NOT16;
+                else if (stmt->instr.mnemonic == "CHKZERO.8") stmt->type = Statement::CHKZERO8;
+                else if (stmt->instr.mnemonic == "CHKZERO.16") stmt->type = Statement::CHKZERO16;
+                else if (stmt->instr.mnemonic == "CHKNONZERO.8") stmt->type = Statement::CHKNONZERO8;
+                else if (stmt->instr.mnemonic == "CHKNONZERO.16") stmt->type = Statement::CHKNONZERO16;
+                else if (stmt->instr.mnemonic == "BRANCH.16") stmt->type = Statement::BRANCH16;
+                else if (stmt->instr.mnemonic == "SELECT") stmt->type = Statement::SELECT;
+                else if (stmt->instr.mnemonic == "PTRSTACK") stmt->type = Statement::PTRSTACK;
+                else if (stmt->instr.mnemonic == "PTRDEREF") stmt->type = Statement::PTRDEREF;
+                else if (stmt->instr.mnemonic == "LDW.F") stmt->type = Statement::LDWF;
+                else if (stmt->instr.mnemonic == "STW.F") stmt->type = Statement::STWF;
+                else if (stmt->instr.mnemonic == "INC.F") stmt->type = Statement::INCF;
+                else if (stmt->instr.mnemonic == "DEC.F") stmt->type = Statement::DECF;
+                else if (stmt->instr.mnemonic == "PHW") stmt->type = Statement::PHW_STACK;
+
+                stmt->instr.operandTokenIndex = (int)pos;
+
+                // Handle instructions with 1 or more operands
+                if (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
+                    if (peek().type == AssemblerTokenType::REGISTER) {
+                        stmt->instr.operand = "." + advance().value;
+                    } else if (peek().type == AssemblerTokenType::HASH) {
+                        stmt->instr.operand = "#";
+                        advance();
+                        int idx = (int)pos;
+                        auto ast = parseExprAST(tokens, idx, symbolTable, stmt->scopePrefix);
+                        pos = idx;
+                    } else {
+                        // Expression or label
+                        int idx = (int)pos;
+                        auto ast = parseExprAST(tokens, idx, symbolTable, stmt->scopePrefix);
+                        if (ast) {
+                             // We don't have a good way to put the whole expr into stmt->instr.operand
+                             // So we just use a placeholder if it's not a simple identifier
+                             if (auto* v = dynamic_cast<VariableNode*>(ast.get())) stmt->instr.operand = v->name;
+                             else stmt->instr.operand = "EXPR";
+                        }
+                        pos = idx;
+                    }
+                    
+                    if (match(AssemblerTokenType::COMMA)) {
+                        stmt->exprTokenIndex = (int)pos;
+                        // Skip rest of line
+                        while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
+                    }
+                }
+
+                // Check if PHW is actually stack relative
+                if (stmt->instr.mnemonic == "PHW") {
+                    uint32_t offset = 0;
+                    if (isStackRelativeOperand(stmt->instr.operandTokenIndex, offset, stmt->scopePrefix)) {
+                        stmt->type = Statement::PHW_STACK;
+                    } else {
+                        stmt->type = Statement::INSTRUCTION; // Revert to standard
+                    }
+                }
+                
+                std::vector<uint8_t> d;
+                if (stmt->type == Statement::ADD16 || stmt->type == Statement::SUB16) emitAddSub16Code(d, stmt->type == Statement::ADD16, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::AND16 || stmt->type == Statement::ORA16 || stmt->type == Statement::EOR16) emitBitwise16Code(d, stmt->instr.mnemonic, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::CPW) emitCPWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::LDW) emitLDWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "LDW.SP");
+                else if (stmt->type == Statement::STW) emitSTWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "STW.SP");
+                else if (stmt->type == Statement::SWAP) emitSwapCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::NEG16 || stmt->type == Statement::NOT16) emitNegNot16Code(d, stmt->type == Statement::NEG16, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::CHKZERO8) emitChkZeroCode(d, false, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::CHKZERO16) emitChkZeroCode(d, true, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::CHKNONZERO8) emitChkZeroCode(d, false, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::CHKNONZERO16) emitChkZeroCode(d, true, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::BRANCH16) emitBranch16Code(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::SELECT) emitSelectCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::PTRSTACK) emitPtrStackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::PTRDEREF) emitPtrDerefCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::LDWF || stmt->type == Statement::STWF || stmt->type == Statement::INCF || stmt->type == Statement::DECF) emitFlatMemoryCode(d, stmt->instr.mnemonic, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::PHW_STACK) emitPHWStackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                
+                if (stmt->type != Statement::INSTRUCTION) stmt->size = d.size();
+                else {
+                     // Re-parse as instruction
+                     if (stmt->instr.mnemonic == "PHW") {
+                         stmt->size = 3;
+                         if (tokens[stmt->instr.operandTokenIndex].type == AssemblerTokenType::HASH) {
+                             stmt->instr.mode = AddressingMode::IMMEDIATE16;
+                             stmt->instr.operandTokenIndex++; // Skip HASH for expression evaluation
+                         }
+                         else stmt->instr.mode = AddressingMode::ABSOLUTE;
+                     }
+                }
+            }
+            else if (stmt->instr.mnemonic == "ZERO") {
+                stmt->type = Statement::ZERO;
+                stmt->instr.operandTokenIndex = (int)pos;
+                while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
+                std::vector<uint8_t> d;
+                emitZeroCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                stmt->size = d.size();
+            }
 
             else {
 
@@ -3811,6 +4483,111 @@ std::vector<uint8_t> AssemblerParser::pass2() {
  continue;
  
 }
+
+        if (stmt->type == Statement::ADD16) {
+            if (!isDeadCode) emitAddSub16Code(binary, true, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::SUB16) {
+            if (!isDeadCode) emitAddSub16Code(binary, false, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::AND16 || stmt->type == Statement::ORA16 || stmt->type == Statement::EOR16) {
+            if (!isDeadCode) emitBitwise16Code(binary, stmt->instr.mnemonic, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::CPW) {
+            if (!isDeadCode) emitCPWCode(binary, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::LDW) {
+            if (!isDeadCode) emitLDWCode(binary, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "LDW.SP");
+            continue;
+        }
+
+        if (stmt->type == Statement::STW) {
+            if (!isDeadCode) emitSTWCode(binary, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "STW.SP");
+            continue;
+        }
+
+        if (stmt->type == Statement::SWAP) {
+            if (!isDeadCode) emitSwapCode(binary, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::NEG16) {
+            if (!isDeadCode) emitNegNot16Code(binary, true, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::NOT16) {
+            if (!isDeadCode) emitNegNot16Code(binary, false, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::CHKZERO8) {
+            if (!isDeadCode) emitChkZeroCode(binary, false, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::CHKZERO16) {
+            if (!isDeadCode) emitChkZeroCode(binary, true, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::CHKNONZERO8) {
+            if (!isDeadCode) emitChkZeroCode(binary, false, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::CHKNONZERO16) {
+            if (!isDeadCode) emitChkZeroCode(binary, true, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::BRANCH16) {
+            if (!isDeadCode) emitBranch16Code(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::SELECT) {
+            if (!isDeadCode) emitSelectCode(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::PTRSTACK) {
+            if (!isDeadCode) emitPtrStackCode(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::PTRDEREF) {
+            if (!isDeadCode) emitPtrDerefCode(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::LDWF || stmt->type == Statement::STWF || stmt->type == Statement::INCF || stmt->type == Statement::DECF) {
+            if (!isDeadCode) emitFlatMemoryCode(binary, stmt->instr.mnemonic, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::PHW_STACK) {
+            if (!isDeadCode) emitPHWStackCode(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::AND16 || stmt->type == Statement::ORA16 || stmt->type == Statement::EOR16) {
+            if (!isDeadCode) emitBitwise16Code(binary, stmt->instr.mnemonic, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+            continue;
+        }
+
+        if (stmt->type == Statement::ZERO) {
+            if (!isDeadCode) emitZeroCode(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+            continue;
+        }
 
         if (stmt->type == Statement::BASIC_UPSTART) {
  if (!isDeadCode) {
