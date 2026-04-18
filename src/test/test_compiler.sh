@@ -22,6 +22,9 @@ TEST_FILES=(
     "src/test-resources/test_ptr_arith.c"
     "src/test-resources/test_constant_folding.c"
     "src/test-resources/test_ptr_ptr.c"
+    "src/test-resources/test_inc_dec.c"
+    "src/test-resources/test_char_flow.c"
+    "src/test-resources/test_opt_struct.c"
 )
 
 mkdir -p build/test

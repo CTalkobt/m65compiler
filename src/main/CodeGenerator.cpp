@@ -307,6 +307,9 @@ void CodeGenerator::visit(ExpressionStatement& node) {
 
 void CodeGenerator::visit(IfStatement& node) {
     embedSource(node);
+    ExpressionType condType = getExprType(node.condition.get());
+    bool is8Bit = (condType.type == "char" && condType.pointerLevel == 0);
+
     bool oldNeeded = resultNeeded;
     resultNeeded = true;
     node.condition->accept(*this);
@@ -315,17 +318,23 @@ void CodeGenerator::visit(IfStatement& node) {
     std::string labelElse = newLabel();
     std::string labelEnd = newLabel();
 
-    if (flags.znSource == FlagSource::A) {
-        // Flags already set for A, skip CMP #0
+    if (is8Bit) {
+        if (flags.znSource != FlagSource::A) {
+            emit("CMP #$00");
+            updateZNFlags(FlagSource::A);
+        }
+        emit("BEQ " + labelElse);
     } else {
-        emit("CMP #$00");
+        std::string skipHigh = newDontCareLabel();
+        if (flags.znSource != FlagSource::A) {
+            emit("CMP #$00");
+        }
+        emit("BNE " + skipHigh);
+        emitter->txa();
         updateZNFlags(FlagSource::A);
+        emit("BEQ " + labelElse);
+        out << skipHigh << ":" << std::endl;
     }
-
-    emit("BNE *+5");
-    emitter->txa();
-    updateZNFlags(FlagSource::A); // TXA sets flags for A
-    emit("BEQ " + labelElse);
 
     node.thenBranch->accept(*this);
     if (node.elseBranch) {
@@ -342,6 +351,9 @@ void CodeGenerator::visit(IfStatement& node) {
 
 void CodeGenerator::visit(WhileStatement& node) {
     embedSource(node);
+    ExpressionType condType = getExprType(node.condition.get());
+    bool is8Bit = (condType.type == "char" && condType.pointerLevel == 0);
+
     std::string labelStart = newLabel();
     std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
@@ -352,15 +364,23 @@ void CodeGenerator::visit(WhileStatement& node) {
     node.condition->accept(*this);
     resultNeeded = oldNeeded;
 
-    if (flags.znSource == FlagSource::A) {
+    if (is8Bit) {
+        if (flags.znSource != FlagSource::A) {
+            emit("CMP #$00");
+            updateZNFlags(FlagSource::A);
+        }
+        emit("BEQ " + labelEnd);
     } else {
-        emit("CMP #$00");
+        std::string skipHigh = newDontCareLabel();
+        if (flags.znSource != FlagSource::A) {
+            emit("CMP #$00");
+        }
+        emit("BNE " + skipHigh);
+        emitter->txa();
         updateZNFlags(FlagSource::A);
+        emit("BEQ " + labelEnd);
+        out << skipHigh << ":" << std::endl;
     }
-    emit("BNE *+5");
-    emitter->txa();
-    updateZNFlags(FlagSource::A);
-    emit("BEQ " + labelEnd);
 
     node.body->accept(*this);
     emit("BRA " + labelStart);
@@ -374,18 +394,30 @@ void CodeGenerator::visit(DoWhileStatement& node) {
     out << labelStart << ":" << std::endl;
     node.body->accept(*this);
     
+    ExpressionType condType = getExprType(node.condition.get());
+    bool is8Bit = (condType.type == "char" && condType.pointerLevel == 0);
+
     bool oldNeeded = resultNeeded;
     resultNeeded = true;
     node.condition->accept(*this);
     resultNeeded = oldNeeded;
 
-    if (flags.znSource != FlagSource::A) {
-        emit("CMP #$00");
+    if (is8Bit) {
+        if (flags.znSource != FlagSource::A) {
+            emit("CMP #$00");
+            updateZNFlags(FlagSource::A);
+        }
+        emit("BNE " + labelStart);
+    } else {
+        std::string skipHigh = newDontCareLabel();
+        if (flags.znSource != FlagSource::A) {
+            emit("CMP #$00");
+        }
+        emit("BNE " + labelStart);
+        emitter->txa();
+        updateZNFlags(FlagSource::A);
+        emit("BNE " + labelStart);
     }
-    emit("BNE " + labelStart);
-    emitter->txa();
-    updateZNFlags(FlagSource::A);
-    emit("BNE " + labelStart);
     invalidateRegs();
 }
 
@@ -401,20 +433,31 @@ void CodeGenerator::visit(ForStatement& node) {
     std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
     if (node.condition) {
+        ExpressionType condType = getExprType(node.condition.get());
+        bool is8Bit = (condType.type == "char" && condType.pointerLevel == 0);
+
         bool oldNeeded = resultNeeded;
         resultNeeded = true;
         node.condition->accept(*this);
         resultNeeded = oldNeeded;
 
-        if (flags.znSource == FlagSource::A) {
+        if (is8Bit) {
+            if (flags.znSource != FlagSource::A) {
+                emit("CMP #$00");
+                updateZNFlags(FlagSource::A);
+            }
+            emit("BEQ " + labelEnd);
         } else {
-            emit("CMP #$00");
+            std::string skipHigh = newDontCareLabel();
+            if (flags.znSource != FlagSource::A) {
+                emit("CMP #$00");
+            }
+            emit("BNE " + skipHigh);
+            emitter->txa();
             updateZNFlags(FlagSource::A);
+            emit("BEQ " + labelEnd);
+            out << skipHigh << ":" << std::endl;
         }
-        emit("BNE *+5");
-        emitter->txa();
-        updateZNFlags(FlagSource::A);
-        emit("BEQ " + labelEnd);
     }
     node.body->accept(*this);
     if (node.increment) {

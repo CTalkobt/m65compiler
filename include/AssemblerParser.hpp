@@ -66,6 +66,7 @@ public:
     AssemblerParser(const std::vector<AssemblerToken>& tokens);
     AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols);
     void pass1();
+    void optimize();
     std::vector<uint8_t> pass2();
     uint32_t getZPStart() const;
     Symbol* resolveSymbol(const std::string& name, const std::string& scopePrefix = "");
@@ -87,7 +88,7 @@ private:
     std::map<uint32_t, std::shared_ptr<ProcContext>> procedures;
 
     struct Statement {
-        enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV, STACK_INC, STACK_DEC } type = NONE;
+        enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV, STACK_INC, STACK_DEC, STACK_INC8, STACK_DEC8 } type = NONE;
         Instruction instr;
         Directive dir;
         std::string label;
@@ -106,6 +107,8 @@ private:
 
         // MUL specific
         int mulWidth = 8;
+
+        bool deleted = false;
     };
     std::deque<std::unique_ptr<Statement>> statements;
 
@@ -125,4 +128,5 @@ private:
     void emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
     void emitDivCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
     void emitStackIncDecCode(std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix = "");
+    void emitStackIncDec8Code(std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix = "");
 };

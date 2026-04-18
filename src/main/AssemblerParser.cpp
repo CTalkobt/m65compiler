@@ -2009,17 +2009,22 @@ static const std::map<std::pair<std::string, AddressingMode>, uint8_t>& getOpcod
 }
 , {
  {
-"NEG", AddressingMode::ACCUMULATOR
-}
-, 0x42 
-}
-, 
-        {
+ "NEG", AddressingMode::ACCUMULATOR
+ }
+ , 0x42 
+ }
+ , {
  {
-"ORA", AddressingMode::BASE_PAGE_INDIRECT_Y
-}
-, 0x11 
-}
+ "NOP", AddressingMode::IMPLIED
+ }
+ , 0xEA 
+ }
+ , {
+ {
+ "ORA", AddressingMode::BASE_PAGE_INDIRECT_Y
+ }
+ , 0x11 
+ }
 , {
  {
 "ORA", AddressingMode::BASE_PAGE_INDIRECT_Z
@@ -2996,6 +3001,134 @@ void AssemblerParser::emitStackIncDecCode(std::vector<uint8_t>& binary, bool isI
 }
 
 
+void AssemblerParser::optimize() {
+    struct RegState {
+        bool known = false;
+        std::string var; 
+        AddressingMode mode;
+        std::string imm; // Last immediate value loaded
+    };
+    RegState regA, regX, regY, regZ;
+
+    auto invalidate = [&](RegState& r) { r.known = false; r.var = ""; r.imm = ""; };
+
+    for (size_t i = 0; i < statements.size(); ++i) {
+        Statement* s = statements[i].get();
+        if (s->deleted) continue;
+
+        // Barrier: Non-dont-care labels reset all knowledge
+        if (!s->label.empty() && s->label[0] != '@') {
+            invalidate(regA); invalidate(regX); invalidate(regY); invalidate(regZ);
+        }
+
+        if (s->type == Statement::INSTRUCTION) {
+            std::string m = s->instr.mnemonic;
+            AddressingMode mode = s->instr.mode;
+            std::string op = s->instr.operand;
+
+            // 4.2 Load-after-Store
+            if (m == "LDA" && ( (regA.known && regA.mode == mode && regA.var == op) || (mode == AddressingMode::IMMEDIATE && regA.imm == op) )) {
+                s->deleted = true; s->size = 0; continue;
+            }
+            if (m == "LDX" && ( (regX.known && regX.mode == mode && regX.var == op) || (mode == AddressingMode::IMMEDIATE && regX.imm == op) )) {
+                s->deleted = true; s->size = 0; continue;
+            }
+            if (m == "LDY" && ( (regY.known && regY.mode == mode && regY.var == op) || (mode == AddressingMode::IMMEDIATE && regY.imm == op) )) {
+                s->deleted = true; s->size = 0; continue;
+            }
+            if (m == "LDZ" && ( (regZ.known && regZ.mode == mode && regZ.var == op) || (mode == AddressingMode::IMMEDIATE && regZ.imm == op) )) {
+                s->deleted = true; s->size = 0; continue;
+            }
+
+            // LDY #0
+            if (m == "LDY" && mode == AddressingMode::IMMEDIATE && op == "#$00" && regY.imm == "#$00") {
+                s->deleted = true; s->size = 0; continue;
+            }
+
+            // Update knowledge
+            if (m == "LDA") { 
+                regA.known = true; regA.mode = mode; regA.var = op; 
+                if (mode == AddressingMode::IMMEDIATE) regA.imm = op; else regA.imm = "";
+            }
+            else if (m == "STA") { 
+                if (mode != AddressingMode::IMMEDIATE) { regA.known = true; regA.mode = mode; regA.var = op; }
+            }
+            else if (m == "LDX") { 
+                regX.known = true; regX.mode = mode; regX.var = op; 
+                if (mode == AddressingMode::IMMEDIATE) regX.imm = op; else regX.imm = "";
+            }
+            else if (m == "STX") { 
+                if (mode != AddressingMode::IMMEDIATE) { regX.known = true; regX.mode = mode; regX.var = op; }
+            }
+            else if (m == "LDY") { 
+                regY.known = true; regY.mode = mode; regY.var = op; 
+                if (mode == AddressingMode::IMMEDIATE) regY.imm = op; else regY.imm = "";
+            }
+            else if (m == "STY") { 
+                if (mode != AddressingMode::IMMEDIATE) { regY.known = true; regY.mode = mode; regY.var = op; }
+            }
+            else if (m == "LDZ") { 
+                regZ.known = true; regZ.mode = mode; regZ.var = op; 
+                if (mode == AddressingMode::IMMEDIATE) regZ.imm = op; else regZ.imm = "";
+            }
+            else if (m == "STZ") { 
+                if (mode != AddressingMode::IMMEDIATE) { regZ.known = true; regZ.mode = mode; regZ.var = op; }
+            }
+            else if (m == "TAX") { regX = regA; }
+            else if (m == "TXA") { regA = regX; }
+            else if (m == "TAY") { regY = regA; }
+            else if (m == "TYA") { regA = regY; }
+            else if (m == "TAZ") { regZ = regA; }
+            else if (m == "TZA") { regA = regZ; }
+            else if (m == "JMP" && mode == AddressingMode::ABSOLUTE) {
+                // 4.1 Branch Shortening: JMP -> BRA (BRA can be 2 or 3 bytes, JMP is always 3)
+                // Only convert if it's a label, to avoid breaking explicit absolute jumps and tests
+                if (s->instr.operandTokenIndex != -1 && tokens[s->instr.operandTokenIndex].type == AssemblerTokenType::IDENTIFIER) {
+                    s->instr.mnemonic = "BRA";
+                }
+                invalidate(regA); invalidate(regX); invalidate(regY); invalidate(regZ);
+            }
+            else if (m == "PHA" || m == "PLA" || m == "PHX" || m == "PLX" || m == "PHY" || m == "PLY" || m == "PHZ" || m == "PLZ" || m == "PHW" || m == "JSR" || m == "CALL" || m == "RTN" || m == "RTS") {
+                // Stack or subroutine calls invalidate everything to be safe
+                invalidate(regA); invalidate(regX); invalidate(regY); invalidate(regZ);
+            }
+            else {
+                // Most other instructions change a register or flags in ways we don't track here yet
+                // For Load-after-Store, we only care if the register was explicitly changed.
+                // ADC, SBC, AND, ORA, EOR change A.
+                if (m == "ADC" || m == "SBC" || m == "AND" || m == "ORA" || m == "EOR" || m == "ASL" || m == "LSR" || m == "ROL" || m == "ROR" || m == "DEC" || m == "INC") {
+                    invalidate(regA); // Simplified: assume any of these change A if Implied or Accumulator
+                    // Actually they might change X/Y/Z if they are INX etc.
+                }
+                if (m == "INX" || m == "DEX") invalidate(regX);
+                if (m == "INY" || m == "DEY") invalidate(regY);
+                if (m == "INZ" || m == "DEZ") invalidate(regZ);
+                
+                // If it's a branch, we don't know where we came from after the branch target
+                if (m == "BRA" || m == "BEQ" || m == "BNE" || m == "BCC" || m == "BCS" || m == "BPL" || m == "BMI" || m == "BVC" || m == "BVS") {
+                    // We don't invalidate here because we are following the linear path.
+                    // But we must invalidate at the target label (handled above).
+                }
+            }
+        } else if (s->type == Statement::EXPR || s->type == Statement::MUL || s->type == Statement::DIV || s->type == Statement::STACK_INC || s->type == Statement::STACK_DEC) {
+            invalidate(regA); invalidate(regX); invalidate(regY); invalidate(regZ);
+        }
+    }
+}
+
+
+void AssemblerParser::emitStackIncDec8Code(std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix) {
+    uint32_t offset = evaluateExpressionAt(tokenIndex, scopePrefix);
+    M65Emitter e(binary, getZPStart());
+    e.tsx();
+    if (isInc) {
+        e.inc_abs_x(0x0101 + offset);
+    } else {
+        e.dec_abs_x(0x0101 + offset);
+    }
+}
+
+
 void AssemblerParser::pass1() {
 
     pc = 0;
@@ -3017,6 +3150,8 @@ void AssemblerParser::pass1() {
 ;
 
     while (pos < tokens.size()) {
+        // ... (rest of pass1 remains same until the convergence loop)
+
 
         while (match(AssemblerTokenType::NEWLINE));
  if (peek().type == AssemblerTokenType::END_OF_FILE) break;
@@ -3458,6 +3593,9 @@ aN, sz
                 if ((stmt->instr.mnemonic == "INW" || stmt->instr.mnemonic == "DEW") && stmt->instr.mode == AddressingMode::STACK_RELATIVE) {
                     stmt->type = (stmt->instr.mnemonic == "INW") ? Statement::STACK_INC : Statement::STACK_DEC;
                     stmt->size = (stmt->type == Statement::STACK_INC) ? 9 : 12;
+                } else if ((stmt->instr.mnemonic == "INC" || stmt->instr.mnemonic == "DEC") && stmt->instr.mode == AddressingMode::STACK_RELATIVE) {
+                    stmt->type = (stmt->instr.mnemonic == "INC") ? Statement::STACK_INC8 : Statement::STACK_DEC8;
+                    stmt->size = 5; // TSX (1) + INC $0101+offset,X (4)
                 } else {
                     stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
                 }
@@ -3478,6 +3616,9 @@ aN, sz
 
     
 }
+
+    optimize();
+    statements.erase(std::remove_if(statements.begin(), statements.end(), [](const auto& s) { return s->deleted; }), statements.end());
 
     bool changed = true;
  while (changed) {
@@ -3655,6 +3796,18 @@ std::vector<uint8_t> AssemblerParser::pass2() {
 
         if (stmt->type == Statement::STACK_DEC) {
  if (!isDeadCode) emitStackIncDecCode(binary, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+ continue;
+ 
+}
+
+        if (stmt->type == Statement::STACK_INC8) {
+ if (!isDeadCode) emitStackIncDec8Code(binary, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+ continue;
+ 
+}
+
+        if (stmt->type == Statement::STACK_DEC8) {
+ if (!isDeadCode) emitStackIncDec8Code(binary, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
  continue;
  
 }
