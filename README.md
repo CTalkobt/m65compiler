@@ -26,6 +26,12 @@ The tools are designed to work together seamlessly. A typical workflow involves 
 ```
 This command invokes `cc45` to generate `output.s`, and then automatically calls `ca45` to produce `output.s.bin`.
 
+For a full list of command-line options, use the `-?` flag:
+```bash
+./bin/cc45 -?
+./bin/ca45 -?
+```
+
 ## Testing & Regressions
 The suite includes a set of automated tests to verify the compiler and assembler. You can run all tests from the project root:
 ```bash

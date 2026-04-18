@@ -11,8 +11,8 @@ Legend:
 - [X] **Redundant RTN Removal**: Optimize `RTN #0` to `RTS`.
 - [X] **Constant Folding**: Evaluate `1 + 2` at compile time.
 - [ ] **Strength Reduction**: Convert `x * 2` to `x << 1`.
-- [ ] **Register Allocation**: Better usage of A, X, Y, Z to reduce stack traffic.
-- [X] **Increment Optimization**: Use `INC A`, `INX`, etc. for `+ 1`.
+- [X] **Register Allocation**: Better usage of A, X, Y, Z to reduce stack traffic. (Tracking implemented).
+- [X] **Increment Optimization**: Use `INC A`, `INX`, `INW`, etc. for `+ 1`.
 - [X] **Tiered Branching**: Automatic selection of short/long branches.
 
 ---
@@ -31,6 +31,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Inline Assembly**: Support `asm("...")` or `__asm__("...")` for direct assembly insertion.
 
 ### 2. Type System Enhancements
+- [X] **Structures**: Support `struct` definitions, members, and dot/arrow operators.
 - [ ] **Anonymous Structures & Unions**: Support nested structs/unions without names.
 - [ ] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
 - [ ] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
@@ -46,6 +47,7 @@ Steps required to bring the C compiler closer to C11 standards.
 ### 1. Registers
 - [X] **Mega65 Multiplication**: Simulated `mul.<width> <dest>, <src>` opcode leveraging hardware multiplier.
 - [X] **Mega65 Division**: Simulated `div.<width> <dest>, <src>` opcode leveraging hardware divider.
+- [X] **Stack-Relative Word Ops**: Simulated `INW/DEW offset, s` leveraging `TSX`.
 - [ ] **Mega65 Memory**: Allow use of the Mega65 DMA for operations involving memory > 5 bytes for common routines such as memory movement, copy, swap and fill. Implement as built-in opcodes. 
 - [ ] **PC Register**: Treat current program counter as a register named .PC similar to how .A, .X etc are defined. 
 - [ ] **Other 16 bit registers**: Allow support for other psuedo-16 bit registers such as '.AZ', '.XY', '.YZ'. 

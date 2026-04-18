@@ -34,7 +34,7 @@ public:
     std::map<std::string, VarInfo> variableTypes;
     std::map<std::string, StructInfo> structs;
     uint32_t zeroPageStart = 0x02;
-    uint32_t zeroPageAvail = 4;
+    uint32_t zeroPageAvail = 10;
 
     void visit(IntegerLiteral& node) override;
     void visit(StringLiteral& node) override;
@@ -59,6 +59,25 @@ public:
     void emitAddress(Expression* expr);
     void embedSource(ASTNode& node);
 
+    // Register tracking
+    struct RegState {
+        bool known = false;
+        bool isVariable = false;
+        std::string varName;
+        int varOffset = 0;
+        uint8_t value = 0;
+    };
+    RegState regA, regX, regY, regZ;
+    void updateRegA(uint8_t val);
+    void updateRegX(uint8_t val);
+    void updateRegY(uint8_t val);
+    void updateRegZ(uint8_t val);
+    void updateRegAVar(const std::string& name, int offset);
+    void updateRegXVar(const std::string& name, int offset);
+    void updateRegYVar(const std::string& name, int offset);
+    void updateRegZVar(const std::string& name, int offset);
+    void invalidateRegs();
+
     private:
     std::ostream& out;
     std::unique_ptr<M65Emitter> emitter;
@@ -75,26 +94,13 @@ public:
     void emitData();
     std::string newLabel();
     ExpressionType getExprType(Expression* expr);
+    bool isStruct(const std::string& type);
 
-    // Register tracking
-    struct RegState {
-        bool known = false;
-        bool isVariable = false;
-        std::string varName;
-        int varOffset = 0;
-        uint8_t value = 0;
-    };
-    RegState regA, regX;
-
-    // ZP Register Allocation
-    struct ZPReg {
-        bool inUse = false;
-        bool isVariable = false;
-        std::string varName;
-        int varOffset = 0;
-    };
-    std::vector<ZPReg> zpRegs;
-    void invalidateRegs();
     int allocateZP(int size);
     void freeZP(int index, int size);
+
+    struct ZPReg {
+        bool inUse = false;
+    };
+    std::vector<ZPReg> zpRegs;
 };

@@ -2,8 +2,8 @@
 #include <iomanip>
 #include <sstream>
 
-M65Emitter::M65Emitter(std::ostream& out, uint32_t zpStart) : mode(Mode::TEXT), out(&out), zeroPageStart(zpStart) {}
-M65Emitter::M65Emitter(std::vector<uint8_t>& binary, uint32_t zpStart) : mode(Mode::BINARY), binary(&binary), zeroPageStart(zpStart) {}
+M65Emitter::M65Emitter(std::ostream& out, uint32_t zpStart) : mode(Mode::TEXT), out(&out), binary(nullptr), zeroPageStart(zpStart) {}
+M65Emitter::M65Emitter(std::vector<uint8_t>& binary, uint32_t zpStart) : mode(Mode::BINARY), out(nullptr), binary(&binary), zeroPageStart(zpStart) {}
 
 void M65Emitter::emitByte(uint8_t b) { if (binary) binary->push_back(b); }
 void M65Emitter::emitWord(uint16_t w) { emitByte(w & 0xFF); emitByte(w >> 8); }
