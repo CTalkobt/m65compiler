@@ -108,6 +108,7 @@ public:
     void emit(const std::string& line);
     void emitData();
     std::string newLabel();
+    std::string newDontCareLabel();
     ExpressionType getExprType(Expression* expr);
     bool isStruct(const std::string& type);
 

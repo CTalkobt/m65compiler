@@ -35,6 +35,10 @@ std::string CodeGenerator::newLabel() {
     return "L" + std::to_string(labelCount++);
 }
 
+std::string CodeGenerator::newDontCareLabel() {
+    return "@L" + std::to_string(labelCount++);
+}
+
 bool CodeGenerator::isStruct(const std::string& type) {
     return type.length() >= 7 && type.substr(0, 7) == "struct ";
 }
@@ -606,11 +610,11 @@ void CodeGenerator::visit(BinaryOperation& node) {
         node.left->accept(*this);
         resultNeeded = oldNeeded;
         if (node.op == "+") {
-            std::string label = newLabel();
+            std::string label = newDontCareLabel();
             emitter->inc_a(); emitter->bne(0x02); emit("INX");
             out << label << ":" << std::endl;
         } else {
-            std::string label = newLabel();
+            std::string label = newDontCareLabel();
             emit("CMP #$00"); emit("BNE " + label); emit("DEX");
             out << label << ":" << std::endl; emitter->dec_a();
         }
@@ -685,7 +689,8 @@ void CodeGenerator::visit(BinaryOperation& node) {
     } else if (node.op == "==" || node.op == "!=") {
         emitter->cmp_zp(emitter->getZP(zpIdx));
         invalidateFlags();
-        std::string labelFalse = newLabel(); std::string labelEnd = newLabel();
+        std::string labelFalse = newDontCareLabel(); 
+        std::string labelEnd = newDontCareLabel();
         if (node.op == "==") emit("BNE " + labelFalse); else emit("BEQ " + labelFalse);
         emitter->txa();
         invalidateFlags();
@@ -792,7 +797,8 @@ void CodeGenerator::visit(UnaryOperation& node) {
         node.operand->accept(*this);
         resultNeeded = oldNeeded;
         if (node.op == "!") {
-            std::string labelFalse = newLabel(); std::string labelEnd = newLabel();
+            std::string labelFalse = newDontCareLabel(); 
+            std::string labelEnd = newDontCareLabel();
             if (flags.znSource != FlagSource::A) {
                 emit("CMP #$00");
                 updateZNFlags(FlagSource::A);

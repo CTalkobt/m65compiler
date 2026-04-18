@@ -120,7 +120,7 @@ AssemblerToken AssemblerLexer::nextToken() {
         }
     }
 
-    if (std::isalpha(c) || c == '_') {
+    if (std::isalpha(c) || c == '_' || c == '@') {
         return lexIdentifierOrInstruction();
     }
 
@@ -184,7 +184,7 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
     int startLine = line;
     int startCol = column;
     std::string value;
-    while (std::isalnum(peek()) || peek() == '_' || peek() == '.') {
+    while (std::isalnum(peek()) || peek() == '_' || peek() == '.' || peek() == '@') {
         value += get();
     }
     if (value.empty()) return nextToken();
