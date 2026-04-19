@@ -99,6 +99,7 @@ public:
     void taz();
     void tza();
     void tsx();
+    void txs();
     void inx();
     void dex();
     void iny();

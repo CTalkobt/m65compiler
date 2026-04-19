@@ -128,6 +128,7 @@ void M65Emitter::tya() { if (mode == Mode::TEXT) emitText("tya"); else emitByte(
 void M65Emitter::taz() { if (mode == Mode::TEXT) emitText("taz"); else emitByte(0x4B); }
 void M65Emitter::tza() { if (mode == Mode::TEXT) emitText("tza"); else emitByte(0x6B); }
 void M65Emitter::tsx() { if (mode == Mode::TEXT) emitText("tsx"); else emitByte(0xBA); }
+void M65Emitter::txs() { if (mode == Mode::TEXT) emitText("txs"); else emitByte(0x9A); }
 void M65Emitter::inx() { if (mode == Mode::TEXT) emitText("inx"); else emitByte(0xE8); }
 void M65Emitter::dex() { if (mode == Mode::TEXT) emitText("dex"); else emitByte(0xCA); }
 void M65Emitter::iny() { if (mode == Mode::TEXT) emitText("iny"); else emitByte(0xC8); }
