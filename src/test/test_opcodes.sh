@@ -84,7 +84,7 @@ def get_asm(mnemonic, mode):
     if mode == 'bp+rel8': return f"L_{mnemonic}_{mode.replace('+','_').replace(',','_')}:\n{mnemonic} $12, L_{mnemonic}_{mode.replace('+','_').replace(',','_')}"
     return None
 
-opcodes = parse_opcodes('refs/45gs02_opcodes.md')
+opcodes = parse_opcodes('src/test-resources/mega65_opcodes.md')
 with open('build/full_opcode_test.s', 'w') as f_s, open('build/full_opcode_meta.txt', 'w') as f_m:
     f_s.write(".org $2000\n")
     for op in opcodes:
