@@ -1,11 +1,15 @@
 # Changelog
 
 All notable changes to the cc45 / ca45 suite will be documented in this file.
-
 ## [Unreleased] - 2026-04-18
 
 ### Added
+- **Preprocessor**:
+    - Added support for `#elif` directive for multi-branch conditional compilation.
+    - Added support for `#undef`, `#line`, `#error`, `#warning`, and `#pragma` directives.
+    - Implemented expansion of standard predefined macros: `__FILE__`, `__LINE__`, `__DATE__`, and `__TIME__`.
 - **Assembler (ca45)**:
+...
     - Implemented a suite of high-level simulated opcodes:
         - `ldax / lday / ldaz`: 16-bit word loads with support for immediate (`#`), stack-relative (`offset, s`), zero page, and absolute addressing.
         - `stax / stay / staz`: 16-bit word stores with support for stack-relative, zero page, and absolute addressing.

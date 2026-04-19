@@ -9,6 +9,7 @@
 #include "AST.hpp"
 #include "CodeGenerator.hpp"
 #include "ConstantFolder.hpp"
+#include "Preprocessor.hpp"
 
 class ASTPrinter : public ASTVisitor {
 public:
@@ -189,6 +190,8 @@ int main(int argc, char** argv) {
     uint32_t zeroPageStart = 0x02;
     uint32_t zeroPageAvail = 9;
     std::string defineFlag = "";
+    std::map<std::string, std::string> initialSymbols;
+    std::vector<std::string> includePaths;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -199,6 +202,7 @@ int main(int argc, char** argv) {
             std::cout << "  -o <filename>  Specify output assembly filename (default: out.s)" << std::endl;
             std::cout << "  -v             Enable verbose output" << std::endl;
             std::cout << "  -Dname=val     Define a symbol (e.g., -Dcc45.zeroPageStart=$10)" << std::endl;
+            std::cout << "  -I<path>       Add include search path" << std::endl;
             std::cout << "  -?             Display this help message" << std::endl;
             return 0;
         } else if (arg == "-c") {
@@ -207,12 +211,15 @@ int main(int argc, char** argv) {
             output_file = argv[++i];
         } else if (arg == "-v") {
             verbose = true;
+        } else if (arg.substr(0, 2) == "-I") {
+            includePaths.push_back(arg.substr(2));
         } else if (arg.substr(0, 2) == "-D") {
             defineFlag = arg;
             size_t eq = arg.find('=');
             if (eq != std::string::npos) {
                 std::string name = arg.substr(2, eq - 2);
                 std::string valStr = arg.substr(eq + 1);
+                initialSymbols[name] = valStr;
                 uint32_t val = 0;
                 if (valStr.empty()) {}
                 else if (valStr.substr(0, 1) == "$") val = std::stoul(valStr.substr(1), nullptr, 16);
@@ -224,6 +231,8 @@ int main(int argc, char** argv) {
                 } else if (name == "cc45.zeroPageAvail") {
                     zeroPageAvail = val;
                 }
+            } else {
+                initialSymbols[arg.substr(2)] = "1";
             }
         } else {
             input_file = arg;
@@ -244,7 +253,20 @@ int main(int argc, char** argv) {
 
     std::stringstream buffer;
     buffer << file.rdbuf();
-    std::string source = buffer.str();
+    std::string sourceRaw = buffer.str();
+
+    if (verbose) {
+        std::cout << "Preprocessing " << input_file << "..." << std::endl;
+    }
+
+    Preprocessor preprocessor(true);
+    std::string source;
+    try {
+        source = preprocessor.process(sourceRaw, initialSymbols, includePaths, input_file);
+    } catch (const std::exception& e) {
+        std::cerr << "Preprocessor Error: " << e.what() << std::endl;
+        return 1;
+    }
 
     std::vector<std::string> sourceLines;
     {
