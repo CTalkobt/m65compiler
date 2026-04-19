@@ -2,11 +2,14 @@
 #include "AST.hpp"
 #include <memory>
 #include <map>
+#include <iostream>
 
 class ConstantFolder : public ASTVisitor {
 public:
+    ConstantFolder();
     std::unique_ptr<Expression> lastExpr;
     std::unique_ptr<Statement> lastStmt;
+    std::map<std::string, int> knownConstants;
 
     std::unique_ptr<Expression> fold(std::unique_ptr<Expression> expr) {
         if (!expr) return nullptr;
@@ -16,8 +19,15 @@ public:
 
     std::unique_ptr<Statement> fold(std::unique_ptr<Statement> stmt) {
         if (!stmt) return nullptr;
-        stmt->accept(*this);
-        return std::move(lastStmt);
+        // CompoundStatement and FunctionDeclaration are modified in-place.
+        // Their visit methods don't set lastStmt.
+        if (dynamic_cast<CompoundStatement*>(stmt.get()) || dynamic_cast<FunctionDeclaration*>(stmt.get())) {
+            stmt->accept(*this);
+            return std::move(stmt);
+        } else {
+            stmt->accept(*this);
+            return std::move(lastStmt);
+        }
     }
 
     void visit(IntegerLiteral& node) override {
@@ -29,11 +39,25 @@ public:
     }
 
     void visit(VariableReference& node) override {
-        lastExpr = copyPos(std::make_unique<VariableReference>(node.name), node);
+        if (knownConstants.count(node.name)) {
+            lastExpr = copyPos(std::make_unique<IntegerLiteral>(knownConstants[node.name]), node);
+        } else {
+            lastExpr = copyPos(std::make_unique<VariableReference>(node.name), node);
+        }
     }
 
     void visit(Assignment& node) override {
-        lastExpr = copyPos(std::make_unique<Assignment>(fold(std::move(node.target)), fold(std::move(node.expression))), node);
+        // Don't fold the target! It must remain a VariableReference or MemberAccess.
+        auto expression = fold(std::move(node.expression));
+        
+        if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
+            if (auto* lit = dynamic_cast<IntegerLiteral*>(expression.get())) {
+                knownConstants[ref->name] = lit->value;
+            } else {
+                knownConstants.erase(ref->name);
+            }
+        }
+        lastExpr = copyPos(std::make_unique<Assignment>(std::move(node.target), std::move(expression)), node);
     }
 
     void visit(BinaryOperation& node) override {
@@ -51,8 +75,13 @@ public:
             else if (node.op == "/") {
                 if (rightLit->value != 0) result = leftLit->value / rightLit->value;
                 else {
-                    // Division by zero at compile time, keep as is or error?
-                    // The user asked for an error previously, but for now let's just NOT fold it.
+                    lastExpr = copyPos(std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right)), node);
+                    return;
+                }
+            }
+            else if (node.op == "%") {
+                if (rightLit->value != 0) result = leftLit->value % rightLit->value;
+                else {
                     lastExpr = copyPos(std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right)), node);
                     return;
                 }
@@ -112,10 +141,16 @@ public:
     }
 
     void visit(VariableDeclaration& node) override {
-        auto decl = copyPos(std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel), node);
-        if (node.initializer) {
-            decl->initializer = fold(std::move(node.initializer));
+        auto initializer = node.initializer ? fold(std::move(node.initializer)) : nullptr;
+        if (initializer) {
+            if (auto* lit = dynamic_cast<IntegerLiteral*>(initializer.get())) {
+                knownConstants[node.name] = lit->value;
+            } else {
+                knownConstants.erase(node.name);
+            }
         }
+        auto decl = copyPos(std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel), node);
+        decl->initializer = std::move(initializer);
         lastStmt = std::move(decl);
     }
 
@@ -185,27 +220,32 @@ public:
     }
 
     void visit(CompoundStatement& node) override {
-        auto compound = copyPos(std::make_unique<CompoundStatement>(), node);
+        auto oldConstants = knownConstants;
+        // Create a new vector to hold the folded statements
+        std::vector<std::unique_ptr<Statement>> newStatements;
         for (auto& stmt : node.statements) {
             auto folded = fold(std::move(stmt));
             if (folded) {
-                compound->statements.push_back(std::move(folded));
+                newStatements.push_back(std::move(folded));
             }
         }
-        lastStmt = std::move(compound);
+        node.statements = std::move(newStatements);
+        knownConstants = std::move(oldConstants);
+        // We don't set lastStmt here, as CompoundStatement is modified in place
     }
 
     void visit(FunctionDeclaration& node) override {
-        // FunctionDeclaration is not a Statement, so we can't use lastStmt easily without cast or extra method
-        // But we can just modify it in place or return a new one.
-        node.body = std::unique_ptr<CompoundStatement>(static_cast<CompoundStatement*>(fold(std::move(node.body)).release()));
+        knownConstants.clear(); // Fresh state for new function
+        // The body is a CompoundStatement, which is modified in-place by its visit method.
+        // We just need to call accept on it directly, not fold it via the helper.
+        node.body->accept(*this);
+        // We don't set lastStmt here, as FunctionDeclaration is modified in place
     }
 
-    void visit(TranslationUnit& node) override {
-        for (auto& decl : node.topLevelDecls) {
-            decl->accept(*this);
-        }
-    }
+    void visit(TranslationUnit& node) override;
+
+    std::unique_ptr<TranslationUnit> foldTranslationUnit(std::unique_ptr<TranslationUnit> unit);
+    std::unique_ptr<ASTNode> fold(std::unique_ptr<ASTNode> node);
 
 private:
     template<typename T, typename U>

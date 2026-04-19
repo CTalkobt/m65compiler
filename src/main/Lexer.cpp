@@ -147,7 +147,8 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"do", TokenType::DO},
         {"asm", TokenType::ASM},
         {"__asm__", TokenType::ASM},
-        {"struct", TokenType::STRUCT}
+        {"struct", TokenType::STRUCT},
+        {"volatile", TokenType::VOLATILE}
     };
 
     auto it = keywords.find(value);

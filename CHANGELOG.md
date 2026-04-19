@@ -5,6 +5,7 @@ All notable changes to the cc45 / ca45 suite will be documented in this file.
 
 ### Added
 - **Compiler (cc45)**:
+    - Added support for the `volatile` keyword for variable declarations and function parameters. `volatile` variables are now explicitly prevented from being optimized away by dead store elimination.
     - Added `-E` flag to run only the preprocessor and output to `stdout` or a file specified by `-o`.
     - Improved multi-call support: if the binary is invoked as `cp45`, it automatically runs in preprocessing-only mode.
 - **Preprocessor (cp45)**:
@@ -24,7 +25,6 @@ All notable changes to the cc45 / ca45 suite will be documented in this file.
 - **Documentation**:
     - Renamed preprocessor documentation to `doc/cp45.md` to align with toolchain naming conventions.
 - **Assembler (ca45)**:
-...
     - Implemented a suite of high-level simulated opcodes:
         - `ldax / lday / ldaz`: 16-bit word loads with support for immediate (`#`), stack-relative (`offset, s`), zero page, and absolute addressing.
         - `stax / stay / staz`: 16-bit word stores with support for stack-relative, zero page, and absolute addressing.
@@ -53,6 +53,9 @@ All notable changes to the cc45 / ca45 suite will be documented in this file.
 
 ### Optimized
 - **Compiler (cc45)**:
+    - **Strength Reduction**: Converts multiplication by a power of 2 into equivalent bit shifts (`ASL`, `LSR`), and modulus by a power of 2 into bitwise AND (`AND`).
+    - **Constant Propagation**: Substitutes variables with known constant literal values into expressions, enabling further compile-time folding.
+    - **Dead Variable Elimination**: Removes stack allocation and initialization for non-volatile local variables that are initialized with constants and not subsequently used.
     - **Constant Initialization**: Uses native `phw #value` for declaring local variables with constant initializers, saving 3 instructions and 3 bytes per declaration.
     - **Constant Assignment**: Optimized 16-bit constant assignments to stack variables to use a "lda twice" sequence, avoiding clobbering the `x` register and reducing code size.
     - **Zero Optimization**: Integrated `zero a, x` simulated opcode for more efficient handling of zero literals.

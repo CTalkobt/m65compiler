@@ -129,9 +129,12 @@ void CodeGenerator::visit(FunctionDeclaration& node) {
     variableTypes.clear();
     currentVars.clear();
     std::string procLine = "    .proc " + node.name;
+
+    currentFunction = &node; // Set current function
+
     for (auto& param : node.parameters) {
         std::string pName = "_p_" + param.name;
-        variableTypes[pName] = {param.type, param.pointerLevel};
+        variableTypes[pName] = {param.type, param.pointerLevel, param.isVolatile};
         if (param.pointerLevel > 0) {
             procLine += ", W#" + pName;
         } else if (param.type == "char") {
@@ -145,6 +148,8 @@ void CodeGenerator::visit(FunctionDeclaration& node) {
     node.body->accept(*this);
     emit("endproc");
     out << std::endl;
+
+    currentFunction = nullptr; // Reset current function
 }
 
 void CodeGenerator::visit(CompoundStatement& node) {
@@ -154,7 +159,7 @@ void CodeGenerator::visit(CompoundStatement& node) {
 void CodeGenerator::visit(VariableDeclaration& node) {
     embedSource(node);
     std::string lName = "_l_" + node.name;
-    variableTypes[lName] = {node.type, node.pointerLevel};
+    variableTypes[lName] = {node.type, node.pointerLevel, node.isVolatile};
     int size = 0;
     if (node.pointerLevel > 0) size = 2;
     else if (node.type == "char") size = 1;
@@ -165,38 +170,77 @@ void CodeGenerator::visit(VariableDeclaration& node) {
         else throw std::runtime_error("Unknown struct type: " + sName);
     }
 
-    if (node.initializer) {
-        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.initializer.get())) {
-            if (size == 2) {
-                std::stringstream ss;
-                ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (int)lit->value;
-                emit("phw " + ss.str());
-            } else {
-                emitter->lda_imm(lit->value & 0xFF);
-                emitter->pha();
+    std::cerr << "CodeGenerator::Visiting VariableDeclaration: " << node.name << std::endl;
+
+    // Handle volatile variables first: always allocate.
+    if (node.isVolatile) {
+        std::cerr << "  Variable is VOLATILE. Always allocating." << std::endl;
+        if (node.initializer) {
+            // For volatile, if it has an initializer, we must emit it.
+            if (auto* lit = dynamic_cast<IntegerLiteral*>(node.initializer.get())) {
+                 if (size == 2) {
+                    std::stringstream ss;
+                    ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (int)lit->value;
+                    emit("phw " + ss.str());
+                } else {
+                    emitter->lda_imm(lit->value & 0xFF);
+                    emitter->pha();
+                }
+            } else { // Non-literal initializer for volatile variable.
+                bool oldNeeded = resultNeeded;
+                resultNeeded = true;
+                node.initializer->accept(*this);
+                resultNeeded = oldNeeded;
+                if (size == 2) emitter->push_ax();
+                else emitter->pha();
             }
         } else {
-            bool oldNeeded = resultNeeded;
-            resultNeeded = true;
-            node.initializer->accept(*this);
-            resultNeeded = oldNeeded;
-            if (size == 2) emitter->push_ax();
-            else emitter->pha();
-        }
-    } else {
-        if (size >= 9) {
-            emit("phw #$0000"); // placeholder for first word
-            // We need to emit enough stack space.
-            // .cleanup already does this by reserving but we need to actually move SP?
-            // ca45 handles stack frame. VariableDeclaration usually emits a push to reserve space.
-            for (int i = 0; i < (size - 2) / 2; ++i) emit("phw #$0000");
-            if (size % 2) { emit("lda #0"); emit("pha"); }
-            
-            emit("lda #0");
-            emit("FILL.SP " + lName + ", #" + std::to_string(size));
-        } else {
+            // No initializer for volatile, still allocate space.
             if (size == 2) emit("phw #$0000");
             else { emitter->lda_imm(0); emitter->pha(); }
+        }
+    } else { // Not volatile, apply dead store elimination heuristic.
+        if (node.initializer && dynamic_cast<IntegerLiteral*>(node.initializer.get())) {
+            if (!isVariableUsed(node.name, *currentFunction)) {
+                std::cerr << "  Non-volatile constant local is dead. Skipping allocation." << std::endl;
+                return; // Dead store, skip allocation.
+            }
+        }
+
+        // Normal allocation for non-volatile variables (either non-literal initializer, or literal but used).
+        if (node.initializer) {
+            std::cerr << "  Non-volatile, initializer exists. Type: " << typeid(*node.initializer.get()).name() << std::endl;
+            if (auto* lit = dynamic_cast<IntegerLiteral*>(node.initializer.get())) {
+                std::cerr << "    Initializer is IntegerLiteral: " << lit->value << std::endl;
+                if (size == 2) {
+                    std::stringstream ss;
+                    ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (int)lit->value;
+                    emit("phw " + ss.str());
+                } else {
+                    emitter->lda_imm(lit->value & 0xFF);
+                    emitter->pha();
+                }
+            } else {
+                std::cerr << "    Initializer is NOT IntegerLiteral. Generating code for expression." << std::endl;
+                bool oldNeeded = resultNeeded;
+                resultNeeded = true;
+                node.initializer->accept(*this);
+                resultNeeded = oldNeeded;
+                if (size == 2) emitter->push_ax();
+                else emitter->pha();
+            }
+        } else {
+            std::cerr << "  Non-volatile, no initializer." << std::endl;
+            if (size >= 9) {
+                emit("phw #$0000"); // placeholder for first word
+                for (int i = 0; i < (size - 2) / 2; ++i) emit("phw #$0000");
+                if (size % 2) { emit("lda #0"); emit("pha"); }
+                emit("lda #0");
+                emit("FILL.SP " + lName + ", #" + std::to_string(size));
+            } else {
+                if (size == 2) emit("phw #$0000");
+                else { emitter->lda_imm(0); emitter->pha(); }
+            }
         }
     }
     for (const auto& varName : currentVars) {
@@ -206,7 +250,8 @@ void CodeGenerator::visit(VariableDeclaration& node) {
     currentVars.push_back(lName);
     emit(".cleanup " + std::to_string(size));
     invalidateRegs();
-}
+    }
+
 
 void CodeGenerator::visit(Assignment& node) {
     embedSource(node);
@@ -350,7 +395,14 @@ void CodeGenerator::visit(Assignment& node) {
 
 void CodeGenerator::visit(ReturnStatement& node) {
     embedSource(node);
+    std::cerr << "CodeGenerator::Visiting ReturnStatement." << std::endl;
     if (node.expression) {
+        std::cerr << "  Return expression exists. Type: " << typeid(*node.expression.get()).name();
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.expression.get())) {
+            std::cerr << ", Value: " << lit->value << std::endl;
+        } else {
+            std::cerr << std::endl;
+        }
         bool oldNeeded = resultNeeded;
         resultNeeded = true;
         node.expression->accept(*this);
@@ -562,6 +614,7 @@ void CodeGenerator::visit(VariableReference& node) {
     if (!resultNeeded) return;
     
     std::string rName = resolveVarName(node.name);
+
     VarInfo vi = variableTypes[rName];
     bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
 
@@ -937,9 +990,73 @@ void CodeGenerator::visit(BinaryOperation& node) {
         return;
     }
 
+    // Logical operators have special handling above.
+    // For others, we generally evaluate left, then right.
+    // But for strength reduction, we might skip evaluating right if it's a literal.
+
+    bool isMultiplicativeLiteral = false;
+    if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+        if (node.op == "*" || node.op == "/" || node.op == "%" || node.op == "<<" || node.op == ">>") {
+            isMultiplicativeLiteral = true;
+        }
+    }
+
     bool oldNeeded = resultNeeded;
     resultNeeded = true;
     node.left->accept(*this);
+
+    if (isMultiplicativeLiteral) {
+        int val = dynamic_cast<IntegerLiteral*>(node.right.get())->value;
+        if (node.op == "*") {
+            if (val == 0) { emit("zero a, x"); updateRegA(0); updateRegX(0); }
+            else if (val == 1) { /* Already in AX */ }
+            else if (val > 0 && (val & (val - 1)) == 0) {
+                int shifts = 0; while (val > 1) { val >>= 1; shifts++; }
+                for (int i = 0; i < shifts; i++) {
+                    emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+                }
+            } else {
+                int zpIdx = allocateZP(2);
+                std::stringstream ss; ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+                emit("stax $" + ss.str());
+                std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << val;
+                emit("ldax #$" + ssVal.str());
+                emit("mul.16 .ax, $" + ss.str());
+                freeZP(zpIdx, 2);
+            }
+            invalidateFlags(); resultNeeded = oldNeeded; return;
+        } else if (node.op == "/" || node.op == "%") {
+            if (val > 0 && (val & (val - 1)) == 0) {
+                if (node.op == "/") {
+                    int shifts = 0; while (val > 1) { val >>= 1; shifts++; }
+                    for (int i = 0; i < shifts; i++) {
+                        emitter->txa(); emitter->lsr_a(); emitter->tax(); emitter->pla(); emitter->ror_a(); emitter->pha();
+                    }
+                } else { // %
+                    int mask = val - 1;
+                    emitter->and_imm(mask & 0xFF); emitter->pha(); emitter->txa(); emitter->and_imm((mask >> 8) & 0xFF); emitter->tax(); emitter->pla();
+                }
+            } else {
+                int zpIdx = allocateZP(2);
+                std::stringstream ss; ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+                emit("stax $" + ss.str());
+                std::stringstream ss2; 
+                ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << val;
+                emit("ldax #$" + ss2.str());
+                if (node.op == "/") emit("div.16 .ax, $" + ss.str());
+                else { emit("div.16 .ax, $" + ss.str()); emit("lda $D770"); emit("ldx $D771"); }
+                freeZP(zpIdx, 2);
+            }
+            invalidateFlags(); resultNeeded = oldNeeded; return;
+        } else if (node.op == "<<" || node.op == ">>") {
+            for (int i = 0; i < val; i++) {
+                if (node.op == "<<") { emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla(); }
+                else { emitter->txa(); emitter->lsr_a(); emitter->tax(); emitter->pla(); emitter->ror_a(); emitter->pha(); }
+            }
+            invalidateFlags(); resultNeeded = oldNeeded; return;
+        }
+    }
+
     int zpIdx = allocateZP(2);
     std::stringstream ss;
     ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
@@ -947,198 +1064,57 @@ void CodeGenerator::visit(BinaryOperation& node) {
     node.right->accept(*this);
     resultNeeded = oldNeeded;
     if (scale > 1) {
-        emitter->asl_a();
-        emitter->pha();
-        emitter->txa();
-        emitter->rol_a();
-        emitter->tax();
-        emitter->pla();
+        emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
     }
     if (node.op == "+") {
-        std::stringstream ss2;
-        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
         emit("add.16 .ax, $" + ss2.str());
-        invalidateFlags();
     } else if (node.op == "-") {
-        std::stringstream ss2;
-        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
         emit("sub.16 .ax, $" + ss2.str());
-        invalidateFlags();
-    } else if (node.op == "&") {
-        std::stringstream ss2;
-        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("and.16 .ax, $" + ss2.str());
-        invalidateFlags();
-    } else if (node.op == "|") {
-        std::stringstream ss2;
-        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("ora.16 .ax, $" + ss2.str());
-        invalidateFlags();
-    } else if (node.op == "^") {
-        std::stringstream ss2;
-        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("eor.16 .ax, $" + ss2.str());
-        invalidateFlags();
-    } else if (node.op == "==" || node.op == "!=") {
-        std::stringstream ss2;
-        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("cpw .ax, $" + ss2.str());
-        invalidateFlags();
-        std::string labelFalse = newDontCareLabel(); 
-        std::string labelEnd = newDontCareLabel();
-        if (node.op == "==") emit("bne " + labelFalse); else emit("beq " + labelFalse);
-        emitter->lda_imm(1); emitter->bra(0x02);
-        out << labelFalse << ":" << std::endl; emitter->lda_imm(0);
-        out << labelEnd << ":" << std::endl; 
-        invalidateRegs();
-        emitter->ldx_imm(0);
-        updateRegX(0);
     } else if (node.op == "*") {
-        bool optimized = false;
-        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
-            int val = lit->value;
-            if (val == 0) {
-                emit("zero a, x");
-                updateRegA(0); updateRegX(0);
-                optimized = true;
-            } else if (val == 1) {
-                // Already in AX
-                optimized = true;
-            } else if (val > 0 && (val & (val - 1)) == 0) {
-                int shifts = 0;
-                while (val > 1) { val >>= 1; shifts++; }
-                for (int i = 0; i < shifts; i++) {
-                    emitter->asl_a();
-                    emitter->pha();
-                    emitter->txa();
-                    emitter->rol_a();
-                    emitter->tax();
-                    emitter->pla();
-                }
-                optimized = true;
-            }
-        }
-        if (!optimized) {
-            std::stringstream ss2;
-            ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-            emit("mul.16 .ax, $" + ss2.str());
-        }
-        invalidateFlags();
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("mul.16 .ax, $" + ss2.str());
     } else if (node.op == "/" || node.op == "%") {
-        bool optimized = false;
-        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
-            int val = lit->value;
-            if (val > 0 && (val & (val - 1)) == 0) {
-                if (node.op == "/") {
-                    int shifts = 0;
-                    while (val > 1) { val >>= 1; shifts++; }
-                    for (int i = 0; i < shifts; i++) {
-                        emitter->txa();
-                        emitter->lsr_a();
-                        emitter->tax();
-                        emitter->pla();
-                        emitter->ror_a();
-                        emitter->pha();
-                    }
-                    optimized = true;
-                } else { // %
-                    int mask = val - 1;
-                    emitter->and_imm(mask & 0xFF);
-                    emitter->pha();
-                    emitter->txa();
-                    emitter->and_imm((mask >> 8) & 0xFF);
-                    emitter->tax();
-                    emitter->pla();
-                    optimized = true;
-                }
-            }
-        }
-        if (!optimized) {
-            std::stringstream ss2;
-            ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-            if (node.op == "/") {
-                emit("div.16 .ax, $" + ss2.str());
-            } else {
-                emit("div.16 .ax, $" + ss2.str());
-                // Simulated div.16 leaves quotient in AX. 
-                // We need to fetch remainder from hardware registers $D770-D771
-                emit("lda $D770");
-                emit("ldx $D771");
-            }
-        }
-        invalidateFlags();
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("div.16 .ax, $" + ss2.str());
+        if (node.op == "%") { emit("lda $D770"); emit("ldx $D771"); }
     } else if (node.op == "<<") {
-        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
-            for (int i = 0; i < lit->value; i++) {
-                emitter->asl_a();
-                emitter->pha();
-                emitter->txa();
-                emitter->rol_a();
-                emitter->tax();
-                emitter->pla();
-            }
-        } else {
-            std::string labelStart = newDontCareLabel();
-            std::string labelEnd = newDontCareLabel();
-            int shiftZp = allocateZP(1);
-            std::stringstream ssSh;
-            ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
-            emit("sta $" + ssSh.str()); // Save shift count
-            // Reload value to shift from stack-saved left operand
-            std::stringstream ssVal;
-            ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-            emit("ldax $" + ssVal.str());
-            out << labelStart << ":" << std::endl;
-            emit("lda $" + ssSh.str());
-            emit("beq " + labelEnd);
-            emit("dec $" + ssSh.str());
-            emitter->asl_a();
-            emitter->pha();
-            emitter->txa();
-            emitter->rol_a();
-            emitter->tax();
-            emitter->pla();
-            emit("bra " + labelStart);
-            out << labelEnd << ":" << std::endl;
-            freeZP(shiftZp, 1);
-        }
-        invalidateFlags();
+        std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+        int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+        emit("sta $" + ssSh.str()); std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("ldax $" + ssVal.str()); out << labelStart << ":" << std::endl;
+        emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
+        emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+        emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
+        freeZP(shiftZp, 1);
     } else if (node.op == ">>") {
-        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
-            for (int i = 0; i < lit->value; i++) {
-                emitter->txa();
-                emitter->lsr_a();
-                emitter->tax();
-                emitter->pla();
-                emitter->ror_a();
-                emitter->pha();
-            }
-        } else {
-            std::string labelStart = newDontCareLabel();
-            std::string labelEnd = newDontCareLabel();
-            int shiftZp = allocateZP(1);
-            std::stringstream ssSh;
-            ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
-            emit("sta $" + ssSh.str());
-            std::stringstream ssVal;
-            ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-            emit("ldax $" + ssVal.str());
-            out << labelStart << ":" << std::endl;
-            emit("lda $" + ssSh.str());
-            emit("beq " + labelEnd);
-            emit("dec $" + ssSh.str());
-            emitter->txa();
-            emitter->lsr_a();
-            emitter->tax();
-            emitter->pla();
-            emitter->ror_a();
-            emitter->pha();
-            emit("bra " + labelStart);
-            out << labelEnd << ":" << std::endl;
-            freeZP(shiftZp, 1);
-        }
-        invalidateFlags();
+        std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+        int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+        emit("sta $" + ssSh.str()); std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("ldax $" + ssVal.str()); out << labelStart << ":" << std::endl;
+        emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
+        emitter->txa(); emitter->lsr_a(); emitter->tax(); emitter->pla(); emitter->ror_a(); emitter->pha();
+        emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
+        freeZP(shiftZp, 1);
+    } else if (node.op == "&") {
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("and.16 .ax, $" + ss2.str());
+    } else if (node.op == "|") {
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("ora.16 .ax, $" + ss2.str());
+    } else if (node.op == "^") {
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("eor.16 .ax, $" + ss2.str());
+    } else if (node.op == "==" || node.op == "!=") {
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        emit("cpw .ax, $" + ss2.str());
+        std::string labelFalse = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+        if (node.op == "==") emit("bne " + labelFalse); else emit("beq " + labelFalse);
+        emitter->lda_imm(1); emitter->bra(0x02); out << labelFalse << ":" << std::endl; emitter->lda_imm(0); out << labelEnd << ":" << std::endl;
+        emitter->ldx_imm(0); updateRegX(0);
     }
+    invalidateFlags();
     freeZP(zpIdx, 2);
     invalidateRegs();
 }
@@ -1359,4 +1335,116 @@ void CodeGenerator::freeZP(int index, int size) {
     for (int i = 0; i < size; ++i) {
         zpRegs[index + i].inUse = false;
     }
+}
+
+// Helper visitor to check if a variable is used
+class VariableUseChecker : public ASTVisitor {
+public:
+    std::string targetVarName;
+    bool used = false;
+    // Track current variable declaration to avoid self-reference
+    std::string currentDeclVarName;
+
+    VariableUseChecker(const std::string& name, const std::string& currentDecl) 
+        : targetVarName(name), currentDeclVarName(currentDecl) {}
+
+    void visit(IntegerLiteral& node) override {}
+    void visit(StringLiteral& node) override {}
+    void visit(VariableReference& node) override {
+        if (node.name == targetVarName) {
+            used = true;
+        }
+    }
+    void visit(Assignment& node) override {
+        if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
+            if (ref->name == targetVarName && ref->name != currentDeclVarName) { used = true; }
+        }
+        node.expression->accept(*this);
+    }
+    void visit(BinaryOperation& node) override {
+        node.left->accept(*this);
+        node.right->accept(*this);
+    }
+    void visit(UnaryOperation& node) override {
+        node.operand->accept(*this);
+    }
+    void visit(FunctionCall& node) override {
+        for (auto& arg : node.arguments) arg->accept(*this);
+    }
+    void visit(MemberAccess& node) override {
+        node.structExpr->accept(*this);
+    }
+
+    // Statements
+    void visit(VariableDeclaration& node) override {
+        // Only check initializer, not the variable itself
+        if (node.initializer) node.initializer->accept(*this);
+    }
+    void visit(ReturnStatement& node) override {
+        if (node.expression) node.expression->accept(*this);
+    }
+    void visit(ExpressionStatement& node) override {
+        if (node.expression) node.expression->accept(*this);
+    }
+    void visit(IfStatement& node) override {
+        node.condition->accept(*this);
+        node.thenBranch->accept(*this);
+        if (node.elseBranch) node.elseBranch->accept(*this);
+    }
+    void visit(WhileStatement& node) override {
+        node.condition->accept(*this);
+        node.body->accept(*this);
+    }
+    void visit(DoWhileStatement& node) override {
+        node.body->accept(*this);
+        node.condition->accept(*this);
+    }
+    void visit(ForStatement& node) override {
+        if (node.initializer) node.initializer->accept(*this);
+        if (node.condition) node.condition->accept(*this);
+        if (node.increment) node.increment->accept(*this);
+        node.body->accept(*this);
+    }
+    void visit(AsmStatement& node) override {}
+    void visit(StructDefinition& node) override {}
+    void visit(CompoundStatement& node) override {
+        for (auto& stmt : node.statements) stmt->accept(*this);
+    }
+    void visit(FunctionDeclaration& node) override {
+        // Only visit the body, not the parameters/name
+        node.body->accept(*this);
+    }
+    void visit(TranslationUnit& node) override {
+        for (auto& decl : node.topLevelDecls) decl->accept(*this);
+    }
+};
+
+bool CodeGenerator::isVariableUsed(const std::string& varName, FunctionDeclaration& func) {
+    // Check from the statement *after* the current variable's declaration
+    // to the end of the function body.
+
+    VariableUseChecker checker(varName, varName); // Pass varName as currentDeclVarName
+
+    // Find the current variable's declaration within the function body.
+    // We need to start checking *after* this declaration.
+    bool foundDecl = false;
+    for (auto& stmt : func.body->statements) {
+        if (!foundDecl) {
+            if (auto* varDecl = dynamic_cast<VariableDeclaration*>(stmt.get())) {
+                if (varDecl->name == varName) {
+                    foundDecl = true;
+                    // Check initializer expression, if any
+                    if (varDecl->initializer) {
+                         varDecl->initializer->accept(checker);
+                    }
+                    continue;
+                }
+            }
+        }
+        if (foundDecl) {
+            stmt->accept(checker);
+        }
+        if (checker.used) return true;
+    }
+    return checker.used;
 }

@@ -76,6 +76,10 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     std::vector<Parameter> params;
     if (peek().type != TokenType::CLOSE_PAREN) {
         do {
+            bool pIsVolatile = false;
+            if (match(TokenType::VOLATILE)) {
+                pIsVolatile = true;
+            }
             std::string pType;
             if (match(TokenType::INT)) pType = "int";
             else if (match(TokenType::CHAR)) pType = "char";
@@ -89,7 +93,7 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
             while (match(TokenType::STAR)) pPtrLevel++;
 
             std::string pName = expect(TokenType::IDENTIFIER, "Expected parameter name").value;
-            params.push_back({pType, pPtrLevel, pName});
+            params.push_back({pType, pPtrLevel, pName, pIsVolatile});
         } while (match(TokenType::COMMA));
     }
     expect(TokenType::CLOSE_PAREN, "Expected ')'");
@@ -112,6 +116,11 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
+    bool isVolatile = false;
+    if (match(TokenType::VOLATILE)) {
+        isVolatile = true;
+    }
+
     if (match(TokenType::STRUCT)) {
         const Token& startToken = tokens[pos-1];
         if (peek().type == TokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::OPEN_BRACE) {
@@ -123,6 +132,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         while (match(TokenType::STAR)) ptrLevel++;
         std::string varName = expect(TokenType::IDENTIFIER, "Expected variable name").value;
         auto decl = setPos(std::make_unique<VariableDeclaration>("struct " + structName, varName, ptrLevel), startToken);
+        decl->isVolatile = isVolatile;
         if (match(TokenType::EQUALS)) {
             decl->initializer = parseExpression();
         }
@@ -137,6 +147,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         while (match(TokenType::STAR)) ptrLevel++;
         std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
         auto decl = setPos(std::make_unique<VariableDeclaration>(type, name, ptrLevel), startToken);
+        decl->isVolatile = isVolatile;
         if (match(TokenType::EQUALS)) {
             decl->initializer = parseExpression();
         }

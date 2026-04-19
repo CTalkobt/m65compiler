@@ -14,6 +14,7 @@ enum class TokenType {
     ASM,
     DO,
     STRUCT,
+    VOLATILE,
     
     // Literals
     IDENTIFIER,
@@ -77,6 +78,7 @@ struct Token {
             case TokenType::ASM: return "ASM";
             case TokenType::DO: return "DO";
             case TokenType::STRUCT: return "STRUCT";
+            case TokenType::VOLATILE: return "VOLATILE";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";

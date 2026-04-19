@@ -16,6 +16,11 @@ The compilation process follows a multi-pass pipeline:
 ## Design Philosophy
 - **Procedural Abstraction**: Function calls are treated as first-class citizens with named parameters and automated stack cleanup.
 - **Hierarchical Scoping**: Supports nested local scopes for labels and variables within procedures and `{}` blocks, preventing namespace pollution and allowing safe label reuse.
+- **Optimizations**: Includes advanced compiler optimizations such as:
+    - **Strength Reduction**: Converts expensive operations (e.g., multiplication by a power of 2) into faster equivalents (e.g., bit shifts).
+    - **Constant Propagation**: Substitutes variables with known constant values into expressions at compile time, enabling further folding and simplification.
+    - **Dead Variable Elimination**: Removes stack allocation and initialization for local variables that are initialized with constants and not subsequently used in the function.
+- **Volatile Keyword Support**: The `volatile` keyword is fully supported, preventing unintended compiler optimizations on variables that may be changed by external factors (e.g., hardware, interrupts).
 - **MEGA65 First**: Special emphasis is placed on supporting the 45GS02 instruction set enhancements, including a high-level expression engine (`expr`) that handles constant folding and register arithmetic.
 - **Compatibility**: Supports KickAssembler-style syntax (comments, `* =`, `.cpu`) for easier porting of existing MEGA65 codebases.
 - **Inline Assembly**: Standard C `asm()` and `__asm__()` support for direct hardware control from C source.

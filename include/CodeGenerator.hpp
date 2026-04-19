@@ -19,6 +19,7 @@ public:
     struct VarInfo {
         std::string type;
         int pointerLevel;
+        bool isVolatile = false; // New: volatile qualifier
     };
     struct ExpressionType {
         std::string type;
@@ -125,4 +126,6 @@ public:
         bool inUse = false;
     };
     std::vector<ZPReg> zpRegs;
+    FunctionDeclaration* currentFunction = nullptr;
+    bool isVariableUsed(const std::string& varName, FunctionDeclaration& func);
 };

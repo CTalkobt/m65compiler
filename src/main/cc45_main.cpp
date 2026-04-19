@@ -325,16 +325,17 @@ int main(int argc, char** argv) {
     try {
         auto ast = parser.parse();
 
-        if (verbose) {
-            std::cout << "Folding constants..." << std::endl;
-        }
+        // if (verbose) {
+        //     std::cout << "Folding constants..." << std::endl;
+        // }
         ConstantFolder folder;
-        ast->accept(folder);
+        ast = folder.foldTranslationUnit(std::move(ast));
 
         if (verbose) {
             ASTPrinter printer;
             ast->accept(printer);
         }
+
 
         std::ofstream asmOut(output_file);
         if (!asmOut.is_open()) {
