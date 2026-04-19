@@ -34,6 +34,17 @@ For a full list of command-line options, use the `-?` flag:
 ./bin/ca45 -?
 ```
 
+## Documentation
+In addition to the Markdown files in the `doc/` directory, you can generate and view standard Unix man pages for both tools:
+
+```bash
+make man
+man ./man/cc45.1
+man ./man/ca45.1
+```
+
+Note: This requires `pandoc` to be installed on your system.
+
 ## Testing & Regressions
 The suite includes a set of automated tests to verify the compiler and assembler. You can run all tests from the project root:
 ```bash

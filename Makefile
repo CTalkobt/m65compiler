@@ -18,9 +18,17 @@ COMMON_OBJECTS = $(OBJ_DIR)/Lexer.o $(OBJ_DIR)/Parser.o $(OBJ_DIR)/AST.o $(OBJ_D
 CC_OBJECTS = $(OBJ_DIR)/cc45_main.o $(COMMON_OBJECTS)
 CA_OBJECTS = $(OBJ_DIR)/ca45_main.o $(OBJ_DIR)/AssemblerLexer.o $(OBJ_DIR)/AssemblerParser.o $(COMMON_OBJECTS)
 
-.PHONY: all clean test
+MAN_DIR = man
+
+.PHONY: all clean test man
 
 all: $(CC_TARGET) $(CA_TARGET) $(CP_TARGET)
+
+man: $(MAN_DIR)/cc45.1 $(MAN_DIR)/ca45.1
+
+$(MAN_DIR)/%.1: doc/%.md
+	@mkdir -p $(MAN_DIR)
+	pandoc -s -t man $< -o $@ -M title="$(basename $(notdir $@))" -M section="1" -M date="$(shell date +%F)" -M footer="$(basename $(notdir $@)) manual" -M header="User Commands"
 
 $(CC_TARGET): $(CC_OBJECTS)
 	@mkdir -p $(BIN_DIR)
