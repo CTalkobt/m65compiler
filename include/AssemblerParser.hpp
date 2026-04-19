@@ -6,47 +6,8 @@
 #include <memory>
 #include <cstdint>
 #include "AssemblerToken.hpp"
-
-enum class AddressingMode {
-    IMPLIED,
-    ACCUMULATOR,
-    IMMEDIATE,
-    IMMEDIATE16,
-    BASE_PAGE,
-    BASE_PAGE_X,
-    BASE_PAGE_Y,
-    ABSOLUTE,
-    ABSOLUTE_X,
-    ABSOLUTE_Y,
-    INDIRECT,
-    BASE_PAGE_X_INDIRECT,
-    BASE_PAGE_INDIRECT_Y,
-    BASE_PAGE_INDIRECT_Z,
-    BASE_PAGE_INDIRECT_SP_Y,
-    ABSOLUTE_INDIRECT,
-    ABSOLUTE_X_INDIRECT,
-    RELATIVE,
-    RELATIVE16,
-    BASE_PAGE_RELATIVE,
-    FLAT_INDIRECT_Z,
-    QUAD_Q,
-    STACK_RELATIVE,
-    STACK_RELATIVE_INDIRECT_Y,
-    LINEAR_ABSOLUTE,
-    LINEAR_ABSOLUTE_X,
-    LINEAR_ABSOLUTE_Y,
-    NONE
-};
-
-struct Symbol {
-    uint32_t value;
-    bool isAddress;
-    int size;
-    bool isVariable = false;
-    uint32_t initialValue = 0;
-    bool isStackRelative = false;
-    int stackOffset = 0;
-};
+#include "AssemblerTypes.hpp"
+#include "AssemblerOpcodeDatabase.hpp"
 
 struct Instruction {
     std::string mnemonic;
@@ -68,6 +29,9 @@ struct Directive {
 
 class AssemblerParser {
 public:
+    friend class AssemblerOptimizer;
+    friend class AssemblerSimulatedOps;
+    friend class AssemblerGenerator;
     AssemblerParser(const std::vector<AssemblerToken>& tokens);
     AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols);
     void pass1();
@@ -129,9 +93,6 @@ private:
     int calculateInstructionSize(const Instruction& instr, uint32_t currentAddr = 0, const std::string& scopePrefix = "");
     int calculateDirectiveSize(const Directive& dir);
     int calculateExprSize(int tokenIndex, const std::string& scopePrefix = "");
-    uint8_t getOpcode(const std::string& mnemonic, AddressingMode mode);
-    std::string AddressingModeToString(AddressingMode mode);
-    std::vector<AddressingMode> getValidAddressingModes(const std::string& mnemonic);
     uint32_t evaluateExpressionAt(int index, const std::string& scopePrefix = "");
     void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix = "");
     void emitMulCode(std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
