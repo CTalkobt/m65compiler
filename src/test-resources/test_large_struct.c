@@ -11,10 +11,10 @@ void test() {
     struct Large b;
     
     // Test memset (part 1)
-    memset(&a, 65, 10);
+    _memset(&a, 65, 10);
     
     // Test memcpy (part 1)
-    memcpy(&b, &a, 10);
+    _memcpy(&b, &a, 10);
     
     // Test struct assignment (part 2)
     a = b;

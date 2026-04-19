@@ -596,8 +596,8 @@ void CodeGenerator::visit(VariableReference& node) {
 }
 
 void CodeGenerator::visit(FunctionCall& node) {
-    if (node.name == "memset" && node.arguments.size() == 3) {
-        // memset(dest, val, len)
+    if (node.name == "_memset" && node.arguments.size() == 3) {
+        // _memset(dest, val, len)
         // val is node.arguments[1]
         // dest is node.arguments[0]
         // len is node.arguments[2]
@@ -637,8 +637,8 @@ void CodeGenerator::visit(FunctionCall& node) {
         return;
     }
 
-    if (node.name == "memcpy" && node.arguments.size() == 3) {
-        // memcpy(dest, src, len)
+    if (node.name == "_memcpy" && node.arguments.size() == 3) {
+        // _memcpy(dest, src, len)
         bool oldNeeded = resultNeeded;
         resultNeeded = true;
 
