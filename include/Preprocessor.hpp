@@ -20,9 +20,17 @@ public:
 
 private:
     bool isCompiler;
-    std::map<std::string, std::string> symbols;
+    
+    struct Macro {
+        bool isFunctionLike = false;
+        std::vector<std::string> params;
+        std::string body;
+    };
+    std::map<std::string, Macro> macros;
+    
     std::vector<std::string> includePaths;
     std::set<std::string> includedFiles; // To prevent infinite recursion
+    std::set<std::string> onceFiles;     // To support #includeonce
     std::string preprocDate;
     std::string preprocTime;
     
@@ -36,6 +44,7 @@ private:
     std::string processInternal(const std::string& source, const std::string& currentFile, int depth);
     bool isConditionTrue();
     long evaluateExpression(const std::string& expr);
+    std::string expandMacros(const std::string& line);
     std::string stripComments(const std::string& line, bool& inBlockComment);
     std::string getDirectory(const std::string& filePath);
     std::string findIncludeFile(const std::string& fileName, const std::string& currentDir);

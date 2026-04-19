@@ -15,20 +15,153 @@ namespace fs = std::filesystem;
 Preprocessor::Preprocessor(bool isCompiler) : isCompiler(isCompiler) {
     std::time_t t = std::time(nullptr);
     std::tm tm = *std::localtime(&t);
-    
+
     std::stringstream dateSS;
     dateSS << "\"" << std::put_time(&tm, "%b %d %Y") << "\"";
     preprocDate = dateSS.str();
-    
+
     std::stringstream timeSS;
     timeSS << "\"" << std::put_time(&tm, "%H:%M:%S") << "\"";
     preprocTime = timeSS.str();
 
     // Standard predefined macros
-    symbols["__STDC__"] = "1";
-    symbols["__STDC_VERSION__"] = "201112L";
-    symbols["__STDC_HOSTED__"] = "0"; // Cross-compiler
+    macros["__STDC__"] = {false, {}, "1"};
+    macros["__STDC_VERSION__"] = {false, {}, "201112L"};
+    macros["__STDC_HOSTED__"] = {false, {}, "0"}; 
 }
+
+std::string Preprocessor::expandMacros(const std::string& line) {
+    std::string result = line;
+    bool changed = true;
+    int limit = 100; // Prevent infinite expansion
+
+    while (changed && limit-- > 0) {
+        changed = false;
+        std::string nextResult;
+        bool inString = false;
+        // std::cerr << "Expanding: " << result << std::endl;
+
+        for (size_t i = 0; i < result.length(); ) {
+            // Skip strings
+            if (result[i] == '"' && (i == 0 || result[i-1] != '\\')) {
+                inString = !inString;
+                nextResult += result[i++];
+                continue;
+            }
+            if (inString) {
+                nextResult += result[i++];
+                continue;
+            }
+
+            // Look for identifiers
+            if (std::isalpha((unsigned char)result[i]) || result[i] == '_') {
+                size_t start = i;
+                while (i < result.length() && (std::isalnum((unsigned char)result[i]) || result[i] == '_')) i++;
+                std::string ident = result.substr(start, i - start);
+
+                // Handle predefined macros manually or via macros map
+                std::string replacement = "";
+                bool found = false;
+
+                if (ident == "__FILE__") { /* handled elsewhere but good to be safe */ }
+
+                if (macros.count(ident)) {
+                    const auto& m = macros[ident];
+                    if (!m.isFunctionLike) {
+                        replacement = m.body;
+                        found = true;
+                    } else {
+                        // Function-like macro: check for (
+                        size_t peek = i;
+                        while (peek < result.length() && std::isspace((unsigned char)result[peek])) peek++;
+                        if (peek < result.length() && result[peek] == '(') {
+                            peek++; // skip (
+                            std::vector<std::string> args;
+                            std::string currentArg;
+                            int parenDepth = 0;
+                            while (peek < result.length()) {
+                                if (result[peek] == '(') parenDepth++;
+                                else if (result[peek] == ')') {
+                                    if (parenDepth == 0) { peek++; break; }
+                                    parenDepth--;
+                                } else if (result[peek] == ',' && parenDepth == 0) {
+                                    args.push_back(trim(currentArg));
+                                    currentArg = "";
+                                    peek++;
+                                    continue;
+                                }
+                                currentArg += result[peek++];
+                            }
+                            args.push_back(trim(currentArg));
+
+                            if (args.size() == m.params.size()) {
+                                std::string body = m.body;
+                                
+                                // 1. Handle # stringification
+                                for (size_t p = 0; p < m.params.size(); ++p) {
+                                    std::string pattern = "#" + m.params[p];
+                                    size_t pos = 0;
+                                    while ((pos = body.find(pattern, pos)) != std::string::npos) {
+                                        if (pos > 0 && body[pos-1] == '#') {
+                                            pos += pattern.length();
+                                            continue;
+                                        }
+                                        body.replace(pos, pattern.length(), "\"" + args[p] + "\"");
+                                    }
+                                }
+
+                                // 2. Replace parameters
+                                for (size_t p = 0; p < m.params.size(); ++p) {
+                                    size_t pos = 0;
+                                    while ((pos = body.find(m.params[p], pos)) != std::string::npos) {
+                                        bool nextToGlue = (pos >= 2 && body.substr(pos-2, 2) == "##") || 
+                                                         (pos + m.params[p].length() + 2 <= body.length() && body.substr(pos + m.params[p].length(), 2) == "##");
+                                        
+                                        bool bBefore = (pos == 0 || (!std::isalnum((unsigned char)body[pos-1]) && body[pos-1] != '_'));
+                                        bool bAfter = (pos + m.params[p].length() == body.length() || (!std::isalnum((unsigned char)body[pos + m.params[p].length()]) && body[pos + m.params[p].length()] != '_'));
+                                        
+                                        if (nextToGlue || (bBefore && bAfter)) {
+                                            body.replace(pos, m.params[p].length(), args[p]);
+                                            pos += args[p].length();
+                                        } else {
+                                            pos += m.params[p].length();
+                                        }
+                                    }
+                                }
+
+                                // 3. Handle ## pasting
+                                size_t glue;
+                                while ((glue = body.find("##")) != std::string::npos) {
+                                    size_t start = glue;
+                                    while (start > 0 && std::isspace((unsigned char)body[start-1])) start--;
+                                    size_t end = glue + 2;
+                                    while (end < body.length() && std::isspace((unsigned char)body[end])) end++;
+                                    body.erase(start, end - start);
+                                }
+                                
+                                replacement = body;
+                                found = true;
+                                i = peek;
+                            }
+                        }
+                    }
+                }
+
+                if (found) {
+                    nextResult += replacement;
+                    changed = true;
+                } else {
+                    nextResult += ident;
+                }
+            } else {
+                nextResult += result[i++];
+            }
+        }
+        result = nextResult;
+    }
+    return result;
+}
+
 
 // Simple recursive descent evaluator for #if expressions
 struct ExprPath {
@@ -101,7 +234,7 @@ long Preprocessor::evaluateExpression(const std::string& expr) {
                 if (pos < s.length() && s[pos] == ')') pos++;
             }
             
-            std::string val = (symbols.find(sym) != symbols.end()) ? "1" : "0";
+            std::string val = (macros.find(sym) != macros.end()) ? "1" : "0";
             s.replace(startPos, pos - startPos, val);
             pos = startPos + val.length();
         }
@@ -126,10 +259,11 @@ long Preprocessor::evaluateExpression(const std::string& expr) {
             if (p.nextToken() != ")") {} // Error
             return val;
         }
+        if (t.empty()) return 0;
         if (isdigit((unsigned char)t[0])) return std::stol(t, nullptr, 0);
         // Symbols not in defined() but in #if are treated as 0
-        if (symbols.count(t)) {
-            try { return std::stol(symbols[t], nullptr, 0); } catch(...) { return 0; }
+        if (macros.count(t)) {
+            try { return std::stol(macros[t].body, nullptr, 0); } catch(...) { return 0; }
         }
         return 0;
     };
@@ -198,10 +332,19 @@ std::string Preprocessor::process(const std::string& source,
                                   const std::map<std::string, std::string>& initialSymbols,
                                   const std::vector<std::string>& includePaths,
                                   const std::string& currentFile) {
-    this->symbols = initialSymbols;
+    this->macros.clear();
+    for (const auto& pair : initialSymbols) {
+        this->macros[pair.first] = {false, {}, pair.second};
+    }
     this->includePaths = includePaths;
     this->includedFiles.clear();
+    this->onceFiles.clear();
     this->stateStack.clear();
+    
+    // Standard predefined macros
+    macros["__STDC__"] = {false, {}, "1"};
+    macros["__STDC_VERSION__"] = {false, {}, "201112L"};
+    macros["__STDC_HOSTED__"] = {false, {}, "0"}; 
     
     // Default initial state: everything is active.
     stateStack.push_back({true, true, false});
@@ -301,6 +444,10 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
         throw std::runtime_error("Maximum include depth exceeded (circular dependency?)");
     }
 
+    if (!currentFile.empty() && onceFiles.count(currentFile)) {
+        return "";
+    }
+
     std::stringstream input(source);
     std::stringstream output;
     std::string line;
@@ -308,6 +455,7 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
     std::string reportedFile = currentFile;
     std::string accumulatedLine = "";
     bool inBlockComment = false;
+    bool hasSeenNonWhitespace = false;
 
     while (std::getline(input, line)) {
         lineNum++;
@@ -326,6 +474,27 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
         // Strip comments (Phase 3)
         std::string currentLine = stripComments(currentLineRaw, inBlockComment);
         std::string trimmed = trim(currentLine);
+
+        if (!hasSeenNonWhitespace && !trimmed.empty()) {
+            if (trimmed.substr(0, 1) != "#") {
+                hasSeenNonWhitespace = true;
+            } else {
+                // Check if it's #pragma include_once
+                std::stringstream ss(trimmed);
+                std::string hash, cmd, sub;
+                ss >> cmd; // cmd will be #pragma or #something
+                if (cmd == "#pragma") {
+                    ss >> sub;
+                    if (sub == "include_once") {
+                        if (!currentFile.empty()) onceFiles.insert(currentFile);
+                        output << "\n";
+                        continue;
+                    }
+                }
+                // Other directives don't count as non-whitespace content for include_once purposes
+                // but we should still handle them.
+            }
+        }
         
         // Handle compiler pass-through #!
         if (isCompiler && trimmed.substr(0, 2) == "#!") {
@@ -345,31 +514,57 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
             
             if (cmd == "#define") {
                 if (isConditionTrue()) {
+                    std::string lineRest;
+                    std::getline(ss, lineRest);
+                    lineRest = trim(lineRest);
+                    
                     std::string name;
-                    ss >> name;
-                    std::string value;
-                    std::getline(ss, value);
-                    symbols[name] = trim(value);
+                    size_t i = 0;
+                    while (i < lineRest.length() && (std::isalnum((unsigned char)lineRest[i]) || lineRest[i] == '_')) {
+                        name += lineRest[i++];
+                    }
+                    
+                    if (i < lineRest.length() && lineRest[i] == '(') {
+                        // Function-like
+                        size_t endParen = lineRest.find(')', i);
+                        std::string paramStr = lineRest.substr(i + 1, endParen - i - 1);
+                        std::string body = lineRest.substr(endParen + 1);
+                        
+                        Macro m;
+                        m.isFunctionLike = true;
+                        m.body = trim(body);
+                        
+                        std::stringstream pss(paramStr);
+                        std::string p;
+                        while (std::getline(pss, p, ',')) {
+                            m.params.push_back(trim(p));
+                        }
+                        macros[name] = m;
+                    } else {
+                        // Object-like
+                        std::string body = lineRest.substr(name.length());
+                        macros[name] = {false, {}, trim(body)};
+                    }
                 }
                 output << "\n";
             } else if (cmd == "#undef") {
                 if (isConditionTrue()) {
                     std::string name;
                     ss >> name;
-                    symbols.erase(name);
+                    macros.erase(name);
                 }
                 output << "\n";
             } else if (cmd == "#ifdef") {
                 std::string name;
                 ss >> name;
-                bool exists = (symbols.find(name) != symbols.end());
+                bool exists = (macros.find(name) != macros.end());
                 bool parentActive = isConditionTrue();
                 stateStack.push_back({parentActive && exists, exists, false});
                 output << "\n";
             } else if (cmd == "#ifndef") {
                 std::string name;
                 ss >> name;
-                bool exists = (symbols.find(name) != symbols.end());
+                bool exists = (macros.find(name) != macros.end());
                 bool parentActive = isConditionTrue();
                 stateStack.push_back({parentActive && !exists, !exists, false});
                 output << "\n";
@@ -420,26 +615,31 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
                 output << "\n";
             } else if (cmd == "#include") {
                 if (isConditionTrue()) {
+                    std::string lineRest;
+                    std::getline(ss, lineRest);
+                    lineRest = trim(lineRest);
+                    
+                    if (!lineRest.empty() && lineRest[0] != '"' && lineRest[0] != '<') {
+                        lineRest = expandMacros(lineRest);
+                    }
+
                     std::string fileName;
-                    // Expect "filename" or <filename>
-                    size_t firstQuote = currentLine.find('"');
-                    size_t lastQuote = currentLine.rfind('"');
+                    size_t firstQuote = lineRest.find('"');
+                    size_t lastQuote = lineRest.rfind('"');
                     if (firstQuote != std::string::npos && lastQuote != std::string::npos && firstQuote < lastQuote) {
-                        fileName = currentLine.substr(firstQuote + 1, lastQuote - firstQuote - 1);
+                        fileName = lineRest.substr(firstQuote + 1, lastQuote - firstQuote - 1);
                     } else {
-                        size_t firstAngle = currentLine.find('<');
-                        size_t lastAngle = currentLine.rfind('>');
+                        size_t firstAngle = lineRest.find('<');
+                        size_t lastAngle = lineRest.rfind('>');
                         if (firstAngle != std::string::npos && lastAngle != std::string::npos && firstAngle < lastAngle) {
-                            fileName = currentLine.substr(firstAngle + 1, lastAngle - firstAngle - 1);
+                            fileName = lineRest.substr(firstAngle + 1, lastAngle - firstAngle - 1);
                         }
                     }
 
-                    if (fileName.empty()) throw std::runtime_error("Invalid #include directive");
+                    if (fileName.empty()) throw std::runtime_error("Invalid #include directive: " + lineRest);
 
                     std::string fullPath = findIncludeFile(fileName, getDirectory(currentFile));
                     if (fullPath.empty()) throw std::runtime_error("Could not find include file: " + fileName);
-
-                    if (includedFiles.count(fullPath)) {}
                     
                     std::ifstream includeFile(fullPath);
                     if (!includeFile.is_open()) throw std::runtime_error("Failed to open include file: " + fullPath);
@@ -485,26 +685,23 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
             }
         } else {
             if (isConditionTrue()) {
-                std::string processed = currentLine;
+                std::string processed = expandMacros(currentLine);
+
+                // Handle standard predefined macros if expandMacros didn't (it should have, but let's be sure about __FILE__ etc)
+                // Actually expandMacros should handle macros map. Predefined ones should be in macros map.
+                // Wait, __FILE__ and __LINE__ change per line!
                 
                 auto replaceAll = [&](std::string& s, const std::string& from, const std::string& to) {
                     size_t pos = 0;
                     bool inStr = false;
                     while ((pos = s.find(from, pos)) != std::string::npos) {
-                        // Semantic awareness: Check if we are inside a string literal
                         inStr = false;
                         for (size_t k = 0; k < pos; ++k) {
                             if (s[k] == '"' && (k == 0 || s[k-1] != '\\')) inStr = !inStr;
                         }
-                        
-                        if (inStr) {
-                            pos += from.length();
-                            continue;
-                        }
-
+                        if (inStr) { pos += from.length(); continue; }
                         bool boundaryBefore = (pos == 0 || (!std::isalnum((unsigned char)s[pos-1]) && s[pos-1] != '_'));
                         bool boundaryAfter = (pos + from.length() == s.length() || (!std::isalnum((unsigned char)s[pos + from.length()]) && s[pos + from.length()] != '_'));
-                        
                         if (boundaryBefore && boundaryAfter) {
                             s.replace(pos, from.length(), to);
                             pos += to.length();
