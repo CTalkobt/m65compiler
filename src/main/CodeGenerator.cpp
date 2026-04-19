@@ -184,8 +184,20 @@ void CodeGenerator::visit(VariableDeclaration& node) {
             else emitter->pha();
         }
     } else {
-        if (size == 2) emit("phw #$0000");
-        else { emitter->lda_imm(0); emitter->pha(); }
+        if (size >= 9) {
+            emit("phw #$0000"); // placeholder for first word
+            // We need to emit enough stack space.
+            // .cleanup already does this by reserving but we need to actually move SP?
+            // ca45 handles stack frame. VariableDeclaration usually emits a push to reserve space.
+            for (int i = 0; i < (size - 2) / 2; ++i) emit("phw #$0000");
+            if (size % 2) { emit("lda #0"); emit("pha"); }
+            
+            emit("lda #0");
+            emit("FILL.SP " + lName + ", #" + std::to_string(size));
+        } else {
+            if (size == 2) emit("phw #$0000");
+            else { emitter->lda_imm(0); emitter->pha(); }
+        }
     }
     for (const auto& varName : currentVars) {
         emit(".var " + varName + " = " + varName + " + " + std::to_string(size));
@@ -243,12 +255,31 @@ void CodeGenerator::visit(Assignment& node) {
             return;
         }
 
+        VarInfo vi = variableTypes[rName];
+        if (isStruct(vi.type) && structs.count(vi.type.substr(7))) {
+            int structSize = structs[vi.type.substr(7)].totalSize;
+            if (structSize >= 9) {
+                // Large struct assignment: target = expression
+                // We need to evaluate expression address and then MOVE
+                if (auto* sourceRef = dynamic_cast<VariableReference*>(node.expression.get())) {
+                    std::string sName = resolveVarName(sourceRef->name);
+                    std::stringstream ssX, ssY;
+                    ssX << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (structSize & 0xFF);
+                    ssY << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << ((structSize >> 8) & 0xFF);
+                    emit("ldx #$" + ssX.str());
+                    emit("ldy #$" + ssY.str());
+                    emit("MOVE.SP " + sName + ", " + rName);
+                    invalidateRegs();
+                    return;
+                }
+            }
+        }
+
         bool oldNeeded = resultNeeded;
         resultNeeded = true;
         node.expression->accept(*this);
         resultNeeded = oldNeeded;
 
-        VarInfo vi = variableTypes[rName];
         bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
 
         if (is16Bit) {
@@ -565,6 +596,91 @@ void CodeGenerator::visit(VariableReference& node) {
 }
 
 void CodeGenerator::visit(FunctionCall& node) {
+    if (node.name == "memset" && node.arguments.size() == 3) {
+        // memset(dest, val, len)
+        // val is node.arguments[1]
+        // dest is node.arguments[0]
+        // len is node.arguments[2]
+        
+        // 1. Evaluate dest and get its address into AX (via ptrstack if needed)
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
+        node.arguments[0]->accept(*this);
+        
+        // Save dest to ZP scratch
+        int zpDest = allocateZP(2);
+        std::stringstream ssDest;
+        ssDest << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpDest);
+        emit("stax $" + ssDest.str());
+
+        // 2. Evaluate val and put in A
+        node.arguments[1]->accept(*this);
+        // value is now in A (low byte of AX result)
+        
+        // 3. Evaluate len and generate FILL
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.arguments[2].get())) {
+            emit("FILL ($" + ssDest.str() + "), #" + std::to_string(lit->value));
+        } else {
+            node.arguments[2]->accept(*this);
+            // len is now in AX (A=Low, X=High). 
+            // FILL simulated opcode can take .AX as length (my implementation handles .XY internally if needed)
+            // Actually, I should probably put it in .XY to be consistent.
+            emit("taz"); // A->Z (Low)
+            emit("txa"); emit("tay"); // X->Y (High)
+            emit("tza"); emit("tax"); // Z->X (Low)
+            emit("FILL ($" + ssDest.str() + "), .XY");
+        }
+        
+        freeZP(zpDest, 2);
+        resultNeeded = oldNeeded;
+        invalidateRegs();
+        return;
+    }
+
+    if (node.name == "memcpy" && node.arguments.size() == 3) {
+        // memcpy(dest, src, len)
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
+
+        // 1. Evaluate dest and save to ZP
+        node.arguments[0]->accept(*this);
+        int zpDest = allocateZP(2);
+        std::stringstream ssDest;
+        ssDest << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpDest);
+        emit("stax $" + ssDest.str());
+
+        // 2. Evaluate src and save to ZP
+        node.arguments[1]->accept(*this);
+        int zpSrc = allocateZP(2);
+        std::stringstream ssSrc;
+        ssSrc << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpSrc);
+        emit("stax $" + ssSrc.str());
+
+        // 3. Evaluate len and put in XY
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.arguments[2].get())) {
+            std::stringstream ssLenX, ssLenY;
+            ssLenX << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (lit->value & 0xFF);
+            ssLenY << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << ((lit->value >> 8) & 0xFF);
+            emit("ldx #$" + ssLenX.str());
+            emit("ldy #$" + ssLenY.str());
+        } else {
+            node.arguments[2]->accept(*this);
+            // AX has length (A=Low, X=High).
+            // We want Length in .XY (Low in X, High in Y).
+            emit("taz"); // backup Low (A)
+            emit("txa"); emit("tay"); // High (X) -> Y
+            emit("tza"); emit("tax"); // Low (Z) -> X
+        }
+        
+        emit("MOVE ($" + ssSrc.str() + "), ($" + ssDest.str() + ")");
+        
+        freeZP(zpSrc, 2);
+        freeZP(zpDest, 2);
+        resultNeeded = oldNeeded;
+        invalidateRegs();
+        return;
+    }
+
     bool oldNeeded = resultNeeded;
     resultNeeded = true;
     for (auto& arg : node.arguments) {
