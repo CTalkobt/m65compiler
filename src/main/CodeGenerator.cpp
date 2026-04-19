@@ -286,8 +286,7 @@ void CodeGenerator::visit(Assignment& node) {
             bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
             if (is16Bit) {
                 std::stringstream ss;
-                ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (int)lit->value;
-                emit("stw.sp " + ss.str() + ", " + rName);
+                ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)(int16_t)lit->value;                emit("stw.sp " + ss.str() + ", " + rName);
                 updateRegAVar(rName, 0); regA.value = lit->value & 0xFF; regA.isVariable = true;
                 updateRegXVar(rName, 1); regX.value = (lit->value >> 8) & 0xFF; regX.isVariable = true;
             } else {

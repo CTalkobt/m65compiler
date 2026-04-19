@@ -125,7 +125,7 @@ bool AssemblerParser::isStackRelativeOperand(int tokenIndex, uint32_t& offset, c
 }
 
 
-void AssemblerParser::optimize() { AssemblerOptimizer::optimize(this); }
+bool AssemblerParser::optimize() { return AssemblerOptimizer::optimize(this); }
 
 void AssemblerParser::emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix) {
     AssemblerSimulatedOps::emitExpressionCode(this, binary, target, tokenIndex, scopePrefix);
@@ -591,11 +591,24 @@ aN, sz
                     if (peek().type == AssemblerTokenType::REGISTER) {
                         stmt->instr.operand = "." + advance().value;
                     } else if (peek().type == AssemblerTokenType::HASH) {
-                        stmt->instr.operand = "#";
-                        advance();
+                        std::string immediateStr = advance().value; // This consumes '#'
+                        stmt->instr.operandTokenIndex = (int)pos; // Start of expression after '#'
+
+                        // Capture the tokens for the immediate value
+                        std::string valuePart;
+                        int tempPos = (int)pos;
+                        while(tokens[tempPos].type != AssemblerTokenType::NEWLINE &&
+                              tokens[tempPos].type != AssemblerTokenType::END_OF_FILE &&
+                              tokens[tempPos].type != AssemblerTokenType::COMMA) {
+                            valuePart += tokens[tempPos].value;
+                            tempPos++;
+                        }
+                        
+                        stmt->instr.operand = immediateStr + valuePart; // e.g., "#$001E"
+
                         int idx = (int)pos;
                         auto ast = parseExprAST(tokens, idx, symbolTable, stmt->scopePrefix);
-                        pos = idx;
+                        pos = idx; // Update pos after expression parsing
                     } else {
                         // Expression or label
                         int idx = (int)pos;
@@ -822,53 +835,11 @@ aN, sz
 }
 
         pc += stmt->size;
- statements.push_back(std::move(stmt));
+        statements.push_back(std::move(stmt));
 
-    
-}
-
-    optimize();
-    statements.erase(std::remove_if(statements.begin(), statements.end(), [](const auto& s) { return s->deleted; }), statements.end());
-
-    bool changed = true;
- while (changed) {
- changed = false;
- uint32_t cP = 0;
- for (auto& s : statements) {
- s->address = cP;
- if (!s->label.empty()) {
- if (symbolTable[s->label].value != cP) {
- symbolTable[s->label].value = cP;
- changed = true;
- 
-}
- 
-}
- if (s->type == Statement::DIRECTIVE && s->dir.name == "org") {
-     if (!s->dir.arguments.empty()) cP = parseNumericLiteral(s->dir.arguments[0]);
- }
- if (s->type == Statement::INSTRUCTION) {
- int oS = s->size;
- s->size = calculateInstructionSize(s->instr, cP, s->scopePrefix);
- if (s->size != oS) changed = true;
- 
-}
- else if (s->type == Statement::EXPR) {
- int oS = s->size;
- std::vector<uint8_t> d;
- emitExpressionCode(d, s->exprTarget, s->exprTokenIndex, s->scopePrefix);
- s->size = d.size();
- if (s->size != oS) changed = true;
- 
-}
- cP += s->size;
- 
-}
- 
+    }
 }
 
-
-}
 
 
 int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t currentAddr, const std::string& scopePrefix) {
@@ -967,6 +938,63 @@ int AssemblerParser::calculateDirectiveSize(const Directive& dir) {
 
 
 std::vector<uint8_t> AssemblerParser::pass2() {
+    bool overallChanged;
+    do {
+        overallChanged = false; // Reset for this iteration
+
+        // 1. Run optimizer
+        bool optimizerMadeChanges = optimize();
+        if (optimizerMadeChanges) {
+            overallChanged = true;
+        }
+
+        // 2. Remove deleted statements
+        std::deque<std::unique_ptr<Statement>> newStatements;
+        for (auto& s : statements) {
+            if (!s->deleted) {
+                newStatements.push_back(std::move(s));
+            } else {
+                // If a statement was deleted, it's a change that needs to be reflected in overallChanged
+                overallChanged = true;
+            }
+        }
+        statements = std::move(newStatements);
+
+
+        // 3. Recalculate addresses and sizes, and check for changes
+        bool addressRecalculationMadeChanges = false;
+        uint32_t cP = 0;
+        for (auto& s : statements) {
+            s->address = cP;
+            if (!s->label.empty()) {
+                if (symbolTable[s->label].value != cP) {
+                    symbolTable[s->label].value = cP;
+                    addressRecalculationMadeChanges = true;
+                }
+            }
+            if (s->type == Statement::DIRECTIVE && s->dir.name == "org") {
+                if (!s->dir.arguments.empty()) cP = parseNumericLiteral(s->dir.arguments[0]);
+            }
+            if (s->type == Statement::INSTRUCTION) {
+                int oS = s->size;
+                s->size = calculateInstructionSize(s->instr, cP, s->scopePrefix);
+                if (s->size != oS) addressRecalculationMadeChanges = true;
+            }
+            else if (s->type == Statement::EXPR) {
+                int oS = s->size;
+                std::vector<uint8_t> d;
+                emitExpressionCode(d, s->exprTarget, s->exprTokenIndex, s->scopePrefix);
+                s->size = d.size();
+                if (s->size != oS) addressRecalculationMadeChanges = true;
+            }
+            cP += s->size;
+        }
+        if (addressRecalculationMadeChanges) {
+            overallChanged = true;
+        }
+
+    } while (overallChanged); // Continue if any change was made in this iteration
+
     return AssemblerGenerator::generate(this);
 }
 

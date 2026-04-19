@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cmath>
-#include <iostream>
 
 // Forward declarations for helper functions if they are static in AssemblerParser.cpp
 // or just re-implement them if they are simple enough and used here.
@@ -52,6 +51,7 @@ std::vector<uint8_t> AssemblerGenerator::generate(AssemblerParser* parser) {
     for (auto& [name, symbol] : parser->symbolTable) if (symbol.isVariable) symbol.value = symbol.initialValue;
 
     for (auto& stmt : parser->statements) {
+        if (stmt->deleted) continue;
         if (!stmt->label.empty()) isDeadCode = false;
 
         if (stmt->type == AssemblerParser::Statement::EXPR) {
