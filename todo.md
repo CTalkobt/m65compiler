@@ -67,7 +67,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Mega65 Division**: Simulated `div.<width> <dest>, <src>` opcode leveraging hardware divider.
 - [X] **Stack-Relative Word Ops**: Simulated `INW/DEW offset, s` leveraging `TSX`.
 - [X] **Other 16 bit registers**: Full support for `.AX`, `.AY`, `.AZ`, `.XY` in simulated high-level opcodes.
-- [X] **Mega65 Memory**: Allow use of the Mega65 DMA for operations involving memory > 5 bytes for common routines such as memory movement, copy, swap and fill. Implement as built-in opcodes. 
+- [X] **Mega65 Memory**: High-speed memory FILL and MOVE (copy) leveraging the Mega65 DMA controller.
 - [ ] **PC Register**: Treat current program counter as a register named .PC similar to how .A, .X etc are defined. 
 
 ### 2. Segments

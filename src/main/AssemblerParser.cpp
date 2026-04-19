@@ -3724,14 +3724,19 @@ void AssemblerParser::emitFillCode(std::vector<uint8_t>& binary, int tokenIndex,
     e.tsx(); e.txa(); e.clc(); e.adc_imm(8); e.pha(); // S+9: Src Lo (X+8)
 
     if (lenIsRegister) {
-        e.lda_imm(0); e.pha(); // S+10: Len Hi
-        if (lenReg == ".X") e.phx();
-        else if (lenReg == ".Y") e.phy();
-        else if (lenReg == ".Z") e.phz();
-        else { 
-            // Recover A from stack (it's at S+11 after the pushes so far)
-            e.tsx(); e.txa(); e.clc(); e.adc_imm(11); e.tax();
-            e.lda_abs_x(0x0100); e.pha(); 
+        if (lenReg == ".XY") {
+            e.phy(); // S+10: Len Hi (Y)
+            e.phx(); // S+11: Len Lo (X)
+        } else {
+            e.lda_imm(0); e.pha(); // S+10: Len Hi
+            if (lenReg == ".X") e.phx();
+            else if (lenReg == ".Y") e.phy();
+            else if (lenReg == ".Z") e.phz();
+            else { 
+                // Recover A from stack (it's at S+11 after the pushes so far)
+                e.tsx(); e.txa(); e.clc(); e.adc_imm(11); e.tax();
+                e.lda_abs_x(0x0100); e.pha(); 
+            }
         }
     } else {
         e.lda_imm(lenVal >> 8); e.pha(); // S+10: Len Hi
@@ -3746,6 +3751,98 @@ void AssemblerParser::emitFillCode(std::vector<uint8_t>& binary, int tokenIndex,
 
     e.tsx(); e.txa(); e.clc(); e.adc_imm(12); e.tax(); e.txs();
     e.pla(); 
+}
+
+void AssemblerParser::emitMoveCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
+    M65Emitter e(binary, getZPStart());
+    int idx = tokenIndex;
+    if (idx < 0 || idx >= (int)tokens.size()) return;
+
+    struct Operand {
+        bool isAZ = false;
+        bool isAbsolute = false;
+        bool isStack = false;
+        uint32_t value = 0;
+    };
+
+    auto parseMoveOp = [&](int& curIdx) -> Operand {
+        Operand op;
+        if (tokens[curIdx].type == AssemblerTokenType::REGISTER && tokens[curIdx].value == "AZ") {
+            op.isAZ = true;
+            curIdx++;
+        } else {
+            uint32_t offset = 0;
+            if (isStackRelativeOperand(curIdx, offset, scopePrefix)) {
+                op.isStack = true;
+                op.value = offset;
+                parseExprAST(tokens, curIdx, symbolTable, scopePrefix);
+                if (curIdx < (int)tokens.size() && tokens[curIdx].type == AssemblerTokenType::COMMA) curIdx++;
+                if (curIdx < (int)tokens.size() && (tokens[curIdx].value == "s" || tokens[curIdx].value == "S")) curIdx++;
+            } else {
+                auto ast = parseExprAST(tokens, curIdx, symbolTable, scopePrefix);
+                if (ast) {
+                    op.isAbsolute = true;
+                    op.value = ast->getValue(this);
+                }
+            }
+        }
+        return op;
+    };
+
+    Operand src = parseMoveOp(idx);
+    if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::COMMA) idx++;
+    Operand dest = parseMoveOp(idx);
+
+    if (forceStack) {
+        // In move.sp, if one operand wasn't explicitly stack-relative, it's the one that IS the offset.
+        if (!src.isStack && !dest.isStack) {
+            if (src.isAbsolute && !dest.isAbsolute && !dest.isAZ) src.isStack = true;
+            else dest.isStack = true;
+        }
+    }
+
+    // DMA Setup (Copy)
+    e.pha(); // dummy for fill value (S+1)
+    e.phw_imm(0); // Next Job (S+2,3)
+
+    // Dest Bank (S+4)
+    e.lda_imm(0); e.pha();
+
+    // Dest Address (S+5,6)
+    if (dest.isAZ) { e.phz(); e.pha(); }
+    else if (dest.isStack) {
+        e.tsx(); e.txa(); e.clc(); e.adc_imm(dest.value);
+        e.pha(); e.lda_imm(1); e.adc_imm(0); e.pha();
+    } else {
+        e.lda_imm(dest.value >> 8); e.pha();
+        e.lda_imm(dest.value & 0xFF); e.pha();
+    }
+
+    // Src Bank (S+7)
+    e.lda_imm(0); e.pha();
+
+    // Src Address (S+8,9)
+    if (src.isAZ) { e.phz(); e.pha(); }
+    else if (src.isStack) {
+        e.tsx(); e.txa(); e.clc(); e.adc_imm(src.value);
+        e.pha(); e.lda_imm(1); e.adc_imm(0); e.pha();
+    } else {
+        e.lda_imm(src.value >> 8); e.pha();
+        e.lda_imm(src.value & 0xFF); e.pha();
+    }
+
+    // Length (S+10,11) - XY
+    e.phy(); e.phx();
+
+    // Command (S+12) - Copy is $00
+    e.lda_imm(0x00); e.pha();
+
+    e.tsx(); e.txa(); e.clc(); e.adc_imm(1); e.sta_abs(0xD701);
+    e.lda_imm(1); e.sta_abs(0xD702);
+    e.stz_abs(0xD703); e.stz_abs(0xD700);
+
+    e.tsx(); e.txa(); e.clc(); e.adc_imm(12); e.tax(); e.txs();
+    e.pla();
 }
 void AssemblerParser::emitFlatMemoryCode(std::vector<uint8_t>& binary, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix) {
     M65Emitter e(binary, getZPStart());
@@ -4142,6 +4239,7 @@ aN, sz
                      stmt->instr.mnemonic == "LDW.F" || stmt->instr.mnemonic == "STW.F" ||
                      stmt->instr.mnemonic == "STW.SP" || stmt->instr.mnemonic == "LDW.SP" ||
                      stmt->instr.mnemonic == "FILL" || stmt->instr.mnemonic == "FILL.SP" ||
+                     stmt->instr.mnemonic == "MOVE" || stmt->instr.mnemonic == "MOVE.SP" ||
                      stmt->instr.mnemonic == "INC.F" || stmt->instr.mnemonic == "DEC.F" ||
                      stmt->instr.mnemonic == "PHW") {
                 
@@ -4154,6 +4252,7 @@ aN, sz
                 else if (stmt->instr.mnemonic == "LDW" || stmt->instr.mnemonic == "LDW.SP") stmt->type = Statement::LDW;
                 else if (stmt->instr.mnemonic == "STW" || stmt->instr.mnemonic == "STW.SP") stmt->type = Statement::STW;
                 else if (stmt->instr.mnemonic == "FILL" || stmt->instr.mnemonic == "FILL.SP") stmt->type = Statement::FILL;
+                else if (stmt->instr.mnemonic == "MOVE" || stmt->instr.mnemonic == "MOVE.SP") stmt->type = Statement::COPY;
                 else if (stmt->instr.mnemonic == "SWAP") stmt->type = Statement::SWAP;
                 else if (stmt->instr.mnemonic == "NEG.16") stmt->type = Statement::NEG16;
                 else if (stmt->instr.mnemonic == "NOT.16") stmt->type = Statement::NOT16;
@@ -4220,6 +4319,7 @@ aN, sz
                 else if (stmt->type == Statement::LDW) emitLDWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "LDW.SP");
                 else if (stmt->type == Statement::STW) emitSTWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "STW.SP");
                 else if (stmt->type == Statement::FILL) emitFillCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "FILL.SP");
+                else if (stmt->type == Statement::COPY) emitMoveCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "MOVE.SP");
                 else if (stmt->type == Statement::SWAP) emitSwapCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::NEG16 || stmt->type == Statement::NOT16) emitNegNot16Code(d, stmt->type == Statement::NEG16, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::CHKZERO8) emitChkZeroCode(d, false, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
@@ -4640,6 +4740,11 @@ std::vector<uint8_t> AssemblerParser::pass2() {
 
         if (stmt->type == Statement::FILL) {
             if (!isDeadCode) emitFillCode(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "FILL.SP");
+            continue;
+        }
+
+        if (stmt->type == Statement::COPY) {
+            if (!isDeadCode) emitMoveCode(binary, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "MOVE.SP");
             continue;
         }
 

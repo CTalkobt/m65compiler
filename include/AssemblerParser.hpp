@@ -97,7 +97,7 @@ private:
                     ADD16, SUB16, AND16, ORA16, EOR16, CPW, LDW, STW, SWAP, ZERO,
                     NEG16, NOT16, CHKZERO8, CHKZERO16, CHKNONZERO8, CHKNONZERO16, BRANCH16, SELECT,
                     PTRSTACK, PTRDEREF, LDWF, STWF, INCF, DECF, PHW_STACK,
-                    LDAX, LDAY, LDAZ, STAX, STAY, STAZ, FILL } type = NONE;
+                    LDAX, LDAY, LDAZ, STAX, STAY, STAZ, FILL, COPY } type = NONE;
         Instruction instr;
         Directive dir;
         std::string label;
@@ -152,6 +152,7 @@ private:
     void emitPtrStackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
     void emitPtrDerefCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
     void emitFillCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "", bool forceStack = false);
+    void emitMoveCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "", bool forceStack = false);
     void emitFlatMemoryCode(std::vector<uint8_t>& binary, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix = "");
     void emitPHWStackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
     bool isStackRelativeOperand(int tokenIndex, uint32_t& offset, const std::string& scopePrefix);

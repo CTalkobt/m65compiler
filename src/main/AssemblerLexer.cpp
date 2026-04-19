@@ -206,7 +206,7 @@ AssemblerToken AssemblerLexer::lexIdentifierOrInstruction() {
         "CALL", "PROC", "ENDPROC", "EXPR", "MUL", "DIV",
         "LDAX", "LDAY", "LDAZ", "STAX", "STAY", "STAZ",
         "ADD.16", "SUB.16", "AND.16", "ORA.16", "EOR.16", "NEG.16", "NOT.16", "CPW", "LDW", "STW", "SWAP", "ZERO",
-        "STW.SP", "LDW.SP", "FILL", "FILL.SP",
+        "STW.SP", "LDW.SP", "FILL", "FILL.SP", "MOVE", "MOVE.SP",
         "CHKZERO.8", "CHKZERO.16", "CHKNONZERO.8", "CHKNONZERO.16", "BRANCH.16", "SELECT",
         "PTRSTACK", "PTRDEREF", "LDW.F", "STW.F", "INC.F", "DEC.F"
     };
