@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cmath>
+#include <iostream>
 
 // Forward declarations for helper functions if they are static in AssemblerParser.cpp
 // or just re-implement them if they are simple enough and used here.
@@ -211,10 +212,10 @@ std::vector<uint8_t> AssemblerGenerator::generate(AssemblerParser* parser) {
                     uint32_t target = sym ? sym->value : 0;
                     binary.push_back(0x20); binary.push_back(target & 0xFF); binary.push_back(target >> 8);
                 }
-            } else {
+            } else { // Handle all other instructions
                 if (!isDeadCode) {
                     AddressingMode resolvedMode = stmt->instr.mode;
-                    if (stmt->instr.operandTokenIndex != -1 && (stmt->instr.mode == AddressingMode::BASE_PAGE || stmt->instr.mode == AddressingMode::ABSOLUTE || 
+                    if (stmt->instr.operandTokenIndex != -1 && (stmt->instr.mode == AddressingMode::BASE_PAGE || stmt->instr.mode == AddressingMode::ABSOLUTE ||
                         stmt->instr.mode == AddressingMode::BASE_PAGE_X || stmt->instr.mode == AddressingMode::ABSOLUTE_X ||
                         stmt->instr.mode == AddressingMode::BASE_PAGE_Y || stmt->instr.mode == AddressingMode::ABSOLUTE_Y)) {
                         uint32_t val = parser->evaluateExpressionAt(stmt->instr.operandTokenIndex, stmt->scopePrefix);
@@ -227,40 +228,48 @@ std::vector<uint8_t> AssemblerGenerator::generate(AssemblerParser* parser) {
                     bool isQuad = (stmt->instr.mnemonic.size() > 1 && stmt->instr.mnemonic.back() == 'Q' && stmt->instr.mnemonic != "LDQ" && stmt->instr.mnemonic != "STQ" && stmt->instr.mnemonic != "BEQ" && stmt->instr.mnemonic != "BNE" && stmt->instr.mnemonic != "BRA" && stmt->instr.mnemonic != "BSR");
                     if (isQuad) { binary.push_back(0x42); binary.push_back(0x42); }
                     if (resolvedMode == AddressingMode::FLAT_INDIRECT_Z) e.eom();
-                    bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" || stmt->instr.mnemonic == "BSR");
-                    if (!isBranch) {
-                        uint8_t op = AssemblerOpcodeDatabase::getOpcode(stmt->instr.mnemonic, resolvedMode);
-                        if (op == 0 && stmt->instr.mnemonic != "BRK") {
-                            std::string errorMsg = "Invalid instruction or addressing mode: " + stmt->instr.mnemonic + " " + AssemblerOpcodeDatabase::AddressingModeToString(resolvedMode);
-                            auto validModes = AssemblerOpcodeDatabase::getValidAddressingModes(stmt->instr.mnemonic);
-                            if (validModes.empty()) errorMsg = "Unknown mnemonic: " + stmt->instr.mnemonic;
-                            else { errorMsg += ". Valid addressing modes for " + stmt->instr.mnemonic + " are: "; for (size_t i = 0; i < validModes.size(); ++i) { errorMsg += AssemblerOpcodeDatabase::AddressingModeToString(validModes[i]); if (i < validModes.size() - 1) errorMsg += ", "; } }
-                            throw std::runtime_error(errorMsg + " at line " + std::to_string(stmt->line));
-                        }
-                        binary.push_back(op);
-                    }
-                    if (!isBranch) {
-                        if (resolvedMode == AddressingMode::IMMEDIATE || resolvedMode == AddressingMode::STACK_RELATIVE || resolvedMode == AddressingMode::BASE_PAGE_INDIRECT_Z || resolvedMode == AddressingMode::FLAT_INDIRECT_Z || resolvedMode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || resolvedMode == AddressingMode::BASE_PAGE_X_INDIRECT || resolvedMode == AddressingMode::BASE_PAGE_INDIRECT_Y || resolvedMode == AddressingMode::BASE_PAGE || resolvedMode == AddressingMode::BASE_PAGE_X || resolvedMode == AddressingMode::BASE_PAGE_Y) {
-                            uint32_t v = parser->evaluateExpressionAt(stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                            binary.push_back((uint8_t)v);
-                        } else if (resolvedMode == AddressingMode::ABSOLUTE || resolvedMode == AddressingMode::ABSOLUTE_X || resolvedMode == AddressingMode::ABSOLUTE_Y || resolvedMode == AddressingMode::ABSOLUTE_INDIRECT || resolvedMode == AddressingMode::ABSOLUTE_X_INDIRECT || resolvedMode == AddressingMode::IMMEDIATE16) {
-                            uint32_t a = parser->evaluateExpressionAt(stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                            binary.push_back(a & 0xFF); binary.push_back(a >> 8);
-                        }
-                    } else {
-                        Symbol* sym = parser->resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
-                        uint32_t t = sym ? sym->value : 0;
-                        if (stmt->instr.mnemonic == "BSR") {
-                            int32_t off = (int32_t)t - (int32_t)(stmt->address + 3);
-                            binary.push_back(0x63); binary.push_back(off & 0xFF); binary.push_back(off >> 8);
-                        } else if (stmt->size == 2) {
-                            int32_t off2 = (int32_t)t - (int32_t)(stmt->address + 2);
-                            binary.push_back(AssemblerOpcodeDatabase::getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE));
-                            binary.push_back((uint8_t)(int8_t)off2);
-                        } else {
-                            int32_t off3 = (int32_t)t - (int32_t)(stmt->address + 3);
-                            binary.push_back(AssemblerOpcodeDatabase::getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE16));
-                            binary.push_back(off3 & 0xFF); binary.push_back(off3 >> 8);
+
+
+                    if (stmt->instr.mnemonic == "ASW" && resolvedMode == AddressingMode::ABSOLUTE) {
+                        uint32_t addr = parser->evaluateExpressionAt(stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                        e.asw_abs(addr);
+                        continue;                    } else if (stmt->instr.mnemonic == "ROW" && resolvedMode == AddressingMode::ABSOLUTE) {
+                        uint32_t addr = parser->evaluateExpressionAt(stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                        e.row_abs(addr);
+                        continue;                    } else { // Handle generic instructions and their operands
+                        bool isBranch = (stmt->instr.mnemonic == "BEQ" || stmt->instr.mnemonic == "BNE" || stmt->instr.mnemonic == "BRA" || stmt->instr.mnemonic == "BCC" || stmt->instr.mnemonic == "BCS" || stmt->instr.mnemonic == "BPL" || stmt->instr.mnemonic == "BMI" || stmt->instr.mnemonic == "BVC" || stmt->instr.mnemonic == "BVS" || stmt->instr.mnemonic == "BSR");
+                        if (!isBranch) {
+                            uint8_t op = AssemblerOpcodeDatabase::getOpcode(stmt->instr.mnemonic, resolvedMode);
+                            if (op == 0 && stmt->instr.mnemonic != "BRK") {
+                                std::string errorMsg = "Invalid instruction or addressing mode: " + stmt->instr.mnemonic + " " + AssemblerOpcodeDatabase::AddressingModeToString(resolvedMode);
+                                auto validModes = AssemblerOpcodeDatabase::getValidAddressingModes(stmt->instr.mnemonic);
+                                if (validModes.empty()) errorMsg = "Unknown mnemonic: " + stmt->instr.mnemonic;
+                                else { errorMsg += ". Valid addressing modes for " + stmt->instr.mnemonic + " are: "; for (size_t i = 0; i < validModes.size(); ++i) { errorMsg += AssemblerOpcodeDatabase::AddressingModeToString(validModes[i]); if (i < validModes.size() - 1) errorMsg += ", "; } }
+                                throw std::runtime_error(errorMsg + " at line " + std::to_string(stmt->line));
+                            }
+                            binary.push_back(op);
+                            if (resolvedMode == AddressingMode::IMMEDIATE || resolvedMode == AddressingMode::STACK_RELATIVE || resolvedMode == AddressingMode::BASE_PAGE_INDIRECT_Z || resolvedMode == AddressingMode::FLAT_INDIRECT_Z || resolvedMode == AddressingMode::BASE_PAGE_INDIRECT_SP_Y || resolvedMode == AddressingMode::BASE_PAGE_X_INDIRECT || resolvedMode == AddressingMode::BASE_PAGE_INDIRECT_Y || resolvedMode == AddressingMode::BASE_PAGE || resolvedMode == AddressingMode::BASE_PAGE_X || resolvedMode == AddressingMode::BASE_PAGE_Y) {
+                                uint32_t v = parser->evaluateExpressionAt(stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                                binary.push_back((uint8_t)v);
+                            } else if (resolvedMode == AddressingMode::ABSOLUTE || resolvedMode == AddressingMode::ABSOLUTE_X || resolvedMode == AddressingMode::ABSOLUTE_Y || resolvedMode == AddressingMode::ABSOLUTE_INDIRECT || resolvedMode == AddressingMode::ABSOLUTE_X_INDIRECT || resolvedMode == AddressingMode::IMMEDIATE16) {
+                                uint32_t a = parser->evaluateExpressionAt(stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                                binary.push_back(a & 0xFF); binary.push_back(a >> 8);
+                            }
+                        } else { // Branch instructions (already handled below, this is just for structure)
+                            Symbol* sym = parser->resolveSymbol(stmt->instr.operand, stmt->scopePrefix);
+                            uint32_t t = sym ? sym->value : 0;
+                            if (stmt->instr.mnemonic == "BSR") {
+                                int32_t off = (int32_t)t - (int32_t)(stmt->address + 3);
+                                binary.push_back(0x63); binary.push_back(off & 0xFF); binary.push_back(off >> 8);
+                            } else if (stmt->size == 2) {
+                                int32_t off2 = (int32_t)t - (int32_t)(stmt->address + 2);
+                                binary.push_back(AssemblerOpcodeDatabase::getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE));
+                                binary.push_back((uint8_t)(int8_t)off2);
+                            } else {
+                                int32_t off3 = (int32_t)t - (int32_t)(stmt->address + 3);
+                                binary.push_back(AssemblerOpcodeDatabase::getOpcode(stmt->instr.mnemonic, AddressingMode::RELATIVE16));
+                                binary.push_back(off3 & 0xFF); binary.push_back(off3 >> 8);
+                            }
                         }
                     }
                     if (stmt->instr.mode == AddressingMode::BASE_PAGE_RELATIVE) {

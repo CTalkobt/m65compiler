@@ -995,7 +995,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
     // But for strength reduction, we might skip evaluating right if it's a literal.
 
     bool isMultiplicativeLiteral = false;
-    if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+    if (dynamic_cast<IntegerLiteral*>(node.right.get())) {
         if (node.op == "*" || node.op == "/" || node.op == "%" || node.op == "<<" || node.op == ">>") {
             isMultiplicativeLiteral = true;
         }
@@ -1012,9 +1012,14 @@ void CodeGenerator::visit(BinaryOperation& node) {
             else if (val == 1) { /* Already in AX */ }
             else if (val > 0 && (val & (val - 1)) == 0) {
                 int shifts = 0; while (val > 1) { val >>= 1; shifts++; }
-                for (int i = 0; i < shifts; i++) {
-                    emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+                if (val == 1 && getExprType(node.left.get()).pointerLevel == 0 && (getExprType(node.left.get()).type == "int")) {
+                    emit("asw .ax"); // Use ASW for 16-bit shift left by 1
+                } else {
+                    for (int i = 0; i < val; i++) {
+                        emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+                    }
                 }
+
             } else {
                 int zpIdx = allocateZP(2);
                 std::stringstream ss; ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
@@ -1322,7 +1327,7 @@ int CodeGenerator::allocateZP(int size) {
             return i;
         }
     }
-    if (zpRegs.size() + size <= (int)zeroPageAvail) {
+    if (zpRegs.size() + (size_t)size <= (size_t)zeroPageAvail) {
         int oldSize = zpRegs.size();
         for (int i = 0; i < size; ++i) zpRegs.push_back({false});
         for (int j = 0; j < size; ++j) zpRegs[oldSize + j].inUse = true;
@@ -1348,8 +1353,8 @@ public:
     VariableUseChecker(const std::string& name, const std::string& currentDecl) 
         : targetVarName(name), currentDeclVarName(currentDecl) {}
 
-    void visit(IntegerLiteral& node) override {}
-    void visit(StringLiteral& node) override {}
+    void visit(IntegerLiteral& /*node*/) override {}
+    void visit(StringLiteral& /*node*/) override {}
     void visit(VariableReference& node) override {
         if (node.name == targetVarName) {
             used = true;
@@ -1405,8 +1410,8 @@ public:
         if (node.increment) node.increment->accept(*this);
         node.body->accept(*this);
     }
-    void visit(AsmStatement& node) override {}
-    void visit(StructDefinition& node) override {}
+    void visit(AsmStatement& /*node*/) override {}
+    void visit(StructDefinition& /*node*/) override {}
     void visit(CompoundStatement& node) override {
         for (auto& stmt : node.statements) stmt->accept(*this);
     }

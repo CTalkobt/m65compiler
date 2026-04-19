@@ -8,6 +8,7 @@ enum class AssemblerTokenType {
     OPEN_CURLY, CLOSE_CURLY,
     EQUALS, PLUS, MINUS, STAR, SLASH, INCREMENT, DECREMENT,
     AMPERSAND, PIPE, CARET, TILDE, BANG, LSHIFT, RSHIFT, AND, OR,
+    ASW, ROW, AND16, ASR16,
     EQUALS_EQUALS, NOT_EQUALS, LESS_THAN, GREATER_THAN, LESS_EQUAL, GREATER_EQUAL,
     NEWLINE, END_OF_FILE, UNKNOWN
 };
@@ -55,6 +56,10 @@ struct AssemblerToken {
             case AssemblerTokenType::RSHIFT: return "RSHIFT";
             case AssemblerTokenType::AND: return "AND";
             case AssemblerTokenType::OR: return "OR";
+            case AssemblerTokenType::ASW: return "ASW";
+            case AssemblerTokenType::ROW: return "ROW";
+            case AssemblerTokenType::AND16: return "AND16";
+            case AssemblerTokenType::ASR16: return "ASR16";
             case AssemblerTokenType::EQUALS_EQUALS: return "EQUALS_EQUALS";
             case AssemblerTokenType::NOT_EQUALS: return "NOT_EQUALS";
             case AssemblerTokenType::LESS_THAN: return "LESS_THAN";

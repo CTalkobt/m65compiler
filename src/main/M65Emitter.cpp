@@ -53,6 +53,8 @@ void M65Emitter::and_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("and"
 void M65Emitter::ora_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("ora", hex16(addr)); else { emitByte(0x0D); emitWord(addr); } }
 void M65Emitter::eor_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("eor", hex16(addr)); else { emitByte(0x4D); emitWord(addr); } }
 void M65Emitter::cmp_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("cmp", hex16(addr)); else { emitByte(0xCD); emitWord(addr); } }
+void M65Emitter::asw_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("asw", hex16(addr)); else { emitByte(0xCB); emitWord(addr); } }
+void M65Emitter::row_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("row", hex16(addr)); else { emitByte(0xEB); emitWord(addr); } }
 
 // --- Zero Page Mode ---
 void M65Emitter::lda_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("lda", hex8(addr)); else { emitByte(0xA5); emitByte(addr); } }

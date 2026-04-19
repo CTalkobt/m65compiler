@@ -285,7 +285,6 @@ void AssemblerSimulatedOps::emitLDWCode(AssemblerParser* parser, std::vector<uin
 
 void AssemblerSimulatedOps::emitSTWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& src, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
     M65Emitter e(binary, parser->getZPStart());
-    int idx = tokenIndex;
     uint32_t offset = 0;
     bool isStack = forceStack ? (offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix), true) : parser->isStackRelativeOperand(tokenIndex, offset, scopePrefix);
     std::string SRC = src; if (!SRC.empty() && SRC[0] != '.' && SRC[0] != '#') SRC = "." + SRC;
@@ -472,4 +471,57 @@ void AssemblerSimulatedOps::emitPHWStackCode(AssemblerParser* parser, std::vecto
     M65Emitter e(binary, parser->getZPStart());
     uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
     e.tsx(); e.lda_abs_x(0x0102 + offset); e.pha(); e.lda_abs_x(0x0101 + offset); e.pha();
+}
+
+void AssemblerSimulatedOps::emitASWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
+    M65Emitter e(binary, parser->getZPStart());
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX") {
+        e.asl_a(); e.txa(); e.rol_a(); e.tax();
+    } else {
+        // Load into AX, perform shift, store back
+        Symbol* sym = parser->resolveSymbol(dest, scopePrefix);
+        if (!sym) throw std::runtime_error("Undefined symbol for ASW: " + dest);
+        uint32_t addr = sym->value;
+        e.lda_abs(addr); e.txa(); e.ldx_abs(addr + 1);
+        e.asl_a(); e.txa(); e.rol_a(); e.tax();
+        e.sta_abs(addr); e.stx_abs(addr + 1);
+    }
+}
+
+void AssemblerSimulatedOps::emitROWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
+    M65Emitter e(binary, parser->getZPStart());
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX") {
+        e.ror_a(); e.txa(); e.ror_a(); e.tax();
+    } else {
+        // Load into AX, perform rotation, store back
+        Symbol* sym = parser->resolveSymbol(dest, scopePrefix);
+        if (!sym) throw std::runtime_error("Undefined symbol for ROW: " + dest);
+        uint32_t addr = sym->value;
+        e.lda_abs(addr); e.txa(); e.ldx_abs(addr + 1);
+        e.ror_a(); e.txa(); e.ror_a(); e.tax();
+        e.sta_abs(addr); e.stx_abs(addr + 1);
+    }
+}
+
+void AssemblerSimulatedOps::emitASR16Code(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
+    M65Emitter e(binary, parser->getZPStart());
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX") {
+        e.clc(); // Clear carry for logical shift
+        e.ror_a(); e.txa(); e.ror_a(); e.tax();
+    } else {
+        // Load into AX, perform shift, store back
+        Symbol* sym = parser->resolveSymbol(dest, scopePrefix);
+        if (!sym) throw std::runtime_error("Undefined symbol for ASR.16: " + dest);
+        uint32_t addr = sym->value;
+        e.lda_abs(addr); e.txa(); e.ldx_abs(addr + 1);
+        e.clc(); // Clear carry for logical shift
+        e.ror_a(); e.txa(); e.ror_a(); e.tax();
+        e.sta_abs(addr); e.stx_abs(addr + 1);
+    }
 }

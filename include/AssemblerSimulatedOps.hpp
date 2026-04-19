@@ -30,4 +30,7 @@ public:
     static void emitMoveCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix, bool forceStack = false);
     static void emitFlatMemoryCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix);
     static void emitPHWStackCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix);
+    static void emitASWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix);
+    static void emitROWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix);
+    static void emitASR16Code(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix);
 };

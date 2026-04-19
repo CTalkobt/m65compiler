@@ -98,8 +98,10 @@ Symbol* AssemblerParser::resolveSymbol(const std::string& name, const std::strin
 
 
 uint32_t AssemblerParser::getZPStart() const {
- if (symbolTable.count("cc45.zeroPageStart")) return symbolTable.at("cc45.zeroPageStart").value; return 0x02;
- 
+    if (symbolTable.count("cc45.zeroPageStart")) {
+        return symbolTable.at("cc45.zeroPageStart").value;
+    }
+    return 0x02;
 }
 
 const AssemblerToken& AssemblerParser::expect(AssemblerTokenType type, const std::string& message) {
@@ -554,36 +556,35 @@ aN, sz
                      stmt->instr.mnemonic == "FILL" || stmt->instr.mnemonic == "FILL.SP" ||
                      stmt->instr.mnemonic == "MOVE" || stmt->instr.mnemonic == "MOVE.SP" ||
                      stmt->instr.mnemonic == "INC.F" || stmt->instr.mnemonic == "DEC.F" ||
-                     stmt->instr.mnemonic == "PHW") {
-                
-                if (stmt->instr.mnemonic == "ADD.16") stmt->type = Statement::ADD16;
-                else if (stmt->instr.mnemonic == "SUB.16") stmt->type = Statement::SUB16;
-                else if (stmt->instr.mnemonic == "AND.16") stmt->type = Statement::AND16;
-                else if (stmt->instr.mnemonic == "ORA.16") stmt->type = Statement::ORA16;
-                else if (stmt->instr.mnemonic == "EOR.16") stmt->type = Statement::EOR16;
-                else if (stmt->instr.mnemonic == "CPW") stmt->type = Statement::CPW;
-                else if (stmt->instr.mnemonic == "LDW" || stmt->instr.mnemonic == "LDW.SP") stmt->type = Statement::LDW;
-                else if (stmt->instr.mnemonic == "STW" || stmt->instr.mnemonic == "STW.SP") stmt->type = Statement::STW;
-                else if (stmt->instr.mnemonic == "FILL" || stmt->instr.mnemonic == "FILL.SP") stmt->type = Statement::FILL;
-                else if (stmt->instr.mnemonic == "MOVE" || stmt->instr.mnemonic == "MOVE.SP") stmt->type = Statement::COPY;
-                else if (stmt->instr.mnemonic == "SWAP") stmt->type = Statement::SWAP;
-                else if (stmt->instr.mnemonic == "NEG.16") stmt->type = Statement::NEG16;
-                else if (stmt->instr.mnemonic == "NOT.16") stmt->type = Statement::NOT16;
-                else if (stmt->instr.mnemonic == "CHKZERO.8") stmt->type = Statement::CHKZERO8;
-                else if (stmt->instr.mnemonic == "CHKZERO.16") stmt->type = Statement::CHKZERO16;
-                else if (stmt->instr.mnemonic == "CHKNONZERO.8") stmt->type = Statement::CHKNONZERO8;
-                else if (stmt->instr.mnemonic == "CHKNONZERO.16") stmt->type = Statement::CHKNONZERO16;
-                else if (stmt->instr.mnemonic == "BRANCH.16") stmt->type = Statement::BRANCH16;
-                else if (stmt->instr.mnemonic == "SELECT") stmt->type = Statement::SELECT;
-                else if (stmt->instr.mnemonic == "PTRSTACK") stmt->type = Statement::PTRSTACK;
-                else if (stmt->instr.mnemonic == "PTRDEREF") stmt->type = Statement::PTRDEREF;
-                else if (stmt->instr.mnemonic == "LDW.F") stmt->type = Statement::LDWF;
-                else if (stmt->instr.mnemonic == "STW.F") stmt->type = Statement::STWF;
-                else if (stmt->instr.mnemonic == "INC.F") stmt->type = Statement::INCF;
-                else if (stmt->instr.mnemonic == "DEC.F") stmt->type = Statement::DECF;
-                else if (stmt->instr.mnemonic == "PHW") stmt->type = Statement::PHW_STACK;
+                     stmt->instr.mnemonic == "PHW" || stmt->instr.mnemonic == "ASR.16") {
 
-                stmt->instr.operandTokenIndex = (int)pos;
+                     if (stmt->instr.mnemonic == "ADD.16") stmt->type = Statement::ADD16;
+                     else if (stmt->instr.mnemonic == "SUB.16") stmt->type = Statement::SUB16;
+                     else if (stmt->instr.mnemonic == "AND.16") stmt->type = Statement::AND16;
+                     else if (stmt->instr.mnemonic == "ORA.16") stmt->type = Statement::ORA16;
+                     else if (stmt->instr.mnemonic == "EOR.16") stmt->type = Statement::EOR16;
+                     else if (stmt->instr.mnemonic == "CPW") stmt->type = Statement::CPW;
+                     else if (stmt->instr.mnemonic == "LDW" || stmt->instr.mnemonic == "LDW.SP") stmt->type = Statement::LDW;
+                     else if (stmt->instr.mnemonic == "STW" || stmt->instr.mnemonic == "STW.SP") stmt->type = Statement::STW;
+                     else if (stmt->instr.mnemonic == "FILL" || stmt->instr.mnemonic == "FILL.SP") stmt->type = Statement::FILL;
+                     else if (stmt->instr.mnemonic == "MOVE" || stmt->instr.mnemonic == "MOVE.SP") stmt->type = Statement::COPY;
+                     else if (stmt->instr.mnemonic == "SWAP") stmt->type = Statement::SWAP;
+                     else if (stmt->instr.mnemonic == "NEG.16") stmt->type = Statement::NEG16;
+                     else if (stmt->instr.mnemonic == "NOT.16") stmt->type = Statement::NOT16;
+                     else if (stmt->instr.mnemonic == "CHKZERO.8") stmt->type = Statement::CHKZERO8;
+                     else if (stmt->instr.mnemonic == "CHKZERO.16") stmt->type = Statement::CHKZERO16;
+                     else if (stmt->instr.mnemonic == "CHKNONZERO.8") stmt->type = Statement::CHKNONZERO8;
+                     else if (stmt->instr.mnemonic == "CHKNONZERO.16") stmt->type = Statement::CHKNONZERO16;
+                     else if (stmt->instr.mnemonic == "BRANCH.16") stmt->type = Statement::BRANCH16;
+                     else if (stmt->instr.mnemonic == "SELECT") stmt->type = Statement::SELECT;
+                     else if (stmt->instr.mnemonic == "PTRSTACK") stmt->type = Statement::PTRSTACK;
+                     else if (stmt->instr.mnemonic == "PTRDEREF") stmt->type = Statement::PTRDEREF;
+                     else if (stmt->instr.mnemonic == "LDW.F") stmt->type = Statement::LDWF;
+                     else if (stmt->instr.mnemonic == "STW.F") stmt->type = Statement::STWF;
+                     else if (stmt->instr.mnemonic == "INC.F") stmt->type = Statement::INCF;
+                     else if (stmt->instr.mnemonic == "ASR.16") stmt->type = Statement::ASR16;
+
+                     stmt->instr.operandTokenIndex = (int)pos;
 
                 // Handle instructions with 1 or more operands
                 if (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
@@ -628,12 +629,12 @@ aN, sz
                 std::vector<uint8_t> d;
                 if (stmt->type == Statement::ADD16 || stmt->type == Statement::SUB16) emitAddSub16Code(d, stmt->type == Statement::ADD16, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::AND16 || stmt->type == Statement::ORA16 || stmt->type == Statement::EOR16) emitBitwise16Code(d, stmt->instr.mnemonic, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::CPW) emitCPWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                // else if (stmt->type == Statement::ROW) emitROWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::LDW) emitLDWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "LDW.SP");
                 else if (stmt->type == Statement::STW) emitSTWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "STW.SP");
                 else if (stmt->type == Statement::FILL) emitFillCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "FILL.SP");
                 else if (stmt->type == Statement::COPY) emitMoveCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "MOVE.SP");
-                else if (stmt->type == Statement::SWAP) emitSwapCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                // else if (stmt->type == Statement::ROW) emitROWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::NEG16 || stmt->type == Statement::NOT16) emitNegNot16Code(d, stmt->type == Statement::NEG16, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::CHKZERO8) emitChkZeroCode(d, false, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::CHKZERO16) emitChkZeroCode(d, true, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);

@@ -44,6 +44,8 @@ public:
     void ora_abs(uint16_t addr);
     void eor_abs(uint16_t addr);
     void cmp_abs(uint16_t addr);
+    void asw_abs(uint16_t addr);
+    void row_abs(uint16_t addr);
 
     // --- Zero Page Mode ---
     void lda_zp(uint8_t addr);

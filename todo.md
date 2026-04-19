@@ -16,7 +16,8 @@ Legend:
 - [X] **Tiered Branching**: Automatic selection of short/long branches.
 - [X] **Logical Short-circuiting**: Implement `&&` and `||` short-circuiting in control flow and expressions.
 - [X] **Parameter/Local Mangling**: Prefix variables with `_p_` and `_l_` to avoid CPU register collisions.
-- [ ] **16 bit operators**: Add 16 bit simulated opcodes (or stack modes) for ASW (asl), ROW (ror), and AND. 
+- [X] **16 bit operators**: Add 16 bit simulated opcodes (or stack modes) for ASW (asl), ROW (ror), and AND. 
+
 - [X] **Extended Register Tracking**: Track register contents more closely (e.g. variable affinity beyond just value).
 - [X] **Constant Propagation**: Substitute variables with known constant values into expressions.
 - [X] **Volatile Keyword Support**: Correctly parse 'volatile' and prevent dead store elimination for volatile variables.
