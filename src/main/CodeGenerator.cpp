@@ -180,7 +180,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
             if (auto* lit = dynamic_cast<IntegerLiteral*>(node.initializer.get())) {
                  if (size == 2) {
                     std::stringstream ss;
-                    ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (int)lit->value;
+                    ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)(int16_t)lit->value;
                     emit("phw " + ss.str());
                 } else {
                     emitter->lda_imm(lit->value & 0xFF);
@@ -214,7 +214,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
                 std::cerr << "    Initializer is IntegerLiteral: " << lit->value << std::endl;
                 if (size == 2) {
                     std::stringstream ss;
-                    ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (int)lit->value;
+                    ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)(int16_t)lit->value;
                     emit("phw " + ss.str());
                 } else {
                     emitter->lda_imm(lit->value & 0xFF);
