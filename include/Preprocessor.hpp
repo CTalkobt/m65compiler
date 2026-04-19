@@ -23,6 +23,7 @@ private:
     
     struct Macro {
         bool isFunctionLike = false;
+        bool isVariadic = false;
         std::vector<std::string> params;
         std::string body;
     };

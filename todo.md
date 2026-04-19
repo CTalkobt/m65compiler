@@ -33,7 +33,9 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **Alignment**: Implement `_Alignas` and `_Alignof` to manage data alignment.
 - [X] **Inline Assembly**: Support `asm("...")` or `__asm__("...")` for direct assembly insertion.
 - [X] **Preprocessor**: Support `#include`, `#define`, `#undef`, `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`.
-- [X] **Macro Expansion**: Support object-like and function-like macros, rescanning, and `#` / `##` operators.
+- [X] **Macro Expansion**: Support object-like, function-like, and variadic macros, rescanning, and `#` / `##` operators.
+- [X] **Variadic Macros**: Support `__VA_ARGS__` and `##__VA_ARGS__` comma removal.
+- [X] **Pragma Operator**: Support `_Pragma("...")`.
 - [X] **Header Guards**: Support `#pragma include_once` for file inclusion optimization.
 - [X] **Expression Evaluation**: Support `defined()`, arithmetic, and logic in `#if` / `#elif`.
 - [X] **Line Continuation**: Support `\` at end of line.

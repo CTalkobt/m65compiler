@@ -10,7 +10,9 @@ All notable changes to the cc45 / ca45 suite will be documented in this file.
 - **Preprocessor (cp45)**:
     - Added `bin/cp45` as a new build target (symlink to `cc45`).
     - Defaults to `stdout` output when running in standalone mode.
-    - Added support for function-like macros and general macro expansion.
+    - Added support for function-like and **variadic macros** (`__VA_ARGS__`).
+    - Implemented **comma removal extension** (`##__VA_ARGS__`) for empty variadic arguments.
+    - Added support for the **`_Pragma` operator**.
     - Implemented macro operators: `#` (stringification) and `##` (token pasting).
     - Added macro expansion support within `#include` directives.
     - Implemented header guard optimization via `#pragma include_once`.

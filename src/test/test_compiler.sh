@@ -28,6 +28,7 @@ TEST_FILES=(
     "src/test-resources/test_preprocessor_ext.c"
     "src/test-resources/test_preproc_final.c"
     "src/test-resources/test_preproc_macros.c"
+    "src/test-resources/test_preproc_v3.c"
 )
 
 mkdir -p build/test

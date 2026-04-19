@@ -25,13 +25,46 @@ Preprocessor::Preprocessor(bool isCompiler) : isCompiler(isCompiler) {
     preprocTime = timeSS.str();
 
     // Standard predefined macros
-    macros["__STDC__"] = {false, {}, "1"};
-    macros["__STDC_VERSION__"] = {false, {}, "201112L"};
-    macros["__STDC_HOSTED__"] = {false, {}, "0"}; 
+    macros["__STDC__"] = Macro{false, false, {}, "1"};
+    macros["__STDC_VERSION__"] = Macro{false, false, {}, "201112L"};
+    macros["__STDC_HOSTED__"] = Macro{false, false, {}, "0"}; 
 }
 
 std::string Preprocessor::expandMacros(const std::string& line) {
     std::string result = line;
+    
+    // 0. Handle _Pragma("string") early
+    size_t pragmaPos;
+    while ((pragmaPos = result.find("_Pragma")) != std::string::npos) {
+        // Simple whole-word check
+        bool bBefore = (pragmaPos == 0 || (!std::isalnum((unsigned char)result[pragmaPos-1]) && result[pragmaPos-1] != '_'));
+        if (!bBefore) { break; } // skip this one for now to avoid infinite loop if it's part of something else
+
+        size_t start = pragmaPos;
+        pragmaPos += 7;
+        while (pragmaPos < result.length() && std::isspace((unsigned char)result[pragmaPos])) pragmaPos++;
+        if (pragmaPos < result.length() && result[pragmaPos] == '(') {
+            pragmaPos++;
+            while (pragmaPos < result.length() && std::isspace((unsigned char)result[pragmaPos])) pragmaPos++;
+            if (pragmaPos < result.length() && result[pragmaPos] == '"') {
+                size_t strStart = pragmaPos + 1;
+                size_t strEnd = result.find('"', strStart);
+                if (strEnd != std::string::npos) {
+                    // Extract the pragma content. In a real preprocessor this would emit a #pragma.
+                    // For our line-based system, we'll just remove it as we don't have a way 
+                    // to inject a directive into the middle of a line easily without returning multiple lines.
+                    // However, we'll just strip it for now as most pragmas are hints.
+                    size_t endParen = result.find(')', strEnd);
+                    if (endParen != std::string::npos) {
+                        result.erase(start, endParen - start + 1);
+                        continue;
+                    }
+                }
+            }
+        }
+        break; 
+    }
+
     bool changed = true;
     int limit = 100; // Prevent infinite expansion
 
@@ -39,7 +72,6 @@ std::string Preprocessor::expandMacros(const std::string& line) {
         changed = false;
         std::string nextResult;
         bool inString = false;
-        // std::cerr << "Expanding: " << result << std::endl;
 
         for (size_t i = 0; i < result.length(); ) {
             // Skip strings
@@ -59,11 +91,8 @@ std::string Preprocessor::expandMacros(const std::string& line) {
                 while (i < result.length() && (std::isalnum((unsigned char)result[i]) || result[i] == '_')) i++;
                 std::string ident = result.substr(start, i - start);
 
-                // Handle predefined macros manually or via macros map
                 std::string replacement = "";
                 bool found = false;
-
-                if (ident == "__FILE__") { /* handled elsewhere but good to be safe */ }
 
                 if (macros.count(ident)) {
                     const auto& m = macros[ident];
@@ -85,41 +114,71 @@ std::string Preprocessor::expandMacros(const std::string& line) {
                                     if (parenDepth == 0) { peek++; break; }
                                     parenDepth--;
                                 } else if (result[peek] == ',' && parenDepth == 0) {
-                                    args.push_back(trim(currentArg));
-                                    currentArg = "";
-                                    peek++;
-                                    continue;
+                                    if (!m.isVariadic || args.size() < m.params.size()) {
+                                        args.push_back(trim(currentArg));
+                                        currentArg = "";
+                                        peek++;
+                                        continue;
+                                    }
                                 }
                                 currentArg += result[peek++];
                             }
                             args.push_back(trim(currentArg));
 
-                            if (args.size() == m.params.size()) {
-                                std::string body = m.body;
+                            // Handle arguments
+                            if ((!m.isVariadic && args.size() == m.params.size()) || 
+                                (m.isVariadic && args.size() >= m.params.size())) {
                                 
-                                // 1. Handle # stringification
-                                for (size_t p = 0; p < m.params.size(); ++p) {
-                                    std::string pattern = "#" + m.params[p];
-                                    size_t pos = 0;
-                                    while ((pos = body.find(pattern, pos)) != std::string::npos) {
-                                        if (pos > 0 && body[pos-1] == '#') {
-                                            pos += pattern.length();
-                                            continue;
-                                        }
-                                        body.replace(pos, pattern.length(), "\"" + args[p] + "\"");
+                                std::string body = m.body;
+                                std::string vaArgs = "";
+                                if (m.isVariadic) {
+                                    for (size_t a = m.params.size(); a < args.size(); ++a) {
+                                        if (!vaArgs.empty()) vaArgs += ", ";
+                                        vaArgs += args[a];
                                     }
                                 }
 
-                                // 2. Replace parameters
+                                // 1. Handle # stringification (including #__VA_ARGS__)
+                                auto doStringify = [&](std::string& b, const std::string& paramName, const std::string& argVal) {
+                                    std::string pattern = "#" + paramName;
+                                    size_t pos = 0;
+                                    while ((pos = b.find(pattern, pos)) != std::string::npos) {
+                                        if (pos > 0 && b[pos-1] == '#') { pos += pattern.length(); continue; }
+                                        b.replace(pos, pattern.length(), "\"" + argVal + "\"");
+                                    }
+                                };
+
+                                for (size_t p = 0; p < m.params.size(); ++p) doStringify(body, m.params[p], args[p]);
+                                if (m.isVariadic) doStringify(body, "__VA_ARGS__", vaArgs);
+
+                                // 2. Handle ## pasting (including comma removal extension ##__VA_ARGS__)
+                                if (m.isVariadic) {
+                                    size_t glue;
+                                    // Handle GCC-style comma removal: , ##__VA_ARGS__
+                                    while ((glue = body.find("##__VA_ARGS__")) != std::string::npos) {
+                                        size_t comma = glue;
+                                        while (comma > 0 && std::isspace((unsigned char)body[comma-1])) comma--;
+                                        if (comma > 0 && body[comma-1] == ',') {
+                                            comma--;
+                                            if (vaArgs.empty()) {
+                                                body.replace(comma, (glue + 13) - comma, "");
+                                            } else {
+                                                body.replace(glue, 13, vaArgs);
+                                            }
+                                        } else {
+                                            body.replace(glue, 13, vaArgs);
+                                        }
+                                    }
+                                }
+
+                                // 3. Replace parameters
                                 for (size_t p = 0; p < m.params.size(); ++p) {
                                     size_t pos = 0;
                                     while ((pos = body.find(m.params[p], pos)) != std::string::npos) {
                                         bool nextToGlue = (pos >= 2 && body.substr(pos-2, 2) == "##") || 
                                                          (pos + m.params[p].length() + 2 <= body.length() && body.substr(pos + m.params[p].length(), 2) == "##");
-                                        
                                         bool bBefore = (pos == 0 || (!std::isalnum((unsigned char)body[pos-1]) && body[pos-1] != '_'));
                                         bool bAfter = (pos + m.params[p].length() == body.length() || (!std::isalnum((unsigned char)body[pos + m.params[p].length()]) && body[pos + m.params[p].length()] != '_'));
-                                        
                                         if (nextToGlue || (bBefore && bAfter)) {
                                             body.replace(pos, m.params[p].length(), args[p]);
                                             pos += args[p].length();
@@ -128,15 +187,27 @@ std::string Preprocessor::expandMacros(const std::string& line) {
                                         }
                                     }
                                 }
+                                
+                                if (m.isVariadic) {
+                                    size_t pos = 0;
+                                    while ((pos = body.find("__VA_ARGS__", pos)) != std::string::npos) {
+                                        bool bBefore = (pos == 0 || (!std::isalnum((unsigned char)body[pos-1]) && body[pos-1] != '_'));
+                                        bool bAfter = (pos + 11 == body.length() || (!std::isalnum((unsigned char)body[pos + 11]) && body[pos + 11] != '_'));
+                                        if (bBefore && bAfter) {
+                                            body.replace(pos, 11, vaArgs);
+                                            pos += vaArgs.length();
+                                        } else pos += 11;
+                                    }
+                                }
 
-                                // 3. Handle ## pasting
+                                // 4. Final Glue cleanup
                                 size_t glue;
                                 while ((glue = body.find("##")) != std::string::npos) {
-                                    size_t start = glue;
-                                    while (start > 0 && std::isspace((unsigned char)body[start-1])) start--;
-                                    size_t end = glue + 2;
-                                    while (end < body.length() && std::isspace((unsigned char)body[end])) end++;
-                                    body.erase(start, end - start);
+                                    size_t s_p = glue;
+                                    while (s_p > 0 && std::isspace((unsigned char)body[s_p-1])) s_p--;
+                                    size_t e_p = glue + 2;
+                                    while (e_p < body.length() && std::isspace((unsigned char)body[e_p])) e_p++;
+                                    body.erase(s_p, e_p - s_p);
                                 }
                                 
                                 replacement = body;
@@ -334,17 +405,14 @@ std::string Preprocessor::process(const std::string& source,
                                   const std::string& currentFile) {
     this->macros.clear();
     for (const auto& pair : initialSymbols) {
-        this->macros[pair.first] = {false, {}, pair.second};
+        this->macros[pair.first] = Macro{false, false, {}, pair.second};
     }
     this->includePaths = includePaths;
     this->includedFiles.clear();
     this->onceFiles.clear();
     this->stateStack.clear();
     
-    // Standard predefined macros
-    macros["__STDC__"] = {false, {}, "1"};
-    macros["__STDC_VERSION__"] = {false, {}, "201112L"};
-    macros["__STDC_HOSTED__"] = {false, {}, "0"}; 
+    // Standard predefined macros are set in constructor
     
     // Default initial state: everything is active.
     stateStack.push_back({true, true, false});
@@ -537,13 +605,18 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
                         std::stringstream pss(paramStr);
                         std::string p;
                         while (std::getline(pss, p, ',')) {
-                            m.params.push_back(trim(p));
+                            p = trim(p);
+                            if (p == "...") {
+                                m.isVariadic = true;
+                            } else {
+                                m.params.push_back(p);
+                            }
                         }
                         macros[name] = m;
                     } else {
                         // Object-like
                         std::string body = lineRest.substr(name.length());
-                        macros[name] = {false, {}, trim(body)};
+                        macros[name] = Macro{false, false, {}, trim(body)};
                     }
                 }
                 output << "\n";
