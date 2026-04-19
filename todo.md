@@ -10,12 +10,13 @@ Legend:
 - [X] **Dead Code Removal**: Detect and remove code following a `return` statement.
 - [X] **Redundant RTN Removal**: Optimize `RTN #0` to `RTS`.
 - [X] **Constant Folding**: Evaluate `1 + 2` at compile time.
-- [ ] **Strength Reduction**: Convert `x * 2` to `x << 1`.
+- [X] **Strength Reduction**: Convert `x * 2` to `x << 1`, etc.
 - [X] **Register Allocation**: Better usage of A, X, Y, Z to reduce stack traffic. (Tracking implemented).
 - [X] **Increment Optimization**: Use `INC A`, `INX`, `INW`, etc. for `+ 1`.
 - [X] **Tiered Branching**: Automatic selection of short/long branches.
 - [X] **Logical Short-circuiting**: Implement `&&` and `||` short-circuiting in control flow and expressions.
 - [X] **Parameter/Local Mangling**: Prefix variables with `_p_` and `_l_` to avoid CPU register collisions.
+- [ ] **Extended Register Tracking**: Track register contents more closely (e.g. variable affinity beyond just value).
 
 ---
 

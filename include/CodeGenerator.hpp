@@ -9,6 +9,9 @@
 
 class CodeGenerator : public ASTVisitor {
 public:
+    enum class TriState { UNKNOWN, SET, CLEAR };
+    enum class FlagSource { NONE, A, X, Y, Z };
+
     CodeGenerator(std::ostream& out);
     void generate(TranslationUnit& unit);
     void setSourceInfo(const std::string& filename, const std::vector<std::string>& lines);
@@ -76,11 +79,11 @@ public:
     void updateRegXVar(const std::string& name, int offset);
     void updateRegYVar(const std::string& name, int offset);
     void updateRegZVar(const std::string& name, int offset);
+    void transferRegs(FlagSource dest, FlagSource src);
+    void invalidateVar(const std::string& name);
     void invalidateRegs();
 
     // Flag tracking
-    enum class TriState { UNKNOWN, SET, CLEAR };
-    enum class FlagSource { NONE, A, X, Y, Z };
     struct ProcessorStatus {
         TriState carry = TriState::UNKNOWN;
         TriState zero = TriState::UNKNOWN;

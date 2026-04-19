@@ -243,15 +243,16 @@ void CodeGenerator::visit(Assignment& node) {
                 std::stringstream ss;
                 ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (int)lit->value;
                 emit("stw.sp " + ss.str() + ", " + rName);
+                updateRegAVar(rName, 0); regA.value = lit->value & 0xFF; regA.isVariable = true;
+                updateRegXVar(rName, 1); regX.value = (lit->value >> 8) & 0xFF; regX.isVariable = true;
             } else {
                 uint8_t val = lit->value & 0xFF;
-                if (!regA.known || regA.isVariable || regA.value != val) {
+                if (!regA.known || (regA.isVariable && regA.varName != rName) || (!regA.isVariable && regA.value != val)) {
                     emitter->lda_imm(val);
                 }
                 emit("sta " + rName + ", s");
-                updateRegAVar(rName, 0);
+                updateRegAVar(rName, 0); regA.value = val;
             }
-            invalidateRegs();
             return;
         }
 
@@ -269,7 +270,7 @@ void CodeGenerator::visit(Assignment& node) {
                     emit("ldx #$" + ssX.str());
                     emit("ldy #$" + ssY.str());
                     emit("MOVE.SP " + sName + ", " + rName);
-                    invalidateRegs();
+                    invalidateVar(rName);
                     return;
                 }
             }
@@ -290,7 +291,6 @@ void CodeGenerator::visit(Assignment& node) {
             emit("sta " + rName + ", s");
             updateRegAVar(rName, 0);
         }
-        invalidateRegs();
         return;
     } else if (auto* ma = dynamic_cast<MemberAccess*>(node.target.get())) {
         if (!ma->isArrow) {
@@ -570,6 +570,7 @@ void CodeGenerator::visit(VariableReference& node) {
         bool highCorrect = (regX.known && regX.isVariable && regX.varName == rName && regX.varOffset == 1);
 
         if (lowCorrect && highCorrect) {
+            // Already there
         } else if (lowCorrect) {
             emit("ldx " + rName + "+1, s");
             updateRegXVar(rName, 1);
@@ -584,6 +585,16 @@ void CodeGenerator::visit(VariableReference& node) {
         }
     } else {
         if (regA.known && regA.isVariable && regA.varName == rName && regA.varOffset == 0) {
+            // Already there
+        } else if (regX.known && regX.isVariable && regX.varName == rName && regX.varOffset == 0) {
+            emit("txa");
+            transferRegs(FlagSource::A, FlagSource::X);
+        } else if (regY.known && regY.isVariable && regY.varName == rName && regY.varOffset == 0) {
+            emit("tya");
+            transferRegs(FlagSource::A, FlagSource::Y);
+        } else if (regZ.known && regZ.isVariable && regZ.varName == rName && regZ.varOffset == 0) {
+            emit("tza");
+            transferRegs(FlagSource::A, FlagSource::Z);
         } else {
             emit("lda " + rName + ", s");
             updateRegAVar(rName, 0);
@@ -982,6 +993,151 @@ void CodeGenerator::visit(BinaryOperation& node) {
         invalidateRegs();
         emitter->ldx_imm(0);
         updateRegX(0);
+    } else if (node.op == "*") {
+        bool optimized = false;
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+            int val = lit->value;
+            if (val == 0) {
+                emit("zero a, x");
+                updateRegA(0); updateRegX(0);
+                optimized = true;
+            } else if (val == 1) {
+                // Already in AX
+                optimized = true;
+            } else if (val > 0 && (val & (val - 1)) == 0) {
+                int shifts = 0;
+                while (val > 1) { val >>= 1; shifts++; }
+                for (int i = 0; i < shifts; i++) {
+                    emitter->asl_a();
+                    emitter->pha();
+                    emitter->txa();
+                    emitter->rol_a();
+                    emitter->tax();
+                    emitter->pla();
+                }
+                optimized = true;
+            }
+        }
+        if (!optimized) {
+            std::stringstream ss2;
+            ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+            emit("mul.16 .ax, $" + ss2.str());
+        }
+        invalidateFlags();
+    } else if (node.op == "/" || node.op == "%") {
+        bool optimized = false;
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+            int val = lit->value;
+            if (val > 0 && (val & (val - 1)) == 0) {
+                if (node.op == "/") {
+                    int shifts = 0;
+                    while (val > 1) { val >>= 1; shifts++; }
+                    for (int i = 0; i < shifts; i++) {
+                        emitter->txa();
+                        emitter->lsr_a();
+                        emitter->tax();
+                        emitter->pla();
+                        emitter->ror_a();
+                        emitter->pha();
+                    }
+                    optimized = true;
+                } else { // %
+                    int mask = val - 1;
+                    emitter->and_imm(mask & 0xFF);
+                    emitter->pha();
+                    emitter->txa();
+                    emitter->and_imm((mask >> 8) & 0xFF);
+                    emitter->tax();
+                    emitter->pla();
+                    optimized = true;
+                }
+            }
+        }
+        if (!optimized) {
+            std::stringstream ss2;
+            ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+            if (node.op == "/") {
+                emit("div.16 .ax, $" + ss2.str());
+            } else {
+                emit("div.16 .ax, $" + ss2.str());
+                // Simulated div.16 leaves quotient in AX. 
+                // We need to fetch remainder from hardware registers $D770-D771
+                emit("lda $D770");
+                emit("ldx $D771");
+            }
+        }
+        invalidateFlags();
+    } else if (node.op == "<<") {
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+            for (int i = 0; i < lit->value; i++) {
+                emitter->asl_a();
+                emitter->pha();
+                emitter->txa();
+                emitter->rol_a();
+                emitter->tax();
+                emitter->pla();
+            }
+        } else {
+            std::string labelStart = newDontCareLabel();
+            std::string labelEnd = newDontCareLabel();
+            int shiftZp = allocateZP(1);
+            std::stringstream ssSh;
+            ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+            emit("sta $" + ssSh.str()); // Save shift count
+            // Reload value to shift from stack-saved left operand
+            std::stringstream ssVal;
+            ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+            emit("ldax $" + ssVal.str());
+            out << labelStart << ":" << std::endl;
+            emit("lda $" + ssSh.str());
+            emit("beq " + labelEnd);
+            emit("dec $" + ssSh.str());
+            emitter->asl_a();
+            emitter->pha();
+            emitter->txa();
+            emitter->rol_a();
+            emitter->tax();
+            emitter->pla();
+            emit("bra " + labelStart);
+            out << labelEnd << ":" << std::endl;
+            freeZP(shiftZp, 1);
+        }
+        invalidateFlags();
+    } else if (node.op == ">>") {
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.right.get())) {
+            for (int i = 0; i < lit->value; i++) {
+                emitter->txa();
+                emitter->lsr_a();
+                emitter->tax();
+                emitter->pla();
+                emitter->ror_a();
+                emitter->pha();
+            }
+        } else {
+            std::string labelStart = newDontCareLabel();
+            std::string labelEnd = newDontCareLabel();
+            int shiftZp = allocateZP(1);
+            std::stringstream ssSh;
+            ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+            emit("sta $" + ssSh.str());
+            std::stringstream ssVal;
+            ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+            emit("ldax $" + ssVal.str());
+            out << labelStart << ":" << std::endl;
+            emit("lda $" + ssSh.str());
+            emit("beq " + labelEnd);
+            emit("dec $" + ssSh.str());
+            emitter->txa();
+            emitter->lsr_a();
+            emitter->tax();
+            emitter->pla();
+            emitter->ror_a();
+            emitter->pha();
+            emit("bra " + labelStart);
+            out << labelEnd << ":" << std::endl;
+            freeZP(shiftZp, 1);
+        }
+        invalidateFlags();
     }
     freeZP(zpIdx, 2);
     invalidateRegs();
@@ -1098,6 +1254,32 @@ void CodeGenerator::invalidateRegs() {
     regY.known = false; regY.isVariable = false; regY.varName = ""; regY.varOffset = 0; regY.value = 0;
     regZ.known = false; regZ.isVariable = false; regZ.varName = ""; regZ.varOffset = 0; regZ.value = 0;
     invalidateFlags();
+}
+
+void CodeGenerator::invalidateVar(const std::string& name) {
+    if (regA.known && regA.isVariable && regA.varName == name) regA.known = false;
+    if (regX.known && regX.isVariable && regX.varName == name) regX.known = false;
+    if (regY.known && regY.isVariable && regY.varName == name) regY.known = false;
+    if (regZ.known && regZ.isVariable && regZ.varName == name) regZ.known = false;
+}
+
+void CodeGenerator::transferRegs(FlagSource dest, FlagSource src) {
+    RegState* s = nullptr;
+    RegState* d = nullptr;
+    if (src == FlagSource::A) s = &regA;
+    else if (src == FlagSource::X) s = &regX;
+    else if (src == FlagSource::Y) s = &regY;
+    else if (src == FlagSource::Z) s = &regZ;
+
+    if (dest == FlagSource::A) d = &regA;
+    else if (dest == FlagSource::X) d = &regX;
+    else if (dest == FlagSource::Y) d = &regY;
+    else if (dest == FlagSource::Z) d = &regZ;
+
+    if (s && d) {
+        *d = *s;
+        updateZNFlags(dest, flags.zero, flags.negative);
+    }
 }
 
 void CodeGenerator::updateFlags(TriState c, TriState z, TriState n, TriState v) {

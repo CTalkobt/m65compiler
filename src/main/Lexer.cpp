@@ -103,6 +103,7 @@ Token Lexer::nextToken() {
             return {TokenType::MINUS, "-", startLine, startCol};
         case '*': return {TokenType::STAR, "*", startLine, startCol};
         case '/': return {TokenType::SLASH, "/", startLine, startCol};
+        case '%': return {TokenType::PERCENT, "%", startLine, startCol};
         case '<':
             if (peek() == '=') { get(); return {TokenType::LESS_EQUAL, "<=", startLine, startCol}; }
             if (peek() == '<') { get(); return {TokenType::LSHIFT, "<<", startLine, startCol}; }

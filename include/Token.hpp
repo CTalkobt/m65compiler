@@ -32,6 +32,7 @@ enum class TokenType {
     MINUS,         // -
     STAR,          // *
     SLASH,         // /
+    PERCENT,       // %
     LESS_THAN,     // <
     GREATER_THAN,  // >
     LESS_EQUAL,    // <=
@@ -90,6 +91,7 @@ struct Token {
             case TokenType::MINUS: return "MINUS";
             case TokenType::STAR: return "STAR";
             case TokenType::SLASH: return "SLASH";
+            case TokenType::PERCENT: return "PERCENT";
             case TokenType::LESS_THAN: return "LESS_THAN";
             case TokenType::GREATER_THAN: return "GREATER_THAN";
             case TokenType::LESS_EQUAL: return "LESS_EQUAL";

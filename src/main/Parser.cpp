@@ -363,7 +363,7 @@ std::unique_ptr<Expression> Parser::parseAdditive() {
 
 std::unique_ptr<Expression> Parser::parseMultiplicative() {
     auto left = parseUnary();
-    while (match(TokenType::STAR) || match(TokenType::SLASH)) {
+    while (match(TokenType::STAR) || match(TokenType::SLASH) || match(TokenType::PERCENT)) {
         const Token& opToken = tokens[pos-1];
         std::string op = opToken.value;
         auto right = parseUnary();
