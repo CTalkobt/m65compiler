@@ -6,6 +6,7 @@ BIN_DIR = bin
 
 CC_TARGET = $(BIN_DIR)/cc45
 CA_TARGET = $(BIN_DIR)/ca45
+CP_TARGET = $(BIN_DIR)/cp45
 
 CC_SOURCES = $(SRC_DIR)/cc45_main.cpp
 CA_SOURCES = $(SRC_DIR)/ca45_main.cpp
@@ -19,11 +20,15 @@ CA_OBJECTS = $(OBJ_DIR)/ca45_main.o $(OBJ_DIR)/AssemblerLexer.o $(OBJ_DIR)/Assem
 
 .PHONY: all clean test
 
-all: $(CC_TARGET) $(CA_TARGET)
+all: $(CC_TARGET) $(CA_TARGET) $(CP_TARGET)
 
 $(CC_TARGET): $(CC_OBJECTS)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $^
+
+$(CP_TARGET): $(CC_TARGET)
+	@mkdir -p $(BIN_DIR)
+	ln -sf cc45 $(CP_TARGET)
 
 $(CA_TARGET): $(CA_OBJECTS)
 	@mkdir -p $(BIN_DIR)

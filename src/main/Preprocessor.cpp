@@ -10,6 +10,7 @@ namespace fs = std::filesystem;
 #include <iostream>
 #include <ctime>
 #include <iomanip>
+#include <functional>
 
 Preprocessor::Preprocessor(bool isCompiler) : isCompiler(isCompiler) {
     std::time_t t = std::time(nullptr);
@@ -22,6 +23,175 @@ Preprocessor::Preprocessor(bool isCompiler) : isCompiler(isCompiler) {
     std::stringstream timeSS;
     timeSS << "\"" << std::put_time(&tm, "%H:%M:%S") << "\"";
     preprocTime = timeSS.str();
+
+    // Standard predefined macros
+    symbols["__STDC__"] = "1";
+    symbols["__STDC_VERSION__"] = "201112L";
+    symbols["__STDC_HOSTED__"] = "0"; // Cross-compiler
+}
+
+// Simple recursive descent evaluator for #if expressions
+struct ExprPath {
+    std::string s;
+    size_t pos = 0;
+    
+    void skipWhitespace() {
+        while (pos < s.length() && std::isspace((unsigned char)s[pos])) pos++;
+    }
+    
+    std::string nextToken() {
+        skipWhitespace();
+        if (pos >= s.length()) return "";
+        if (std::isalpha((unsigned char)s[pos]) || s[pos] == '_') {
+            size_t start = pos;
+            while (pos < s.length() && (std::isalnum((unsigned char)s[pos]) || s[pos] == '_')) pos++;
+            return s.substr(start, pos - start);
+        }
+        if (std::isdigit((unsigned char)s[pos])) {
+            size_t start = pos;
+            while (pos < s.length() && std::isdigit((unsigned char)s[pos])) pos++;
+            return s.substr(start, pos - start);
+        }
+        if (pos + 1 < s.length()) {
+            std::string op2 = s.substr(pos, 2);
+            if (op2 == "&&" || op2 == "||" || op2 == "==" || op2 == "!=" || op2 == "<=" || op2 == ">=") {
+                pos += 2;
+                return op2;
+            }
+        }
+        return std::string(1, s[pos++]);
+    }
+    
+    std::string peekToken() {
+        size_t oldPos = pos;
+        std::string t = nextToken();
+        pos = oldPos;
+        return t;
+    }
+};
+
+long Preprocessor::evaluateExpression(const std::string& expr) {
+    // 1. Handle defined(SYMBOL)
+    std::string e = expr;
+    auto replaceDefined = [&](std::string& s) {
+        size_t pos = 0;
+        while ((pos = s.find("defined", pos)) != std::string::npos) {
+            // Ensure whole word
+            bool bBefore = (pos == 0 || (!std::isalnum((unsigned char)s[pos-1]) && s[pos-1] != '_'));
+            bool bAfter = (pos + 7 == s.length() || (!std::isalnum((unsigned char)s[pos+7]) && s[pos+7] != '_'));
+            if (!bBefore || !bAfter) { pos += 7; continue; }
+            
+            size_t startPos = pos;
+            pos += 7;
+            while (pos < s.length() && std::isspace((unsigned char)s[pos])) pos++;
+            
+            bool hasParen = false;
+            if (pos < s.length() && s[pos] == '(') {
+                hasParen = true;
+                pos++;
+                while (pos < s.length() && std::isspace((unsigned char)s[pos])) pos++;
+            }
+            
+            size_t symStart = pos;
+            while (pos < s.length() && (std::isalnum((unsigned char)s[pos]) || s[pos] == '_')) pos++;
+            std::string sym = s.substr(symStart, pos - symStart);
+            
+            if (hasParen) {
+                while (pos < s.length() && std::isspace((unsigned char)s[pos])) pos++;
+                if (pos < s.length() && s[pos] == ')') pos++;
+            }
+            
+            std::string val = (symbols.find(sym) != symbols.end()) ? "1" : "0";
+            s.replace(startPos, pos - startPos, val);
+            pos = startPos + val.length();
+        }
+    };
+    replaceDefined(e);
+
+    // 2. Simple Recursive Descent (Logical OR -> AND -> Relational -> Additive -> Multiplicative -> Unary -> Primary)
+    ExprPath p{e};
+    
+    std::function<long()> parseOr;
+    std::function<long()> parseAnd;
+    std::function<long()> parseRel;
+    std::function<long()> parseAdd;
+    std::function<long()> parseMul;
+    std::function<long()> parseUnary;
+    std::function<long()> parsePrimary;
+
+    parsePrimary = [&]() -> long {
+        std::string t = p.nextToken();
+        if (t == "(") {
+            long val = parseOr();
+            if (p.nextToken() != ")") {} // Error
+            return val;
+        }
+        if (isdigit((unsigned char)t[0])) return std::stol(t, nullptr, 0);
+        // Symbols not in defined() but in #if are treated as 0
+        if (symbols.count(t)) {
+            try { return std::stol(symbols[t], nullptr, 0); } catch(...) { return 0; }
+        }
+        return 0;
+    };
+
+    parseUnary = [&]() -> long {
+        std::string t = p.peekToken();
+        if (t == "!") { p.nextToken(); return !parseUnary(); }
+        if (t == "-") { p.nextToken(); return -parseUnary(); }
+        if (t == "+") { p.nextToken(); return parseUnary(); }
+        return parsePrimary();
+    };
+
+    parseMul = [&]() -> long {
+        long left = parseUnary();
+        while (true) {
+            std::string t = p.peekToken();
+            if (t == "*") { p.nextToken(); left *= parseUnary(); }
+            else if (t == "/") { p.nextToken(); long right = parseUnary(); left = right ? left / right : 0; }
+            else break;
+        }
+        return left;
+    };
+
+    parseAdd = [&]() -> long {
+        long left = parseMul();
+        while (true) {
+            std::string t = p.peekToken();
+            if (t == "+") { p.nextToken(); left += parseMul(); }
+            else if (t == "-") { p.nextToken(); left -= parseMul(); }
+            else break;
+        }
+        return left;
+    };
+
+    parseRel = [&]() -> long {
+        long left = parseAdd();
+        while (true) {
+            std::string t = p.peekToken();
+            if (t == "==") { p.nextToken(); left = (left == parseAdd()); }
+            else if (t == "!=") { p.nextToken(); left = (left != parseAdd()); }
+            else if (t == "<") { p.nextToken(); left = (left < parseAdd()); }
+            else if (t == ">") { p.nextToken(); left = (left > parseAdd()); }
+            else if (t == "<=") { p.nextToken(); left = (left <= parseAdd()); }
+            else if (t == ">=") { p.nextToken(); left = (left >= parseAdd()); }
+            else break;
+        }
+        return left;
+    };
+
+    parseAnd = [&]() -> long {
+        long left = parseRel();
+        while (p.peekToken() == "&&") { p.nextToken(); left = (parseRel() && left); }
+        return left;
+    };
+
+    parseOr = [&]() -> long {
+        long left = parseAnd();
+        while (p.peekToken() == "||") { p.nextToken(); left = (parseAnd() || left); }
+        return left;
+    };
+
+    return parseOr();
 }
 
 std::string Preprocessor::process(const std::string& source, 
@@ -71,6 +241,61 @@ std::string Preprocessor::findIncludeFile(const std::string& fileName, const std
     return "";
 }
 
+std::string Preprocessor::stripComments(const std::string& line, bool& inBlockComment) {
+    std::string result;
+    bool inString = false;
+    bool inChar = false;
+    
+    for (size_t i = 0; i < line.length(); ++i) {
+        if (inBlockComment) {
+            if (i + 1 < line.length() && line[i] == '*' && line[i+1] == '/') {
+                inBlockComment = false;
+                i++;
+                result += ' ';
+            }
+            continue;
+        }
+        if (inString) {
+            result += line[i];
+            if (line[i] == '\\' && i + 1 < line.length()) {
+                result += line[i+1];
+                i++;
+            } else if (line[i] == '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (inChar) {
+            result += line[i];
+            if (line[i] == '\\' && i + 1 < line.length()) {
+                result += line[i+1];
+                i++;
+            } else if (line[i] == '\'') {
+                inChar = false;
+            }
+            continue;
+        }
+        
+        if (i + 1 < line.length() && line[i] == '/' && line[i+1] == '*') {
+            inBlockComment = true;
+            i++;
+            result += ' ';
+        } else if (i + 1 < line.length() && line[i] == '/' && line[i+1] == '/') {
+            result += ' ';
+            break;
+        } else if (line[i] == '"') {
+            inString = true;
+            result += '"';
+        } else if (line[i] == '\'') {
+            inChar = true;
+            result += '\'';
+        } else {
+            result += line[i];
+        }
+    }
+    return result;
+}
+
 std::string Preprocessor::processInternal(const std::string& source, const std::string& currentFile, int depth) {
     if (depth > 16) {
         throw std::runtime_error("Maximum include depth exceeded (circular dependency?)");
@@ -81,10 +306,26 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
     std::string line;
     int lineNum = 0;
     std::string reportedFile = currentFile;
+    std::string accumulatedLine = "";
+    bool inBlockComment = false;
 
     while (std::getline(input, line)) {
         lineNum++;
-        std::string trimmed = trim(line);
+        
+        // Handle line continuation (Phase 2)
+        std::string trimmedRaw = trim(line);
+        if (!trimmedRaw.empty() && trimmedRaw.back() == '\\') {
+            accumulatedLine += line.substr(0, line.find_last_of('\\'));
+            output << "\n"; // Maintain line counts
+            continue;
+        }
+        
+        std::string currentLineRaw = accumulatedLine + line;
+        accumulatedLine = "";
+        
+        // Strip comments (Phase 3)
+        std::string currentLine = stripComments(currentLineRaw, inBlockComment);
+        std::string trimmed = trim(currentLine);
         
         // Handle compiler pass-through #!
         if (isCompiler && trimmed.substr(0, 2) == "#!") {
@@ -132,6 +373,13 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
                 bool parentActive = isConditionTrue();
                 stateStack.push_back({parentActive && !exists, !exists, false});
                 output << "\n";
+            } else if (cmd == "#if") {
+                std::string expr;
+                std::getline(ss, expr);
+                bool val = evaluateExpression(expr);
+                bool parentActive = isConditionTrue();
+                stateStack.push_back({parentActive && val, val, false});
+                output << "\n";
             } else if (cmd == "#elif") {
                 if (stateStack.size() <= 1) throw std::runtime_error("Unexpected #elif");
                 State& top = stateStack.back();
@@ -142,11 +390,11 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
                     if (!stateStack[i].active) { parentActive = false; break; }
                 }
 
-                std::string name;
-                ss >> name;
-                bool exists = (symbols.find(name) != symbols.end());
+                std::string expr;
+                std::getline(ss, expr);
+                bool val = evaluateExpression(expr);
 
-                if (!top.hasSeenTrueBranch && parentActive && exists) {
+                if (!top.hasSeenTrueBranch && parentActive && val) {
                     top.active = true;
                     top.hasSeenTrueBranch = true;
                 } else {
@@ -174,15 +422,15 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
                 if (isConditionTrue()) {
                     std::string fileName;
                     // Expect "filename" or <filename>
-                    size_t firstQuote = line.find('"');
-                    size_t lastQuote = line.rfind('"');
+                    size_t firstQuote = currentLine.find('"');
+                    size_t lastQuote = currentLine.rfind('"');
                     if (firstQuote != std::string::npos && lastQuote != std::string::npos && firstQuote < lastQuote) {
-                        fileName = line.substr(firstQuote + 1, lastQuote - firstQuote - 1);
+                        fileName = currentLine.substr(firstQuote + 1, lastQuote - firstQuote - 1);
                     } else {
-                        size_t firstAngle = line.find('<');
-                        size_t lastAngle = line.rfind('>');
+                        size_t firstAngle = currentLine.find('<');
+                        size_t lastAngle = currentLine.rfind('>');
                         if (firstAngle != std::string::npos && lastAngle != std::string::npos && firstAngle < lastAngle) {
-                            fileName = line.substr(firstAngle + 1, lastAngle - firstAngle - 1);
+                            fileName = currentLine.substr(firstAngle + 1, lastAngle - firstAngle - 1);
                         }
                     }
 
@@ -191,12 +439,7 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
                     std::string fullPath = findIncludeFile(fileName, getDirectory(currentFile));
                     if (fullPath.empty()) throw std::runtime_error("Could not find include file: " + fileName);
 
-                    // To prevent infinite recursion of same file at different levels
-                    if (includedFiles.count(fullPath)) {
-                         // Some preprocessors allow this if it's not a direct recursion, but here we'll be strict
-                         // Actually, common practice is to use include guards. 
-                         // Let's just allow it and let the depth check handle infinite recursion.
-                    }
+                    if (includedFiles.count(fullPath)) {}
                     
                     std::ifstream includeFile(fullPath);
                     if (!includeFile.is_open()) throw std::runtime_error("Failed to open include file: " + fullPath);
@@ -236,22 +479,29 @@ std::string Preprocessor::processInternal(const std::string& source, const std::
                 }
                 output << "\n";
             } else if (cmd == "#pragma") {
-                // Pragmas are implementation-defined, we'll just ignore for now
                 output << "\n";
             } else {
-                // Unknown directive, if active just pass it through or ignore?
-                // For now, ignore if it starts with # but isn't one of ours
                 output << "\n";
             }
         } else {
             if (isConditionTrue()) {
-                std::string processed = line;
+                std::string processed = currentLine;
                 
-                // Expand standard predefined macros
                 auto replaceAll = [&](std::string& s, const std::string& from, const std::string& to) {
                     size_t pos = 0;
+                    bool inStr = false;
                     while ((pos = s.find(from, pos)) != std::string::npos) {
-                        // Ensure it's a whole word to avoid replacing parts of other tokens
+                        // Semantic awareness: Check if we are inside a string literal
+                        inStr = false;
+                        for (size_t k = 0; k < pos; ++k) {
+                            if (s[k] == '"' && (k == 0 || s[k-1] != '\\')) inStr = !inStr;
+                        }
+                        
+                        if (inStr) {
+                            pos += from.length();
+                            continue;
+                        }
+
                         bool boundaryBefore = (pos == 0 || (!std::isalnum((unsigned char)s[pos-1]) && s[pos-1] != '_'));
                         bool boundaryAfter = (pos + from.length() == s.length() || (!std::isalnum((unsigned char)s[pos + from.length()]) && s[pos + from.length()] != '_'));
                         

@@ -4,10 +4,19 @@ All notable changes to the cc45 / ca45 suite will be documented in this file.
 ## [Unreleased] - 2026-04-18
 
 ### Added
-- **Preprocessor**:
-    - Added support for `#elif` directive for multi-branch conditional compilation.
+- **Compiler (cc45)**:
+    - Added `-E` flag to run only the preprocessor and output to `stdout` or a file specified by `-o`.
+    - Improved multi-call support: if the binary is invoked as `cp45`, it automatically runs in preprocessing-only mode.
+- **Preprocessor (cp45)**:
+    - Added `bin/cp45` as a new build target (symlink to `cc45`).
+    - Defaults to `stdout` output when running in standalone mode.
+    - Added support for `#if` and `#elif` expression evaluation, including `defined()`, arithmetic, and logical operators.
+    - Added support for line continuation using the backslash (`\`) character.
+    - Added support for standard predefined macros: `__STDC__`, `__STDC_VERSION__`, and `__STDC_HOSTED__`.
     - Added support for `#undef`, `#line`, `#error`, `#warning`, and `#pragma` directives.
     - Implemented expansion of standard predefined macros: `__FILE__`, `__LINE__`, `__DATE__`, and `__TIME__`.
+- **Documentation**:
+    - Renamed preprocessor documentation to `doc/cp45.md` to align with toolchain naming conventions.
 - **Assembler (ca45)**:
 ...
     - Implemented a suite of high-level simulated opcodes:

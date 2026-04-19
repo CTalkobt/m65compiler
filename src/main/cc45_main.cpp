@@ -183,8 +183,14 @@ public:
 };
 
 int main(int argc, char** argv) {
+    std::string programName = argv[0];
+    size_t lastSlash = programName.find_last_of("/\\");
+    if (lastSlash != std::string::npos) programName = programName.substr(lastSlash + 1);
+
     std::string input_file;
-    std::string output_file = "out.s";
+    bool preprocessOnly = (programName == "cp45");
+    std::string output_file = "";
+    bool outputFileSet = false;
     bool assemble = false;
     bool verbose = false;
     uint32_t zeroPageStart = 0x02;
@@ -198,6 +204,7 @@ int main(int argc, char** argv) {
         if (arg == "-?" || arg == "--help") {
             std::cout << "Usage: cc45 [options] <input_file.c>" << std::endl;
             std::cout << "Options:" << std::endl;
+            std::cout << "  -E             Run only the preprocessor (output to stdout or -o file)" << std::endl;
             std::cout << "  -c             Assemble the output with ca45" << std::endl;
             std::cout << "  -o <filename>  Specify output assembly filename (default: out.s)" << std::endl;
             std::cout << "  -v             Enable verbose output" << std::endl;
@@ -207,8 +214,11 @@ int main(int argc, char** argv) {
             return 0;
         } else if (arg == "-c") {
             assemble = true;
+        } else if (arg == "-E") {
+            preprocessOnly = true;
         } else if (arg == "-o" && i + 1 < argc) {
             output_file = argv[++i];
+            outputFileSet = true;
         } else if (arg == "-v") {
             verbose = true;
         } else if (arg.substr(0, 2) == "-I") {
@@ -267,6 +277,23 @@ int main(int argc, char** argv) {
         std::cerr << "Preprocessor Error: " << e.what() << std::endl;
         return 1;
     }
+
+    if (preprocessOnly) {
+        if (outputFileSet) {
+            std::ofstream out(output_file);
+            if (!out.is_open()) {
+                std::cerr << "Failed to open output file: " << output_file << std::endl;
+                return 1;
+            }
+            out << source;
+            out.close();
+        } else {
+            std::cout << source;
+        }
+        return 0;
+    }
+
+    if (!outputFileSet) output_file = "out.s";
 
     std::vector<std::string> sourceLines;
     {

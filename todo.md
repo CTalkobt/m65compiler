@@ -32,8 +32,10 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **Function Specifiers**: Support `_Noreturn` (enabling optimization to skip return opcodes).
 - [ ] **Alignment**: Implement `_Alignas` and `_Alignof` to manage data alignment.
 - [X] **Inline Assembly**: Support `asm("...")` or `__asm__("...")` for direct assembly insertion.
-- [X] **Preprocessor**: Support `#include`, `#define`, `#undef`, `#ifdef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`.
-- [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`.
+- [X] **Preprocessor**: Support `#include`, `#define`, `#undef`, `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`.
+- [X] **Expression Evaluation**: Support `defined()`, arithmetic, and logic in `#if` / `#elif`.
+- [X] **Line Continuation**: Support `\` at end of line.
+- [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`.
 
 ### 2. Type System Enhancements
 - [X] **Structures**: Support `struct` definitions, members, and dot/arrow operators.
@@ -85,5 +87,5 @@ Steps required to bring the C compiler closer to C11 standards.
 - [W] **Addressing Modes**: Support Absolute Indirect Indexed `($1234),y` (Not supported by 45GS02 hardware).
 - [ ] **Native Quad Mode**: Add full native support for `adcq`, `sbcq` etc. (currently prefixed).
 - [ ] **Macros**: Implement `.macro` system.
-- [X] **Preprocessor**: Implement `#include`, `#define`, `#undef`, `#ifdef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`.
+- [X] **Preprocessor**: Implement `#include`, `#define`, `#undef`, `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`.
 - [ ] **Standard Library**: Add built-in functions like `sin()`, `cos()`, `round()`.

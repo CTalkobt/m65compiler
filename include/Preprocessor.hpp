@@ -35,6 +35,8 @@ private:
 
     std::string processInternal(const std::string& source, const std::string& currentFile, int depth);
     bool isConditionTrue();
+    long evaluateExpression(const std::string& expr);
+    std::string stripComments(const std::string& line, bool& inBlockComment);
     std::string getDirectory(const std::string& filePath);
     std::string findIncludeFile(const std::string& fileName, const std::string& currentDir);
     std::string trim(const std::string& s);
