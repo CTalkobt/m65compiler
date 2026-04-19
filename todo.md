@@ -41,6 +41,16 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Line Continuation**: Support `\` at end of line.
 - [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`.
 
+## Roadmap - Linker & Libraries (ln45)
+- [ ] **Object Format**: Define the `.o45` relocatable object format as an extension of the `.o65` specification.
+    - [ ] **Extended Header**: Support 45GS02 architecture bits and 32-bit width flags.
+    - [ ] **Linear Relocations**: Support for patching linear 28-bit addresses and 32-bit data types.
+- [ ] **Sections**: Update `ca45` to support named segments (`.text`, `.data`, `.bss`).
+- [ ] **External Symbols**: Implement `.global` and `.extern` in the assembler.
+- [ ] **Relocations**: Support standard (`WORD`, `LOW`, `HIGH`) and linear (`LINEAR24`, `LINEAR32`) relocations.
+- [ ] **Linker Tool**: Build the `ln45` binary to aggregate objects and resolve symbols.
+- [ ] **Archiver**: Build `ar45` to create static `.lib` archives.
+
 ### 2. Type System Enhancements
 - [X] **Structures**: Support `struct` definitions, members, and dot/arrow operators.
 - [X] **Pointers**: Multi-level indirection, dereferencing (`*`), and address-of (`&`).
