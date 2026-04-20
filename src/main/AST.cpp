@@ -16,6 +16,7 @@ void WhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void DoWhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ForStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AsmStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void StaticAssert::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void StructDefinition::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void CompoundStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }

@@ -213,6 +213,8 @@ public:
         lastStmt = copyPos(std::make_unique<AsmStatement>(node.code), node);
     }
 
+    void visit(StaticAssert& node) override;
+
     void visit(StructDefinition& node) override {
         auto def = copyPos(std::make_unique<StructDefinition>(node.name), node);
         def->members = node.members;

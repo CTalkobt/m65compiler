@@ -181,7 +181,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
                  if (size == 2) {
                     std::stringstream ss;
                     ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)(int16_t)lit->value;
-                    emit("phw " + ss.str());
+                    emit("phw.imm " + ss.str());
                 } else {
                     emitter->lda_imm(lit->value & 0xFF);
                     emitter->pha();
@@ -196,7 +196,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
             }
         } else {
             // No initializer for volatile, still allocate space.
-            if (size == 2) emit("phw #$0000");
+            if (size == 2) emit("phw.imm #$0000");
             else { emitter->lda_imm(0); emitter->pha(); }
         }
     } else { // Not volatile, apply dead store elimination heuristic.
@@ -215,7 +215,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
                 if (size == 2) {
                     std::stringstream ss;
                     ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)(int16_t)lit->value;
-                    emit("phw " + ss.str());
+                    emit("phw.imm " + ss.str());
                 } else {
                     emitter->lda_imm(lit->value & 0xFF);
                     emitter->pha();
@@ -232,13 +232,13 @@ void CodeGenerator::visit(VariableDeclaration& node) {
         } else {
             std::cerr << "  Non-volatile, no initializer." << std::endl;
             if (size >= 9) {
-                emit("phw #$0000"); // placeholder for first word
-                for (int i = 0; i < (size - 2) / 2; ++i) emit("phw #$0000");
+                emit("phw.imm #$0000"); // placeholder for first word
+                for (int i = 0; i < (size - 2) / 2; ++i) emit("phw.imm #$0000");
                 if (size % 2) { emit("lda #0"); emit("pha"); }
                 emit("lda #0");
                 emit("FILL.SP " + lName + ", #" + std::to_string(size));
             } else {
-                if (size == 2) emit("phw #$0000");
+                if (size == 2) emit("phw.imm #$0000");
                 else { emitter->lda_imm(0); emitter->pha(); }
             }
         }
@@ -752,7 +752,7 @@ void CodeGenerator::visit(FunctionCall& node) {
             VarInfo vi = variableTypes[rName];
             bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
             if (is16Bit) {
-                emit("phw " + rName + ", s");
+                emit("phw.s " + rName + ", s");
             } else {
                 arg->accept(*this);
                 emitter->pha();
@@ -1228,6 +1228,11 @@ void CodeGenerator::visit(AsmStatement& node) {
     invalidateRegs();
 }
 
+void CodeGenerator::visit(StaticAssert& /*node*/) {
+    // Static assertions are handled during constant folding/validation.
+    // They don't generate any code.
+}
+
 void CodeGenerator::invalidateRegs() {
     regA.known = false; regA.isVariable = false; regA.varName = ""; regA.varOffset = 0; regA.value = 0;
     regX.known = false; regX.isVariable = false; regX.varName = ""; regX.varOffset = 0; regX.value = 0;
@@ -1410,6 +1415,7 @@ public:
         node.body->accept(*this);
     }
     void visit(AsmStatement& /*node*/) override {}
+    void visit(StaticAssert& /*node*/) override {}
     void visit(StructDefinition& /*node*/) override {}
     void visit(CompoundStatement& node) override {
         for (auto& stmt : node.statements) stmt->accept(*this);

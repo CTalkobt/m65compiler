@@ -7,9 +7,8 @@
 uint32_t ConstantNode::getValue(AssemblerParser*) const { return value; }
 bool ConstantNode::isConstant(AssemblerParser*) const { return true; }
 bool ConstantNode::is16Bit(AssemblerParser*) const { return value > 0xFF; }
-void ConstantNode::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string&) {
+void ConstantNode::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string&) {
     if (!parser) return;
-    M65Emitter e(binary, parser->getZPStart());
     e.lda_imm(value & 0xFF);
     if (width >= 16) e.ldx_imm((value >> 8) & 0xFF);
 }
@@ -18,9 +17,8 @@ void ConstantNode::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, i
 uint32_t RegisterNode::getValue(AssemblerParser*) const { return 0; }
 bool RegisterNode::isConstant(AssemblerParser*) const { return false; }
 bool RegisterNode::is16Bit(AssemblerParser*) const { return name.size() > 2; }
-void RegisterNode::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string&) {
+void RegisterNode::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string&) {
     if (!parser) return;
-    M65Emitter e(binary, parser->getZPStart());
     if (width <= 8) {
         if (name == ".X") e.txa();
         else if (name == ".Y") e.tya();
@@ -42,9 +40,8 @@ void RegisterNode::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, i
 uint32_t FlagNode::getValue(AssemblerParser*) const { return 0; }
 bool FlagNode::isConstant(AssemblerParser*) const { return false; }
 bool FlagNode::is16Bit(AssemblerParser*) const { return false; }
-void FlagNode::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string&) {
+void FlagNode::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string&) {
     if (!parser) return;
-    M65Emitter e(binary, parser->getZPStart());
     if (flag == 'C') { e.lda_imm(0); e.adc_imm(0); }
     else {
         int8_t branchOp = 0;
@@ -79,11 +76,10 @@ bool VariableNode::is16Bit(AssemblerParser* parser) const {
     Symbol* sym = parser->resolveSymbol(name, scopePrefix);
     return sym ? sym->size > 1 : true;
 }
-void VariableNode::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string&) {
+void VariableNode::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string&) {
     if (!parser) return;
     Symbol* sym = parser->resolveSymbol(name, scopePrefix);
     if (!sym) return;
-    M65Emitter e(binary, parser->getZPStart());
     if (!sym->isAddress) {
         e.lda_imm(sym->value & 0xFF);
         if (width >= 16) e.ldx_imm((sym->value >> 8) & 0xFF);
@@ -114,10 +110,9 @@ uint32_t UnaryExpr::getValue(AssemblerParser* parser) const {
 }
 bool UnaryExpr::isConstant(AssemblerParser* parser) const { return operand ? operand->isConstant(parser) : true; }
 bool UnaryExpr::is16Bit(AssemblerParser* parser) const { return operand ? operand->is16Bit(parser) : false; }
-void UnaryExpr::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) {
+void UnaryExpr::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) {
     if (!parser || !operand) return;
-    operand->emit(binary, parser, width, target);
-    M65Emitter e(binary, parser->getZPStart());
+    operand->emit(e, parser, width, target);
     if (op == "!") {
         e.bne(0x05);
         if (width >= 16) { e.txa(); e.bne(0x02); }
@@ -143,10 +138,9 @@ void UnaryExpr::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int 
 uint32_t DereferenceNode::getValue(AssemblerParser*) const { return 0; }
 bool DereferenceNode::isConstant(AssemblerParser*) const { return false; }
 bool DereferenceNode::is16Bit(AssemblerParser*) const { return true; }
-void DereferenceNode::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string&) {
+void DereferenceNode::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string&) {
     if (!parser || !address) return;
-    M65Emitter e(binary, parser->getZPStart());
-    address->emit(binary, parser, 16, ".AX");
+    address->emit(e, parser, 16, ".AX");
     e.sta_s(0);
     e.stx_s(1);
     e.lda_ind_zs(0, isFlat);
@@ -190,18 +184,17 @@ bool BinaryExpr::isConstant(AssemblerParser* parser) const {
 bool BinaryExpr::is16Bit(AssemblerParser* parser) const {
     return getValue(parser) > 0xFF || (left && left->is16Bit(parser)) || (right && right->is16Bit(parser));
 }
-void BinaryExpr::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) {
+void BinaryExpr::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) {
     if (!parser || !left || !right) return;
-    M65Emitter e(binary, parser->getZPStart());
     int bytes = width / 8;
     if (bytes < 1) bytes = 1;
     if (bytes > 4) bytes = 4;
     if (op == "*" || op == "/" || op == "+" || op == "-") {
-        left->emit(binary, parser, width, ".A");
+        left->emit(e, parser, width, ".A");
         uint8_t base = (op == "/") ? 0x60 : 0x70;
         e.sta_abs(0xD700 + base);
         if (bytes >= 2) e.stx_abs(0xD701 + base);
-        right->emit(binary, parser, width, ".A");
+        right->emit(e, parser, width, ".A");
         e.sta_abs(0xD700 + base + 4);
         if (bytes >= 2) e.stx_abs(0xD701 + base + 4);
         if (op == "*") {
@@ -232,9 +225,9 @@ void BinaryExpr::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int
             if (bytes >= 2) e.ldx_abs(0xD771);
         }
     } else if (op == "&" || op == "|" || op == "^") {
-        left->emit(binary, parser, width, ".A");
+        left->emit(e, parser, width, ".A");
         e.push_ax();
-        right->emit(binary, parser, width, ".A");
+        right->emit(e, parser, width, ".A");
         e.sta_s(0);
         if (width >= 16) e.stx_s(1);
         e.pop_ax();
@@ -251,9 +244,9 @@ void BinaryExpr::emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int
             e.pla();
         }
     } else if (op == "<<" || op == ">>") {
-        left->emit(binary, parser, width, ".A");
+        left->emit(e, parser, width, ".A");
         e.push_ax();
-        right->emit(binary, parser, width, ".A");
+        right->emit(e, parser, width, ".A");
         e.sta_s(0);
         e.pop_ax();
         e.lda_s(0);

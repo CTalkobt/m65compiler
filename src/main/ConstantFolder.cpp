@@ -42,3 +42,22 @@ void ConstantFolder::visit(TranslationUnit& node) {
         decl->accept(*this);
     }
 }
+
+void ConstantFolder::visit(StaticAssert& node) {
+    auto condition = fold(std::move(node.condition));
+    auto* lit = dynamic_cast<IntegerLiteral*>(condition.get());
+    if (lit) {
+        if (lit->value == 0) {
+            throw std::runtime_error("Static assertion failed at " + std::to_string(node.line) + ":" + std::to_string(node.column) + ": " + node.message);
+        }
+    } else {
+        // If it's not a literal after folding, it might not be a constant expression
+        // For C11 _Static_assert, it must be a constant expression.
+        // We could either warn or error here. Standards say it must be a constant expression.
+        throw std::runtime_error("Static assertion condition is not a constant expression at " + std::to_string(node.line) + ":" + std::to_string(node.column));
+    }
+    // Static assert doesn't produce any code, so we don't set lastStmt to it.
+    // However, the folder expects a statement if it's folding one.
+    // If we return nullptr, it might be removed from the AST, which is fine for StaticAssert.
+    lastStmt = nullptr;
+}

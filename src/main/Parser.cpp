@@ -49,6 +49,8 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             expect(TokenType::CLOSE_PAREN, "Expected ')' after asm code");
             expect(TokenType::SEMICOLON, "Expected ';'");
             unit->topLevelDecls.push_back(setPos(std::make_unique<AsmStatement>(code), tokens[pos-5]));
+        } else if (peek().type == TokenType::STATIC_ASSERT) {
+            unit->topLevelDecls.push_back(parseStaticAssert());
         } else {
             unit->topLevelDecls.push_back(parseFunctionDeclaration());
         }
@@ -228,6 +230,10 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return setPos(std::make_unique<AsmStatement>(code), startToken);
     }
 
+    if (peek().type == TokenType::STATIC_ASSERT) {
+        return parseStaticAssert();
+    }
+
     if (peek().type == TokenType::OPEN_BRACE) {
         return parseCompoundStatement();
     }
@@ -236,6 +242,17 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     auto expr = parseExpression();
     expect(TokenType::SEMICOLON, "Expected ';'");
     return setPos(std::make_unique<ExpressionStatement>(std::move(expr)), startToken);
+}
+
+std::unique_ptr<StaticAssert> Parser::parseStaticAssert() {
+    const Token& startToken = expect(TokenType::STATIC_ASSERT, "Expected '_Static_assert'");
+    expect(TokenType::OPEN_PAREN, "Expected '(' after '_Static_assert'");
+    auto condition = parseExpression();
+    expect(TokenType::COMMA, "Expected ',' after condition in '_Static_assert'");
+    std::string message = expect(TokenType::STRING_LITERAL, "Expected string literal for '_Static_assert' message").value;
+    expect(TokenType::CLOSE_PAREN, "Expected ')' after '_Static_assert'");
+    expect(TokenType::SEMICOLON, "Expected ';'");
+    return setPos(std::make_unique<StaticAssert>(std::move(condition), message), startToken);
 }
 
 std::unique_ptr<StructDefinition> Parser::parseStructDefinition() {

@@ -7,6 +7,7 @@
 #include "AssemblerToken.hpp"
 
 class AssemblerParser;
+class M65Emitter;
 struct Symbol;
 
 struct ExprAST {
@@ -14,7 +15,7 @@ struct ExprAST {
     virtual uint32_t getValue(AssemblerParser* parser) const = 0;
     virtual bool isConstant(AssemblerParser* parser) const = 0;
     virtual bool is16Bit(AssemblerParser* parser) const = 0;
-    virtual void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) = 0;
+    virtual void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) = 0;
 };
 
 struct ConstantNode : public ExprAST {
@@ -23,7 +24,7 @@ struct ConstantNode : public ExprAST {
     uint32_t getValue(AssemblerParser*) const override;
     bool isConstant(AssemblerParser*) const override;
     bool is16Bit(AssemblerParser*) const override;
-    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override;
+    void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) override;
 };
 
 struct RegisterNode : public ExprAST {
@@ -32,7 +33,7 @@ struct RegisterNode : public ExprAST {
     uint32_t getValue(AssemblerParser*) const override;
     bool isConstant(AssemblerParser*) const override;
     bool is16Bit(AssemblerParser*) const override;
-    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override;
+    void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) override;
 };
 
 struct FlagNode : public ExprAST {
@@ -41,7 +42,7 @@ struct FlagNode : public ExprAST {
     uint32_t getValue(AssemblerParser*) const override;
     bool isConstant(AssemblerParser*) const override;
     bool is16Bit(AssemblerParser*) const override;
-    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override;
+    void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) override;
 };
 
 struct VariableNode : public ExprAST {
@@ -51,7 +52,7 @@ struct VariableNode : public ExprAST {
     uint32_t getValue(AssemblerParser* parser) const override;
     bool isConstant(AssemblerParser* parser) const override;
     bool is16Bit(AssemblerParser* parser) const override;
-    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override;
+    void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) override;
 };
 
 struct UnaryExpr : public ExprAST {
@@ -61,7 +62,7 @@ struct UnaryExpr : public ExprAST {
     uint32_t getValue(AssemblerParser* parser) const override;
     bool isConstant(AssemblerParser* parser) const override;
     bool is16Bit(AssemblerParser* parser) const override;
-    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override;
+    void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) override;
 };
 
 struct DereferenceNode : public ExprAST {
@@ -71,7 +72,7 @@ struct DereferenceNode : public ExprAST {
     uint32_t getValue(AssemblerParser*) const override;
     bool isConstant(AssemblerParser*) const override;
     bool is16Bit(AssemblerParser*) const override;
-    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override;
+    void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) override;
 };
 
 struct BinaryExpr : public ExprAST {
@@ -81,7 +82,7 @@ struct BinaryExpr : public ExprAST {
     uint32_t getValue(AssemblerParser* parser) const override;
     bool isConstant(AssemblerParser* parser) const override;
     bool is16Bit(AssemblerParser* parser) const override;
-    void emit(std::vector<uint8_t>& binary, AssemblerParser* parser, int width, const std::string& target) override;
+    void emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string& target) override;
 };
 
 std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens, int& idx, std::map<std::string, Symbol>& symbolTable, const std::string& scopePrefix = "");

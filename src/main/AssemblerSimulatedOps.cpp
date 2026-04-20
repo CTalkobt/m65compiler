@@ -16,7 +16,7 @@ static uint32_t parseNumericLiteral(const std::string& literal) {
     }
 }
 
-void AssemblerSimulatedOps::emitExpressionCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitExpressionCode(AssemblerParser* parser, M65Emitter& e, const std::string& target, int tokenIndex, const std::string& scopePrefix) {
     int idx = tokenIndex;
     auto ast = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!ast) return;
@@ -29,17 +29,15 @@ void AssemblerSimulatedOps::emitExpressionCode(AssemblerParser* parser, std::vec
 
     if (ast->isConstant(parser)) {
         uint32_t val = ast->getValue(parser);
-        M65Emitter e(binary, parser->getZPStart());
         e.lda_imm(val & 0xFF);
         if (width >= 16) e.ldx_imm((val >> 8) & 0xFF);
     } else {
-        ast->emit(binary, parser, width, target);
+        ast->emit(e, parser, width, target);
     }
 
     if (target[0] != '.') {
         Symbol* sym = parser->resolveSymbol(target, scopePrefix);
         uint32_t addr = sym ? sym->value : parseNumericLiteral(target);
-        M65Emitter e(binary, parser->getZPStart());
         e.sta_abs(addr);
         if (width >= 16) {
             e.txa();
@@ -48,14 +46,13 @@ void AssemblerSimulatedOps::emitExpressionCode(AssemblerParser* parser, std::vec
     }
 }
 
-void AssemblerSimulatedOps::emitMulCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitMulCode(AssemblerParser* parser, M65Emitter& e, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
     int bytes = width / 8;
     if (bytes < 1) bytes = 1;
     if (bytes > 4) bytes = 4;
     int idx = tokenIndex;
     auto srcAst = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!srcAst) return;
-    M65Emitter e(binary, parser->getZPStart());
     auto storeMath = [&](uint8_t base, int i, const std::string& src) {
         if (src == ".A") e.sta_abs(0xD700 + base + i);
         else if (src == ".X") { e.txa(); e.sta_abs(0xD700 + base + i); }
@@ -102,14 +99,13 @@ void AssemblerSimulatedOps::emitMulCode(AssemblerParser* parser, std::vector<uin
     }
 }
 
-void AssemblerSimulatedOps::emitDivCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitDivCode(AssemblerParser* parser, M65Emitter& e, int width, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
     int bytes = width / 8;
     if (bytes < 1) bytes = 1;
     if (bytes > 4) bytes = 4;
     int idx = tokenIndex;
     auto srcAst = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!srcAst) return;
-    M65Emitter e(binary, parser->getZPStart());
     auto storeMath = [&](uint8_t base, int i, const std::string& src) {
         if (src == ".A") e.sta_abs(0xD700 + base + i);
         else if (src == ".X") { e.txa(); e.sta_abs(0xD700 + base + i); }
@@ -158,23 +154,20 @@ void AssemblerSimulatedOps::emitDivCode(AssemblerParser* parser, std::vector<uin
     }
 }
 
-void AssemblerSimulatedOps::emitStackIncDecCode(AssemblerParser* parser, std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitStackIncDecCode(AssemblerParser* parser, M65Emitter& e, bool isInc, int tokenIndex, const std::string& scopePrefix) {
     uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
-    M65Emitter e(binary, parser->getZPStart());
     e.tsx();
     if (isInc) { e.inc_abs_x(0x0101 + offset); e.bne(0x03); e.inc_abs_x(0x0101 + offset + 1); }
     else { e.lda_abs_x(0x0101 + offset); e.bne(0x03); e.dec_abs_x(0x0101 + offset + 1); e.dec_abs_x(0x0101 + offset); }
 }
 
-void AssemblerSimulatedOps::emitStackIncDec8Code(AssemblerParser* parser, std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitStackIncDec8Code(AssemblerParser* parser, M65Emitter& e, bool isInc, int tokenIndex, const std::string& scopePrefix) {
     uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
-    M65Emitter e(binary, parser->getZPStart());
     e.tsx();
     if (isInc) e.inc_abs_x(0x0101 + offset); else e.dec_abs_x(0x0101 + offset);
 }
 
-void AssemblerSimulatedOps::emitAddSub16Code(AssemblerParser* parser, std::vector<uint8_t>& binary, bool isAdd, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitAddSub16Code(AssemblerParser* parser, M65Emitter& e, bool isAdd, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
     int idx = tokenIndex;
     auto srcAst = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!srcAst) return;
@@ -203,8 +196,7 @@ void AssemblerSimulatedOps::emitAddSub16Code(AssemblerParser* parser, std::vecto
     } else throw std::runtime_error("Simulated ADD.16/SUB.16 only supports .AX, found " + DEST);
 }
 
-void AssemblerSimulatedOps::emitBitwise16Code(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& mnemonic, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitBitwise16Code(AssemblerParser* parser, M65Emitter& e, const std::string& mnemonic, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
     int idx = tokenIndex;
     auto srcAst = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!srcAst) return;
@@ -233,8 +225,7 @@ void AssemblerSimulatedOps::emitBitwise16Code(AssemblerParser* parser, std::vect
     } else throw std::runtime_error("Simulated bitwise 16-bit only supports .AX destination");
 }
 
-void AssemblerSimulatedOps::emitCPWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& src1, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitCPWCode(AssemblerParser* parser, M65Emitter& e, const std::string& src1, int tokenIndex, const std::string& scopePrefix) {
     int idx = tokenIndex;
     auto src2Ast = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!src2Ast) return;
@@ -256,8 +247,7 @@ void AssemblerSimulatedOps::emitCPWCode(AssemblerParser* parser, std::vector<uin
     } else throw std::runtime_error("Simulated CPW only supports .AX as first operand");
 }
 
-void AssemblerSimulatedOps::emitLDWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitLDWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
     int idx = tokenIndex;
     uint32_t offset = 0;
     bool isStack = forceStack ? (offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix), true) : parser->isStackRelativeOperand(tokenIndex, offset, scopePrefix);
@@ -283,8 +273,7 @@ void AssemblerSimulatedOps::emitLDWCode(AssemblerParser* parser, std::vector<uin
     } else throw std::runtime_error("Simulated LDW only supports .AX, .AY, .AZ");
 }
 
-void AssemblerSimulatedOps::emitSTWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& src, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitSTWCode(AssemblerParser* parser, M65Emitter& e, const std::string& src, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
     uint32_t offset = 0;
     bool isStack = forceStack ? (offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix), true) : parser->isStackRelativeOperand(tokenIndex, offset, scopePrefix);
     std::string SRC = src; if (!SRC.empty() && SRC[0] != '.' && SRC[0] != '#') SRC = "." + SRC;
@@ -314,8 +303,7 @@ void AssemblerSimulatedOps::emitSTWCode(AssemblerParser* parser, std::vector<uin
     } else throw std::runtime_error("Simulated STW only supports .AX, .AY, .AZ");
 }
 
-void AssemblerSimulatedOps::emitSwapCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& r1, int tokenIndex, const std::string&) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitSwapCode(AssemblerParser* parser, M65Emitter& e, const std::string& r1, int tokenIndex, const std::string&) {
     std::string r2 = parser->tokens[tokenIndex].value; if (!r2.empty() && r2[0] != '.') r2 = "." + r2;
     std::transform(r2.begin(), r2.end(), r2.begin(), ::toupper);
     std::string R1 = r1; if (!R1.empty() && R1[0] != '.') R1 = "." + R1;
@@ -332,8 +320,7 @@ void AssemblerSimulatedOps::emitSwapCode(AssemblerParser* parser, std::vector<ui
     }
 }
 
-void AssemblerSimulatedOps::emitZeroCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string&) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitZeroCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string&) {
     int idx = tokenIndex;
     while (idx < (int)parser->tokens.size()) {
         std::string reg = parser->tokens[idx].value; std::transform(reg.begin(), reg.end(), reg.begin(), ::toupper);
@@ -343,8 +330,7 @@ void AssemblerSimulatedOps::emitZeroCode(AssemblerParser* parser, std::vector<ui
     }
 }
 
-void AssemblerSimulatedOps::emitNegNot16Code(AssemblerParser* parser, std::vector<uint8_t>& binary, bool isNeg, const std::string& operand, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitNegNot16Code(AssemblerParser* parser, M65Emitter& e, bool isNeg, const std::string& operand, int tokenIndex, const std::string& scopePrefix) {
     std::string OP = operand; if (!OP.empty() && OP[0] != '.') OP = "." + OP;
     std::transform(OP.begin(), OP.end(), OP.begin(), ::toupper);
     if (OP == ".AX" || OP == "") { if (isNeg) e.neg_16(); else e.not_16(); return; }
@@ -360,22 +346,19 @@ void AssemblerSimulatedOps::emitNegNot16Code(AssemblerParser* parser, std::vecto
     }
 }
 
-void AssemblerSimulatedOps::emitChkZeroCode(AssemblerParser* parser, std::vector<uint8_t>& binary, bool is16, bool isInverse, int, const std::string&) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitChkZeroCode(AssemblerParser* parser, M65Emitter& e, bool is16, bool isInverse, int, const std::string&) {
     if (is16) { e.cmp_imm(0); e.bne(0x03); e.txa(); } else e.cmp_imm(0);
     if (isInverse) { e.bne(0x03); e.lda_imm(0); e.bra(0x02); e.lda_imm(1); }
     else { e.beq(0x03); e.lda_imm(0); e.bra(0x02); e.lda_imm(1); }
 }
 
-void AssemblerSimulatedOps::emitBranch16Code(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string&) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitBranch16Code(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string&) {
     int idx = tokenIndex; if (idx >= (int)parser->tokens.size()) return;
     std::string condition = parser->tokens[idx++].value; std::transform(condition.begin(), condition.end(), condition.begin(), ::toupper);
     if (condition == "BEQ") e.beq(0x00); else if (condition == "BNE") e.bne(0x00);
 }
 
-void AssemblerSimulatedOps::emitSelectCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitSelectCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
     int idx = tokenIndex; if (idx >= (int)parser->tokens.size()) return;
     idx++; // Skip reg
     if (idx < (int)parser->tokens.size() && parser->tokens[idx].type == AssemblerTokenType::COMMA) idx++;
@@ -385,21 +368,18 @@ void AssemblerSimulatedOps::emitSelectCode(AssemblerParser* parser, std::vector<
     e.bne(0x03); e.lda_imm(val2Ast->getValue(parser)); e.bra(0x02); e.lda_imm(val1Ast->getValue(parser));
 }
 
-void AssemblerSimulatedOps::emitPtrStackCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitPtrStackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
     uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
     e.tsx(); e.txa(); e.clc(); e.adc_imm(0x0101 + offset); e.pha(); e.lda_imm(0); e.adc_imm(0); e.tax(); e.pla();
 }
 
-void AssemblerSimulatedOps::emitPtrDerefCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitPtrDerefCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
     std::string src = parser->tokens[tokenIndex].value; if (parser->tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src = "." + src;
     Symbol* sym = parser->resolveSymbol(src, scopePrefix); uint32_t addr = sym ? sym->value : parseNumericLiteral(src);
     e.ldy_imm(0); e.lda_ind_z(addr, false); e.pha(); e.ldy_imm(1); e.lda_ind_z(addr, false); e.tax(); e.pla();
 }
 
-void AssemblerSimulatedOps::emitFillCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitFillCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
     int idx = tokenIndex; if (idx < 0 || idx >= (int)parser->tokens.size()) return;
     std::string destReg; bool destIsRegister = false, destIsIndirect = false; uint32_t destVal = 0; bool destIsStack = forceStack;
     if (destIsStack) {
@@ -434,8 +414,7 @@ void AssemblerSimulatedOps::emitFillCode(AssemblerParser* parser, std::vector<ui
     e.tsx(); e.txa(); e.clc(); e.adc_imm(12); e.tax(); e.txs(); e.pla();
 }
 
-void AssemblerSimulatedOps::emitMoveCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitMoveCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
     int idx = tokenIndex; if (idx < 0 || idx >= (int)parser->tokens.size()) return;
     struct Operand { bool isAZ = false, isAbsolute = false, isStack = false; uint32_t value = 0; };
     auto parseMoveOp = [&](int& curIdx) -> Operand {
@@ -457,8 +436,7 @@ void AssemblerSimulatedOps::emitMoveCode(AssemblerParser* parser, std::vector<ui
     e.tsx(); e.txa(); e.clc(); e.adc_imm(12); e.tax(); e.txs(); e.pla();
 }
 
-void AssemblerSimulatedOps::emitFlatMemoryCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitFlatMemoryCode(AssemblerParser* parser, M65Emitter& e, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix) {
     std::string op = parser->tokens[tokenIndex].value;
     Symbol* sym = parser->resolveSymbol(op, scopePrefix); uint32_t addr = sym ? sym->value : parseNumericLiteral(op);
     e.eom();
@@ -467,14 +445,12 @@ void AssemblerSimulatedOps::emitFlatMemoryCode(AssemblerParser* parser, std::vec
     else if (mnemonic == "INC.F") e.inc_abs(addr); else if (mnemonic == "DEC.F") e.dec_abs(addr);
 }
 
-void AssemblerSimulatedOps::emitPHWStackCode(AssemblerParser* parser, std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitPHWStackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
     uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
     e.tsx(); e.lda_abs_x(0x0102 + offset); e.pha(); e.lda_abs_x(0x0101 + offset); e.pha();
 }
 
-void AssemblerSimulatedOps::emitASWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitASWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
     std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
     std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
     if (DEST == ".AX") {
@@ -490,8 +466,7 @@ void AssemblerSimulatedOps::emitASWCode(AssemblerParser* parser, std::vector<uin
     }
 }
 
-void AssemblerSimulatedOps::emitROWCode(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitROWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
     std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
     std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
     if (DEST == ".AX") {
@@ -507,8 +482,7 @@ void AssemblerSimulatedOps::emitROWCode(AssemblerParser* parser, std::vector<uin
     }
 }
 
-void AssemblerSimulatedOps::emitASR16Code(AssemblerParser* parser, std::vector<uint8_t>& binary, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
-    M65Emitter e(binary, parser->getZPStart());
+void AssemblerSimulatedOps::emitASR16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
     std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
     std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
     if (DEST == ".AX") {

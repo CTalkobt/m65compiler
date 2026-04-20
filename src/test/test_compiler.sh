@@ -29,6 +29,7 @@ TEST_FILES=(
     "src/test-resources/test_preproc_final.c"
     "src/test-resources/test_preproc_macros.c"
     "src/test-resources/test_preproc_v3.c"
+    "src/test-resources/test_static_assert_pass.c"
 )
 
 mkdir -p build/test
@@ -48,7 +49,7 @@ for f in "${TEST_FILES[@]}"; do
     echo "Testing $f..."
     
     # 1. Compile
-    $CC "$f" -o "$s_file"
+    $CC -v "$f" -o "$s_file"
     if [ $? -ne 0 ]; then
         echo "FAIL: Compilation failed for $f"
         failed=$((failed + 1))

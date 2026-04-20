@@ -3,6 +3,7 @@
 #include <string>
 #include <ostream>
 #include <cstdint>
+#include "AssemblerTypes.hpp"
 
 class M65Emitter {
 public:
@@ -12,6 +13,11 @@ public:
     M65Emitter(std::vector<uint8_t>& binary, uint32_t zpStart = 0x02);
 
     uint8_t getZP(int offset) const { return (uint8_t)(zeroPageStart + offset); }
+    Mode getMode() const { return mode; }
+
+    void emitInstruction(const std::string& mnemonic, AddressingMode mode, uint32_t value = 0, bool hasValue = false);
+    void emitLabel(const std::string& label);
+    void emitComment(const std::string& comment);
 
     // --- Immediate Mode ---
     void lda_imm(uint8_t val);
@@ -150,12 +156,13 @@ public:
     void pop_ax();
     void transfer_ax_to_zp(uint8_t addr);
 
+    void emitByte(uint8_t b);
+    void emitWord(uint16_t w);
+
 private:
     std::ostream* out = nullptr;
     std::vector<uint8_t>* binary = nullptr;
     Mode mode;
     uint32_t zeroPageStart;
-    void emitByte(uint8_t b);
-    void emitWord(uint16_t w);
     void emitText(const std::string& mnemonic, const std::string& operand = "");
 };

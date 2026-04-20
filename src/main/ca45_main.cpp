@@ -6,11 +6,14 @@
 #include "AssemblerLexer.hpp"
 #include "AssemblerParser.hpp"
 #include "Preprocessor.hpp"
+#include "AssemblerGenerator.hpp"
+#include "M65Emitter.hpp"
 
 int main(int argc, char** argv) {
     std::string input_file;
     std::string output_file = "out.bin";
     bool verbose = false;
+    int listingLevel = 1;
     std::map<std::string, uint32_t> predefinedSymbols;
     std::map<std::string, std::string> initialSymbols;
     std::vector<std::string> includePaths;
@@ -21,6 +24,7 @@ int main(int argc, char** argv) {
             std::cout << "Usage: ca45 [options] <input_file.s>" << std::endl;
             std::cout << "Options:" << std::endl;
             std::cout << "  -o <filename>  Specify output binary filename (default: out.bin)" << std::endl;
+            std::cout << "  -l <level>     Listing level: 1=Binary (default), 2=Expanded Assembly" << std::endl;
             std::cout << "  -v             Enable verbose output" << std::endl;
             std::cout << "  -Dname=val     Define a symbol (e.g., -Dcc45.zeroPageStart=$10)" << std::endl;
             std::cout << "  -I<path>       Add include search path" << std::endl;
@@ -28,6 +32,8 @@ int main(int argc, char** argv) {
             return 0;
         } else if (arg == "-o" && i + 1 < argc) {
             output_file = argv[++i];
+        } else if (arg == "-l" && i + 1 < argc) {
+            listingLevel = std::stoi(argv[++i]);
         } else if (arg == "-v") {
             verbose = true;
         } else if (arg.substr(0, 2) == "-I") {
@@ -102,12 +108,20 @@ int main(int argc, char** argv) {
     AssemblerParser parser(tokens, predefinedSymbols);
     try {
         parser.pass1();
-        auto binary = parser.pass2();
 
-        if (!binary.empty()) {
-            std::ofstream out(output_file, std::ios::binary);
-            out.write(reinterpret_cast<const char*>(binary.data()), binary.size());
-            std::cout << "Assembled to " << output_file << " (" << binary.size() << " bytes)" << std::endl;
+        if (listingLevel == 2) {
+            parser.pass2(); // Run optimizer and resolve addresses
+            std::ofstream out(output_file);
+            M65Emitter e(out, predefinedSymbols["cc45.zeroPageStart"]);
+            AssemblerGenerator::generate(&parser, e);
+            std::cout << "Expanded listing generated to " << output_file << std::endl;
+        } else {
+            auto binary = parser.pass2();
+            if (!binary.empty()) {
+                std::ofstream out(output_file, std::ios::binary);
+                out.write(reinterpret_cast<const char*>(binary.data()), binary.size());
+                std::cout << "Assembled to " << output_file << " (" << binary.size() << " bytes)" << std::endl;
+            }
         }
     } catch (const std::exception& e) {
         std::cerr << "Assembly Error: " << e.what() << std::endl;

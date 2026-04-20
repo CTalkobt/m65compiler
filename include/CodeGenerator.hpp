@@ -56,6 +56,7 @@ public:
     void visit(DoWhileStatement& node) override;
     void visit(ForStatement& node) override;
     void visit(AsmStatement& node) override;
+    void visit(StaticAssert& node) override;
     void visit(StructDefinition& node) override;
     void visit(CompoundStatement& node) override;
     void visit(FunctionDeclaration& node) override;

@@ -10,6 +10,10 @@
 #include "CodeGenerator.hpp"
 #include "ConstantFolder.hpp"
 #include "Preprocessor.hpp"
+#include "AssemblerLexer.hpp"
+#include "AssemblerParser.hpp"
+#include "AssemblerGenerator.hpp"
+#include "M65Emitter.hpp"
 
 class ASTPrinter : public ASTVisitor {
 public:
@@ -147,6 +151,9 @@ public:
     void visit(AsmStatement& node) override {
         printIndent(); std::cout << "AsmStatement: " << node.code << std::endl;
     }
+    void visit(StaticAssert& node) override {
+        printIndent(); std::cout << "StaticAssert: " << node.message << std::endl;
+    }
     void visit(StructDefinition& node) override {
         printIndent(); std::cout << "StructDefinition: " << node.name << std::endl;
         indent++;
@@ -193,6 +200,7 @@ int main(int argc, char** argv) {
     bool outputFileSet = false;
     bool assemble = false;
     bool verbose = false;
+    int listingLevel = 1;
     uint32_t zeroPageStart = 0x02;
     uint32_t zeroPageAvail = 9;
     std::string defineFlag = "";
@@ -207,6 +215,7 @@ int main(int argc, char** argv) {
             std::cout << "  -E             Run only the preprocessor (output to stdout or -o file)" << std::endl;
             std::cout << "  -c             Assemble the output with ca45" << std::endl;
             std::cout << "  -o <filename>  Specify output assembly filename (default: out.s)" << std::endl;
+            std::cout << "  -l <level>     Listing level: 1=Standard (default), 2=Expanded" << std::endl;
             std::cout << "  -v             Enable verbose output" << std::endl;
             std::cout << "  -Dname=val     Define a symbol (e.g., -Dcc45.zeroPageStart=$10)" << std::endl;
             std::cout << "  -I<path>       Add include search path" << std::endl;
@@ -219,6 +228,8 @@ int main(int argc, char** argv) {
         } else if (arg == "-o" && i + 1 < argc) {
             output_file = argv[++i];
             outputFileSet = true;
+        } else if (arg == "-l" && i + 1 < argc) {
+            listingLevel = std::stoi(argv[++i]);
         } else if (arg == "-v") {
             verbose = true;
         } else if (arg.substr(0, 2) == "-I") {
@@ -352,6 +363,29 @@ int main(int argc, char** argv) {
             std::cout << "Generated assembly in " << output_file << std::endl;
         }
         asmOut.close();
+
+        if (listingLevel == 2) {
+            if (verbose) std::cout << "Generating expanded listing..." << std::endl;
+            
+            std::ifstream asmIn(output_file);
+            std::stringstream asmBuf;
+            asmBuf << asmIn.rdbuf();
+            asmIn.close();
+
+            std::map<std::string, uint32_t> predefinedSymbols;
+            predefinedSymbols["cc45.zeroPageStart"] = zeroPageStart;
+
+            AssemblerLexer lex(asmBuf.str());
+            auto tokens = lex.tokenize();
+            AssemblerParser parser(tokens, predefinedSymbols);
+            parser.pass1();
+            parser.pass2(); // Run optimizer and resolve addresses
+
+            std::ofstream expandedOut(output_file);
+            M65Emitter e(expandedOut, zeroPageStart);
+            AssemblerGenerator::generate(&parser, e);
+            expandedOut.close();
+        }
 
     } catch (const std::exception& e) {
         std::cerr << "Compiler Error: " << e.what() << std::endl;

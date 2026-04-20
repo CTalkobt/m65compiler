@@ -17,6 +17,7 @@ struct Instruction {
     std::string bitBranchTarget;
     std::vector<std::string> callArgs;
     int procParamSize = 0;
+    bool forceMode = false;
 };
 
 struct Directive {

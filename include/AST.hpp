@@ -153,6 +153,15 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class StaticAssert : public Statement {
+public:
+    std::unique_ptr<Expression> condition;
+    std::string message;
+    StaticAssert(std::unique_ptr<Expression> c, const std::string& m)
+        : condition(std::move(c)), message(m) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class CompoundStatement : public Statement {
 public:
     std::vector<std::unique_ptr<Statement>> statements;
@@ -216,6 +225,7 @@ public:
     virtual void visit(DoWhileStatement& node) = 0;
     virtual void visit(ForStatement& node) = 0;
     virtual void visit(AsmStatement& node) = 0;
+    virtual void visit(StaticAssert& node) = 0;
     virtual void visit(StructDefinition& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;
     virtual void visit(FunctionDeclaration& node) = 0;

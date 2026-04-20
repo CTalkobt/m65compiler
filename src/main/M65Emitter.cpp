@@ -1,6 +1,10 @@
 #include "M65Emitter.hpp"
+#include "AssemblerOpcodeDatabase.hpp"
 #include <iomanip>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
+#include <iostream>
 
 M65Emitter::M65Emitter(std::ostream& out, uint32_t zpStart) : out(&out), mode(Mode::TEXT), zeroPageStart(zpStart) {}
 M65Emitter::M65Emitter(std::vector<uint8_t>& binary, uint32_t zpStart) : binary(&binary), mode(Mode::BINARY), zeroPageStart(zpStart) {}
@@ -17,67 +21,147 @@ static std::string hex16(uint16_t val) {
     return ss.str();
 }
 
-void M65Emitter::emitByte(uint8_t b) { binary->push_back(b); }
-void M65Emitter::emitWord(uint16_t w) { binary->push_back(w & 0xFF); binary->push_back(w >> 8); }
+void M65Emitter::emitByte(uint8_t b) {
+    if (mode == Mode::BINARY) binary->push_back(b);
+    else emitText(".byte", hex8(b));
+}
+void M65Emitter::emitWord(uint16_t w) {
+    if (mode == Mode::BINARY) { binary->push_back(w & 0xFF); binary->push_back(w >> 8); }
+    else emitText(".word", hex16(w));
+}
 void M65Emitter::emitText(const std::string& mnemonic, const std::string& operand) {
     *out << "    " << std::left << std::setw(8) << mnemonic << operand << std::endl;
 }
 
-void M65Emitter::lda_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("lda", "#" + hex8(val)); else { emitByte(0xA9); emitByte(val); } }
-void M65Emitter::ldx_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("ldx", "#" + hex8(val)); else { emitByte(0xA2); emitByte(val); } }
-void M65Emitter::ldy_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("ldy", "#" + hex8(val)); else { emitByte(0xA0); emitByte(val); } }
-void M65Emitter::ldz_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("ldz", "#" + hex8(val)); else { emitByte(0xA3); emitByte(val); } }
-void M65Emitter::phw_imm(uint16_t val) { if (mode == Mode::TEXT) emitText("phw", "#" + hex16(val)); else { emitByte(0xF4); emitWord(val); } }
-void M65Emitter::adc_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("adc", "#" + hex8(val)); else { emitByte(0x69); emitByte(val); } }
-void M65Emitter::sbc_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("sbc", "#" + hex8(val)); else { emitByte(0xE9); emitByte(val); } }
-void M65Emitter::and_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("and", "#" + hex8(val)); else { emitByte(0x29); emitByte(val); } }
-void M65Emitter::ora_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("ora", "#" + hex8(val)); else { emitByte(0x09); emitByte(val); } }
-void M65Emitter::eor_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("eor", "#" + hex8(val)); else { emitByte(0x49); emitByte(val); } }
-void M65Emitter::cmp_imm(uint8_t val) { if (mode == Mode::TEXT) emitText("cmp", "#" + hex8(val)); else { emitByte(0xC9); emitByte(val); } }
+void M65Emitter::emitLabel(const std::string& label) {
+    if (mode == Mode::TEXT) *out << label << ":" << std::endl;
+}
+
+void M65Emitter::emitComment(const std::string& comment) {
+    if (mode == Mode::TEXT) *out << "    ; " << comment << std::endl;
+}
+
+void M65Emitter::emitInstruction(const std::string& mnemonic, AddressingMode amode, uint32_t value, bool hasValue) {
+    if (mode == Mode::TEXT) {
+        std::string operand = "";
+        if (hasValue) {
+            switch (amode) {
+                case AddressingMode::IMMEDIATE: operand = "#" + hex8((uint8_t)value); break;
+                case AddressingMode::IMMEDIATE16: operand = "#" + hex16((uint16_t)value); break;
+                case AddressingMode::BASE_PAGE: operand = hex8((uint8_t)value); break;
+                case AddressingMode::BASE_PAGE_X: operand = hex8((uint8_t)value) + ",x"; break;
+                case AddressingMode::BASE_PAGE_Y: operand = hex8((uint8_t)value) + ",y"; break;
+                case AddressingMode::ABSOLUTE: operand = hex16((uint16_t)value); break;
+                case AddressingMode::ABSOLUTE_X: operand = hex16((uint16_t)value) + ",x"; break;
+                case AddressingMode::ABSOLUTE_Y: operand = hex16((uint16_t)value) + ",y"; break;
+                case AddressingMode::INDIRECT: operand = "(" + hex8((uint8_t)value) + ")"; break;
+                case AddressingMode::BASE_PAGE_X_INDIRECT: operand = "(" + hex8((uint8_t)value) + ",x)"; break;
+                case AddressingMode::BASE_PAGE_INDIRECT_Y: operand = "(" + hex8((uint8_t)value) + "),y"; break;
+                case AddressingMode::BASE_PAGE_INDIRECT_Z: operand = "(" + hex8((uint8_t)value) + "),z"; break;
+                case AddressingMode::ABSOLUTE_INDIRECT: operand = "(" + hex16((uint16_t)value) + ")"; break;
+                case AddressingMode::ABSOLUTE_X_INDIRECT: operand = "(" + hex16((uint16_t)value) + ",x)"; break;
+                case AddressingMode::STACK_RELATIVE: operand = std::to_string((int)value) + ",s"; break;
+                case AddressingMode::FLAT_INDIRECT_Z: operand = "[" + hex8((uint8_t)value) + "],z"; break;
+                case AddressingMode::RELATIVE: operand = "*+" + std::to_string((int)(int8_t)value); break;
+                case AddressingMode::RELATIVE16: operand = "*+" + std::to_string((int)(int16_t)value); break;
+                default: operand = hex16((uint16_t)value); break;
+            }
+        } else if (amode == AddressingMode::ACCUMULATOR) {
+            operand = "a";
+        }
+        emitText(mnemonic, operand);
+    } else {
+        std::string lowerMnemonic = mnemonic;
+        std::transform(lowerMnemonic.begin(), lowerMnemonic.end(), lowerMnemonic.begin(), [](unsigned char c){ return std::tolower(c); });
+        uint8_t op = AssemblerOpcodeDatabase::getOpcode(lowerMnemonic, amode);
+        if (op == 0 && lowerMnemonic != "brk") { std::cout << "DEBUG: " << lowerMnemonic << " amode: " << (int)amode << std::endl; throw std::runtime_error("Invalid opcode for " + lowerMnemonic); }
+        emitByte(op);
+        if (hasValue) {
+            switch (amode) {
+                case AddressingMode::IMMEDIATE:
+                case AddressingMode::BASE_PAGE:
+                case AddressingMode::BASE_PAGE_X:
+                case AddressingMode::BASE_PAGE_Y:
+                case AddressingMode::INDIRECT:
+                case AddressingMode::BASE_PAGE_X_INDIRECT:
+                case AddressingMode::BASE_PAGE_INDIRECT_Y:
+                case AddressingMode::BASE_PAGE_INDIRECT_Z:
+                case AddressingMode::STACK_RELATIVE:
+                case AddressingMode::FLAT_INDIRECT_Z:
+                case AddressingMode::RELATIVE:
+                    emitByte((uint8_t)value);
+                    break;
+                case AddressingMode::IMMEDIATE16:
+                case AddressingMode::ABSOLUTE:
+                case AddressingMode::ABSOLUTE_X:
+                case AddressingMode::ABSOLUTE_Y:
+                case AddressingMode::ABSOLUTE_INDIRECT:
+                case AddressingMode::ABSOLUTE_X_INDIRECT:
+                case AddressingMode::RELATIVE16:
+                    emitWord((uint16_t)value);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+}
+
+void M65Emitter::lda_imm(uint8_t val) { emitInstruction("lda", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::ldx_imm(uint8_t val) { emitInstruction("ldx", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::ldy_imm(uint8_t val) { emitInstruction("ldy", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::ldz_imm(uint8_t val) { emitInstruction("ldz", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::phw_imm(uint16_t val) { emitInstruction("phw", AddressingMode::IMMEDIATE16, val, true); }
+void M65Emitter::adc_imm(uint8_t val) { emitInstruction("adc", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::sbc_imm(uint8_t val) { emitInstruction("sbc", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::and_imm(uint8_t val) { emitInstruction("and", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::ora_imm(uint8_t val) { emitInstruction("ora", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::eor_imm(uint8_t val) { emitInstruction("eor", AddressingMode::IMMEDIATE, val, true); }
+void M65Emitter::cmp_imm(uint8_t val) { emitInstruction("cmp", AddressingMode::IMMEDIATE, val, true); }
 
 // --- Absolute Mode ---
-void M65Emitter::lda_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("lda", hex16(addr)); else { emitByte(0xAD); emitWord(addr); } }
-void M65Emitter::ldx_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("ldx", hex16(addr)); else { emitByte(0xAE); emitWord(addr); } }
-void M65Emitter::ldy_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("ldy", hex16(addr)); else { emitByte(0xAC); emitWord(addr); } }
-void M65Emitter::ldz_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("ldz", hex16(addr)); else { emitByte(0xAB); emitWord(addr); } }
-void M65Emitter::sta_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("sta", hex16(addr)); else { emitByte(0x8D); emitWord(addr); } }
-void M65Emitter::stx_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("stx", hex16(addr)); else { emitByte(0x8E); emitWord(addr); } }
-void M65Emitter::sty_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("sty", hex16(addr)); else { emitByte(0x8C); emitWord(addr); } }
-void M65Emitter::stz_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("stz", hex16(addr)); else { emitByte(0x9C); emitWord(addr); } }
-void M65Emitter::lda_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("lda", hex16(addr) + ",x"); else { emitByte(0xBD); emitWord(addr); } }
-void M65Emitter::sta_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("sta", hex16(addr) + ",x"); else { emitByte(0x9D); emitWord(addr); } }
-void M65Emitter::stz_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("stz", hex16(addr) + ",x"); else { emitByte(0x9E); emitWord(addr); } }
-void M65Emitter::adc_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("adc", hex16(addr)); else { emitByte(0x6D); emitWord(addr); } }
-void M65Emitter::sbc_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("sbc", hex16(addr)); else { emitByte(0xED); emitWord(addr); } }
-void M65Emitter::and_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("and", hex16(addr)); else { emitByte(0x2D); emitWord(addr); } }
-void M65Emitter::ora_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("ora", hex16(addr)); else { emitByte(0x0D); emitWord(addr); } }
-void M65Emitter::eor_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("eor", hex16(addr)); else { emitByte(0x4D); emitWord(addr); } }
-void M65Emitter::cmp_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("cmp", hex16(addr)); else { emitByte(0xCD); emitWord(addr); } }
-void M65Emitter::asw_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("asw", hex16(addr)); else { emitByte(0xCB); emitWord(addr); } }
-void M65Emitter::row_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("row", hex16(addr)); else { emitByte(0xEB); emitWord(addr); } }
+void M65Emitter::lda_abs(uint16_t addr) { emitInstruction("lda", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::ldx_abs(uint16_t addr) { emitInstruction("ldx", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::ldy_abs(uint16_t addr) { emitInstruction("ldy", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::ldz_abs(uint16_t addr) { emitInstruction("ldz", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::sta_abs(uint16_t addr) { emitInstruction("sta", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::stx_abs(uint16_t addr) { emitInstruction("stx", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::sty_abs(uint16_t addr) { emitInstruction("sty", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::stz_abs(uint16_t addr) { emitInstruction("stz", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::lda_abs_x(uint16_t addr) { emitInstruction("lda", AddressingMode::ABSOLUTE_X, addr, true); }
+void M65Emitter::sta_abs_x(uint16_t addr) { emitInstruction("sta", AddressingMode::ABSOLUTE_X, addr, true); }
+void M65Emitter::stz_abs_x(uint16_t addr) { emitInstruction("stz", AddressingMode::ABSOLUTE_X, addr, true); }
+void M65Emitter::adc_abs(uint16_t addr) { emitInstruction("adc", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::sbc_abs(uint16_t addr) { emitInstruction("sbc", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::and_abs(uint16_t addr) { emitInstruction("and", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::ora_abs(uint16_t addr) { emitInstruction("ora", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::eor_abs(uint16_t addr) { emitInstruction("eor", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::cmp_abs(uint16_t addr) { emitInstruction("cmp", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::asw_abs(uint16_t addr) { emitInstruction("asw", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::row_abs(uint16_t addr) { emitInstruction("row", AddressingMode::ABSOLUTE, addr, true); }
 
 // --- Zero Page Mode ---
-void M65Emitter::lda_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("lda", hex8(addr)); else { emitByte(0xA5); emitByte(addr); } }
-void M65Emitter::sta_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("sta", hex8(addr)); else { emitByte(0x85); emitByte(addr); } }
-void M65Emitter::stx_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("stx", hex8(addr)); else { emitByte(0x86); emitByte(addr); } }
-void M65Emitter::stz_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("stz", hex8(addr)); else { emitByte(0x64); emitByte(addr); } }
-void M65Emitter::adc_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("adc", hex8(addr)); else { emitByte(0x65); emitByte(addr); } }
-void M65Emitter::sbc_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("sbc", hex8(addr)); else { emitByte(0xE5); emitByte(addr); } }
-void M65Emitter::and_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("and", hex8(addr)); else { emitByte(0x25); emitByte(addr); } }
-void M65Emitter::ora_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("ora", hex8(addr)); else { emitByte(0x05); emitByte(addr); } }
-void M65Emitter::eor_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("eor", hex8(addr)); else { emitByte(0x45); emitByte(addr); } }
-void M65Emitter::inc_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("inc", hex8(addr)); else { emitByte(0xE6); emitByte(addr); } }
-void M65Emitter::dec_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("dec", hex8(addr)); else { emitByte(0xC6); emitByte(addr); } }
-void M65Emitter::inc_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("inc", hex16(addr)); else { emitByte(0xEE); emitWord(addr); } }
-void M65Emitter::dec_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("dec", hex16(addr)); else { emitByte(0xCE); emitWord(addr); } }
-void M65Emitter::bit_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("bit", hex8(addr)); else { emitByte(0x24); emitByte(addr); } }
-void M65Emitter::cmp_zp(uint8_t addr) { if (mode == Mode::TEXT) emitText("cmp", hex8(addr)); else { emitByte(0xC5); emitByte(addr); } }
-void M65Emitter::inc_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("inc", hex16(addr) + ",x"); else { emitByte(0xFE); emitWord(addr); } }
-void M65Emitter::dec_abs_x(uint16_t addr) { if (mode == Mode::TEXT) emitText("dec", hex16(addr) + ",x"); else { emitByte(0xDE); emitWord(addr); } }
+void M65Emitter::lda_zp(uint8_t addr) { emitInstruction("lda", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::sta_zp(uint8_t addr) { emitInstruction("sta", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::stx_zp(uint8_t addr) { emitInstruction("stx", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::stz_zp(uint8_t addr) { emitInstruction("stz", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::adc_zp(uint8_t addr) { emitInstruction("adc", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::sbc_zp(uint8_t addr) { emitInstruction("sbc", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::and_zp(uint8_t addr) { emitInstruction("and", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::ora_zp(uint8_t addr) { emitInstruction("ora", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::eor_zp(uint8_t addr) { emitInstruction("eor", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::inc_zp(uint8_t addr) { emitInstruction("inc", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::dec_zp(uint8_t addr) { emitInstruction("dec", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::inc_abs(uint16_t addr) { emitInstruction("inc", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::dec_abs(uint16_t addr) { emitInstruction("dec", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::bit_zp(uint8_t addr) { emitInstruction("bit", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::cmp_zp(uint8_t addr) { emitInstruction("cmp", AddressingMode::BASE_PAGE, addr, true); }
+void M65Emitter::inc_abs_x(uint16_t addr) { emitInstruction("inc", AddressingMode::ABSOLUTE_X, addr, true); }
+void M65Emitter::dec_abs_x(uint16_t addr) { emitInstruction("dec", AddressingMode::ABSOLUTE_X, addr, true); }
 
 // --- Other Addressing Modes ---
-void M65Emitter::lda_stack(uint8_t offset) { if (mode == Mode::TEXT) emitText("lda", std::to_string((int)offset) + ", s"); else { emitByte(0xE2); emitByte(offset); } }
-void M65Emitter::sta_stack(uint8_t offset) { if (mode == Mode::TEXT) emitText("sta", std::to_string((int)offset) + ", s"); else { emitByte(0x82); emitByte(offset); } }
+void M65Emitter::lda_stack(uint8_t offset) { emitInstruction("lda", AddressingMode::STACK_RELATIVE, offset, true); }
+void M65Emitter::sta_stack(uint8_t offset) { emitInstruction("sta", AddressingMode::STACK_RELATIVE, offset, true); }
 void M65Emitter::stx_stack(uint8_t offset) { 
     if (mode == Mode::TEXT) emitText("stx", std::to_string((int)offset) + ", s"); 
     else { 
@@ -120,55 +204,55 @@ void M65Emitter::sta_ind_z(uint8_t addr, bool flat) {
     }
 }
 
-void M65Emitter::bit_abs(uint16_t addr) { if (mode == Mode::TEXT) emitText("bit", hex16(addr)); else { emitByte(0x2C); emitWord(addr); } }
+void M65Emitter::bit_abs(uint16_t addr) { emitInstruction("bit", AddressingMode::ABSOLUTE, addr, true); }
 
 // --- Register Transfers ---
-void M65Emitter::tax() { if (mode == Mode::TEXT) emitText("tax"); else emitByte(0xAA); }
-void M65Emitter::txa() { if (mode == Mode::TEXT) emitText("txa"); else emitByte(0x8A); }
-void M65Emitter::tay() { if (mode == Mode::TEXT) emitText("tay"); else emitByte(0xA8); }
-void M65Emitter::tya() { if (mode == Mode::TEXT) emitText("tya"); else emitByte(0x98); }
-void M65Emitter::taz() { if (mode == Mode::TEXT) emitText("taz"); else emitByte(0x4B); }
-void M65Emitter::tza() { if (mode == Mode::TEXT) emitText("tza"); else emitByte(0x6B); }
-void M65Emitter::tsx() { if (mode == Mode::TEXT) emitText("tsx"); else emitByte(0xBA); }
-void M65Emitter::txs() { if (mode == Mode::TEXT) emitText("txs"); else emitByte(0x9A); }
-void M65Emitter::inx() { if (mode == Mode::TEXT) emitText("inx"); else emitByte(0xE8); }
-void M65Emitter::dex() { if (mode == Mode::TEXT) emitText("dex"); else emitByte(0xCA); }
-void M65Emitter::iny() { if (mode == Mode::TEXT) emitText("iny"); else emitByte(0xC8); }
-void M65Emitter::dey() { if (mode == Mode::TEXT) emitText("dey"); else emitByte(0x88); }
-void M65Emitter::inz() { if (mode == Mode::TEXT) emitText("inz"); else emitByte(0x1B); }
-void M65Emitter::dez() { if (mode == Mode::TEXT) emitText("dez"); else emitByte(0x3B); }
+void M65Emitter::tax() { emitInstruction("tax", AddressingMode::IMPLIED); }
+void M65Emitter::txa() { emitInstruction("txa", AddressingMode::IMPLIED); }
+void M65Emitter::tay() { emitInstruction("tay", AddressingMode::IMPLIED); }
+void M65Emitter::tya() { emitInstruction("tya", AddressingMode::IMPLIED); }
+void M65Emitter::taz() { emitInstruction("taz", AddressingMode::IMPLIED); }
+void M65Emitter::tza() { emitInstruction("tza", AddressingMode::IMPLIED); }
+void M65Emitter::tsx() { emitInstruction("tsx", AddressingMode::IMPLIED); }
+void M65Emitter::txs() { emitInstruction("txs", AddressingMode::IMPLIED); }
+void M65Emitter::inx() { emitInstruction("inx", AddressingMode::IMPLIED); }
+void M65Emitter::dex() { emitInstruction("dex", AddressingMode::IMPLIED); }
+void M65Emitter::iny() { emitInstruction("iny", AddressingMode::IMPLIED); }
+void M65Emitter::dey() { emitInstruction("dey", AddressingMode::IMPLIED); }
+void M65Emitter::inz() { emitInstruction("inz", AddressingMode::IMPLIED); }
+void M65Emitter::dez() { emitInstruction("dez", AddressingMode::IMPLIED); }
 
 // --- Stack Operations ---
-void M65Emitter::pha() { if (mode == Mode::TEXT) emitText("pha"); else emitByte(0x48); }
-void M65Emitter::pla() { if (mode == Mode::TEXT) emitText("pla"); else emitByte(0x68); }
-void M65Emitter::phx() { if (mode == Mode::TEXT) emitText("phx"); else emitByte(0xDA); }
-void M65Emitter::plx() { if (mode == Mode::TEXT) emitText("plx"); else emitByte(0xFA); }
-void M65Emitter::phy() { if (mode == Mode::TEXT) emitText("phy"); else emitByte(0x5A); }
-void M65Emitter::ply() { if (mode == Mode::TEXT) emitText("ply"); else emitByte(0x7A); }
-void M65Emitter::phz() { if (mode == Mode::TEXT) emitText("phz"); else emitByte(0xDB); }
-void M65Emitter::plz() { if (mode == Mode::TEXT) emitText("plz"); else emitByte(0xFB); }
+void M65Emitter::pha() { emitInstruction("pha", AddressingMode::IMPLIED); }
+void M65Emitter::pla() { emitInstruction("pla", AddressingMode::IMPLIED); }
+void M65Emitter::phx() { emitInstruction("phx", AddressingMode::IMPLIED); }
+void M65Emitter::plx() { emitInstruction("plx", AddressingMode::IMPLIED); }
+void M65Emitter::phy() { emitInstruction("phy", AddressingMode::IMPLIED); }
+void M65Emitter::ply() { emitInstruction("ply", AddressingMode::IMPLIED); }
+void M65Emitter::phz() { emitInstruction("phz", AddressingMode::IMPLIED); }
+void M65Emitter::plz() { emitInstruction("plz", AddressingMode::IMPLIED); }
 
 // --- ALU & Branching ---
-void M65Emitter::clc() { if (mode == Mode::TEXT) emitText("clc"); else emitByte(0x18); }
-void M65Emitter::sec() { if (mode == Mode::TEXT) emitText("sec"); else emitByte(0x38); }
+void M65Emitter::clc() { emitInstruction("clc", AddressingMode::IMPLIED); }
+void M65Emitter::sec() { emitInstruction("sec", AddressingMode::IMPLIED); }
 void M65Emitter::cla() { lda_imm(0); }
 void M65Emitter::clx() { ldx_imm(0); }
 void M65Emitter::cly() { ldy_imm(0); }
 void M65Emitter::clz() { ldz_imm(0); }
-void M65Emitter::neg_a() { if (mode == Mode::TEXT) emitText("neg", "a"); else emitByte(0x42); }
-void M65Emitter::asl_a() { if (mode == Mode::TEXT) emitText("asl", "a"); else emitByte(0x0A); }
-void M65Emitter::rol_a() { if (mode == Mode::TEXT) emitText("rol", "a"); else emitByte(0x2A); }
-void M65Emitter::lsr_a() { if (mode == Mode::TEXT) emitText("lsr", "a"); else emitByte(0x4A); }
-void M65Emitter::ror_a() { if (mode == Mode::TEXT) emitText("ror", "a"); else emitByte(0x6A); }
-void M65Emitter::inc_a() { if (mode == Mode::TEXT) emitText("inc", "a"); else emitByte(0x1A); }
-void M65Emitter::dec_a() { if (mode == Mode::TEXT) emitText("dec", "a"); else emitByte(0x3A); }
-void M65Emitter::eom() { if (mode == Mode::TEXT) emitText("eom"); else emitByte(0xEA); }
+void M65Emitter::neg_a() { emitInstruction("neg", AddressingMode::ACCUMULATOR); }
+void M65Emitter::asl_a() { emitInstruction("asl", AddressingMode::ACCUMULATOR); }
+void M65Emitter::rol_a() { emitInstruction("rol", AddressingMode::ACCUMULATOR); }
+void M65Emitter::lsr_a() { emitInstruction("lsr", AddressingMode::ACCUMULATOR); }
+void M65Emitter::ror_a() { emitInstruction("ror", AddressingMode::ACCUMULATOR); }
+void M65Emitter::inc_a() { emitInstruction("inc", AddressingMode::ACCUMULATOR); }
+void M65Emitter::dec_a() { emitInstruction("dec", AddressingMode::ACCUMULATOR); }
+void M65Emitter::eom() { emitInstruction("eom", AddressingMode::IMPLIED); }
 
-void M65Emitter::bra(int8_t offset) { if (mode == Mode::TEXT) emitText("bra", "*+" + std::to_string((int)offset)); else { emitByte(0x80); emitByte((uint8_t)offset); } }
-void M65Emitter::bne(int8_t offset) { if (mode == Mode::TEXT) emitText("bne", "*+" + std::to_string((int)offset)); else { emitByte(0xD0); emitByte((uint8_t)offset); } }
-void M65Emitter::beq(int8_t offset) { if (mode == Mode::TEXT) emitText("beq", "*+" + std::to_string((int)offset)); else { emitByte(0xF0); emitByte((uint8_t)offset); } }
-void M65Emitter::bcc(int8_t offset) { if (mode == Mode::TEXT) emitText("bcc", "*+" + std::to_string((int)offset)); else { emitByte(0x90); emitByte((uint8_t)offset); } }
-void M65Emitter::bcs(int8_t offset) { if (mode == Mode::TEXT) emitText("bcs", "*+" + std::to_string((int)offset)); else { emitByte(0xB0); emitByte((uint8_t)offset); } }
+void M65Emitter::bra(int8_t offset) { emitInstruction("bra", AddressingMode::RELATIVE, (uint32_t)offset, true); }
+void M65Emitter::bne(int8_t offset) { emitInstruction("bne", AddressingMode::RELATIVE, (uint32_t)offset, true); }
+void M65Emitter::beq(int8_t offset) { emitInstruction("beq", AddressingMode::RELATIVE, (uint32_t)offset, true); }
+void M65Emitter::bcc(int8_t offset) { emitInstruction("bcc", AddressingMode::RELATIVE, (uint32_t)offset, true); }
+void M65Emitter::bcs(int8_t offset) { emitInstruction("bcs", AddressingMode::RELATIVE, (uint32_t)offset, true); }
 
 void M65Emitter::add_16_imm(uint16_t val) {
     if (mode == Mode::TEXT) {
