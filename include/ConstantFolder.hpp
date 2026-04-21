@@ -166,6 +166,10 @@ public:
         lastStmt = copyPos(std::make_unique<ContinueStatement>(), node);
     }
 
+    void visit(SwitchContinueStatement& node) override {
+        lastStmt = copyPos(std::make_unique<SwitchContinueStatement>(node.target ? fold(std::move(node.target)) : nullptr), node);
+    }
+
     void visit(ExpressionStatement& node) override {
         lastStmt = copyPos(std::make_unique<ExpressionStatement>(fold(std::move(node.expression))), node);
     }
@@ -215,6 +219,25 @@ public:
         } else {
             lastStmt = copyPos(std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body)), node);
         }
+    }
+
+    void visit(SwitchStatement& node) override {
+        auto expression = fold(std::move(node.expression));
+        auto body = fold(std::move(node.body));
+        lastStmt = copyPos(std::make_unique<SwitchStatement>(std::move(expression), std::move(body)), node);
+    }
+
+    void visit(CaseStatement& node) override {
+        auto value = fold(std::move(node.value));
+        auto newNode = std::make_unique<CaseStatement>(std::move(value));
+        newNode->label = node.label;
+        lastStmt = copyPos(std::move(newNode), node);
+    }
+
+    void visit(DefaultStatement& node) override {
+        auto newNode = std::make_unique<DefaultStatement>();
+        newNode->label = node.label;
+        lastStmt = copyPos(std::move(newNode), node);
     }
 
     void visit(AsmStatement& node) override {

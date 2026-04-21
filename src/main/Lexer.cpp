@@ -89,6 +89,7 @@ Token Lexer::nextToken() {
         case '{': return {TokenType::OPEN_BRACE, "{", startLine, startCol};
         case '}': return {TokenType::CLOSE_BRACE, "}", startLine, startCol};
         case ';': return {TokenType::SEMICOLON, ";", startLine, startCol};
+        case ':': return {TokenType::COLON, ":", startLine, startCol};
         case ',': return {TokenType::COMMA, ",", startLine, startCol};
         case '.': return {TokenType::DOT, ".", startLine, startCol};
         case '=': 
@@ -151,9 +152,11 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"volatile", TokenType::VOLATILE},
         {"_Static_assert", TokenType::_Static_assert},
         {"break", TokenType::BREAK},
-        {"continue", TokenType::CONTINUE}
+        {"continue", TokenType::CONTINUE},
+        {"switch", TokenType::SWITCH},
+        {"case", TokenType::CASE},
+        {"default", TokenType::DEFAULT}
         };
-
 
     auto it = keywords.find(value);
     if (it != keywords.end()) {

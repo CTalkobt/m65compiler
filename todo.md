@@ -46,7 +46,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Line Continuation**: Support `\` at end of line.
 - [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`.
 - [X] **Break/Continue**: Implement `break` and `continue` for loop control.
-- [ ] **Switch/Case**: Implement `switch`, `case`, and `default`.
+- [X] **Switch/Case**: Implement `switch`, `case`, and `default`.
 
 ## Roadmap - Linker & Libraries (ln45)
 - [ ] **Object Format**: Define the `.o45` relocatable object format as an extension of the `.o65` specification.

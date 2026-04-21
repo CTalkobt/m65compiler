@@ -12,11 +12,15 @@ void VariableDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ReturnStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void BreakStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ContinueStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void SwitchContinueStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ExpressionStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void IfStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void WhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void DoWhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ForStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void SwitchStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void CaseStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void DefaultStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AsmStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void StaticAssert::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void StructDefinition::accept(ASTVisitor& visitor) { visitor.visit(*this); }

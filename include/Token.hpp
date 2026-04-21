@@ -18,6 +18,9 @@ enum class TokenType {
     _Static_assert,
     BREAK,
     CONTINUE,
+    SWITCH,
+    CASE,
+    DEFAULT,
     
     // Literals
     IDENTIFIER,
@@ -30,6 +33,7 @@ enum class TokenType {
     OPEN_BRACE,    // {
     CLOSE_BRACE,   // }
     SEMICOLON,     // ;
+    COLON,         // :
     COMMA,         // ,
     EQUALS,        // =
     PLUS,          // +
@@ -85,6 +89,9 @@ struct Token {
             case TokenType::_Static_assert: return "_Static_assert";
             case TokenType::BREAK: return "BREAK";
             case TokenType::CONTINUE: return "CONTINUE";
+            case TokenType::SWITCH: return "SWITCH";
+            case TokenType::CASE: return "CASE";
+            case TokenType::DEFAULT: return "DEFAULT";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";
@@ -93,6 +100,7 @@ struct Token {
             case TokenType::OPEN_BRACE: return "OPEN_BRACE";
             case TokenType::CLOSE_BRACE: return "CLOSE_BRACE";
             case TokenType::SEMICOLON: return "SEMICOLON";
+            case TokenType::COLON: return "COLON";
             case TokenType::COMMA: return "COMMA";
             case TokenType::EQUALS: return "EQUALS";
             case TokenType::PLUS: return "PLUS";

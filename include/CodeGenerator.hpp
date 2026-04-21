@@ -52,11 +52,15 @@ public:
     void visit(ReturnStatement& node) override;
     void visit(BreakStatement& node) override;
     void visit(ContinueStatement& node) override;
+    void visit(SwitchContinueStatement& node) override;
     void visit(ExpressionStatement& node) override;
     void visit(IfStatement& node) override;
     void visit(WhileStatement& node) override;
     void visit(DoWhileStatement& node) override;
     void visit(ForStatement& node) override;
+    void visit(SwitchStatement& node) override;
+    void visit(CaseStatement& node) override;
+    void visit(DefaultStatement& node) override;
     void visit(AsmStatement& node) override;
     void visit(StaticAssert& node) override;
     void visit(StructDefinition& node) override;
@@ -117,6 +121,19 @@ public:
         std::string breakLabel;
     };
     std::vector<LoopLabels> loopStack;
+
+    struct SwitchInfo {
+        int zpExpr; // Zero page register holding the switch expression value
+        std::string breakLabel;
+        std::string defaultLabel;
+        struct Case {
+            uint32_t value;
+            std::string label;
+        };
+        std::vector<Case> cases;
+        bool hasDefault = false;
+    };
+    std::vector<SwitchInfo*> switchStack;
 
     void emit(const std::string& line);
     void emitData();

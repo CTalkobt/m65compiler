@@ -76,6 +76,17 @@ public:
     void visit(ContinueStatement&) override {
         printIndent(); std::cout << "ContinueStatement" << std::endl;
     }
+    void visit(SwitchContinueStatement& node) override {
+        printIndent(); std::cout << "SwitchContinueStatement";
+        if (node.target) {
+            std::cout << ":" << std::endl;
+            indent++;
+            node.target->accept(*this);
+            indent--;
+        } else {
+            std::cout << " (default)" << std::endl;
+        }
+    }
     void visit(ExpressionStatement& node) override {
         printIndent(); std::cout << "ExpressionStatement" << std::endl;
         indent++;
@@ -129,7 +140,6 @@ public:
     }
     void visit(ForStatement& node) override {
         printIndent(); std::cout << "ForStatement" << std::endl;
-        indent++;
         if (node.initializer) {
             printIndent(); std::cout << "Initializer:" << std::endl;
             indent++;
@@ -152,7 +162,28 @@ public:
         indent++;
         node.body->accept(*this);
         indent--;
+    }
+    void visit(SwitchStatement& node) override {
+        printIndent(); std::cout << "SwitchStatement" << std::endl;
+        indent++;
+        printIndent(); std::cout << "Expression:" << std::endl;
+        indent++;
+        node.expression->accept(*this);
         indent--;
+        printIndent(); std::cout << "Body:" << std::endl;
+        indent++;
+        node.body->accept(*this);
+        indent--;
+        indent--;
+    }
+    void visit(CaseStatement& node) override {
+        printIndent(); std::cout << "CaseStatement: " << std::endl;
+        indent++;
+        node.value->accept(*this);
+        indent--;
+    }
+    void visit(DefaultStatement&) override {
+        printIndent(); std::cout << "DefaultStatement" << std::endl;
     }
     void visit(AsmStatement& node) override {
         printIndent(); std::cout << "AsmStatement: " << node.code << std::endl;

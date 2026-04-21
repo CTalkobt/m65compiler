@@ -175,8 +175,18 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 
     if (match(TokenType::CONTINUE)) {
         const Token& startToken = tokens[pos-1];
-        expect(TokenType::SEMICOLON, "Expected ';' after continue");
-        return setPos(std::make_unique<ContinueStatement>(), startToken);
+        if (peek().type == TokenType::SEMICOLON) {
+            advance();
+            return setPos(std::make_unique<ContinueStatement>(), startToken);
+        }
+        // Handle continue <value> or continue default
+        if (match(TokenType::DEFAULT)) {
+            expect(TokenType::SEMICOLON, "Expected ';' after continue default");
+            return setPos(std::make_unique<SwitchContinueStatement>(nullptr), startToken);
+        }
+        auto target = parseExpression();
+        expect(TokenType::SEMICOLON, "Expected ';' after continue expression");
+        return setPos(std::make_unique<SwitchContinueStatement>(std::move(target)), startToken);
     }
 
     if (match(TokenType::IF)) {
@@ -232,6 +242,28 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         }
         auto body = parseStatement();
         return setPos(std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body)), startToken);
+    }
+
+    if (match(TokenType::SWITCH)) {
+        const Token& startToken = tokens[pos-1];
+        expect(TokenType::OPEN_PAREN, "Expected '(' after 'switch'");
+        auto expression = parseExpression();
+        expect(TokenType::CLOSE_PAREN, "Expected ')' after switch expression");
+        auto body = parseStatement();
+        return setPos(std::make_unique<SwitchStatement>(std::move(expression), std::move(body)), startToken);
+    }
+
+    if (match(TokenType::CASE)) {
+        const Token& startToken = tokens[pos-1];
+        auto value = parseExpression();
+        expect(TokenType::COLON, "Expected ':' after case value");
+        return setPos(std::make_unique<CaseStatement>(std::move(value)), startToken);
+    }
+
+    if (match(TokenType::DEFAULT)) {
+        const Token& startToken = tokens[pos-1];
+        expect(TokenType::COLON, "Expected ':' after default");
+        return setPos(std::make_unique<DefaultStatement>(), startToken);
     }
 
     if (match(TokenType::ASM)) {

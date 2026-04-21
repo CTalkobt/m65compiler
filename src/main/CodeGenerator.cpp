@@ -413,19 +413,61 @@ void CodeGenerator::visit(ReturnStatement& node) {
 
 void CodeGenerator::visit(BreakStatement& node) {
     embedSource(node);
+    // Find nearest break target (loop or switch)
+    // We can check loopStack vs switchStack by comparing where they were pushed?
+    // Actually, it's better if we have a single stack of break targets.
+    // For now, let's assume break inside switch always breaks the switch if it's nested more deeply than a loop.
+    // But what if switch is inside loop?
+    
+    // A better way is a unified stack. Let's just use loopStack for now and push switch break target there too.
     if (!loopStack.empty()) {
         emit("bra " + loopStack.back().breakLabel);
     } else {
-        std::cerr << "Error: 'break' statement outside of loop at " << node.line << ":" << node.column << std::endl;
+        std::cerr << "Error: 'break' statement outside of loop or switch at " << node.line << ":" << node.column << std::endl;
     }
 }
 
 void CodeGenerator::visit(ContinueStatement& node) {
     embedSource(node);
-    if (!loopStack.empty()) {
+    if (!loopStack.empty() && !loopStack.back().continueLabel.empty()) {
         emit("bra " + loopStack.back().continueLabel);
     } else {
         std::cerr << "Error: 'continue' statement outside of loop at " << node.line << ":" << node.column << std::endl;
+    }
+}
+
+void CodeGenerator::visit(SwitchContinueStatement& node) {
+    embedSource(node);
+    if (switchStack.empty()) {
+        std::cerr << "Error: 'continue <value>' statement outside of switch at " << node.line << ":" << node.column << std::endl;
+        return;
+    }
+
+    SwitchInfo* info = switchStack.back();
+    if (!node.target) {
+        // continue default;
+        if (info->hasDefault) {
+            emit("bra " + info->defaultLabel);
+        } else {
+            std::cerr << "Error: 'continue default' but no default label in switch at " << node.line << ":" << node.column << std::endl;
+        }
+    } else {
+        // continue <value>;
+        if (auto* lit = dynamic_cast<IntegerLiteral*>(node.target.get())) {
+            bool found = false;
+            for (auto& c : info->cases) {
+                if (c.value == (uint32_t)lit->value) {
+                    emit("bra " + c.label);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                std::cerr << "Error: 'continue " << lit->value << "' but no such case in switch at " << node.line << ":" << node.column << std::endl;
+            }
+        } else {
+            std::cerr << "Error: 'continue' target must be a constant integer or 'default' at " << node.line << ":" << node.column << std::endl;
+        }
     }
 }
 
@@ -524,6 +566,127 @@ void CodeGenerator::visit(ForStatement& node) {
     emit("bra " + labelStart);
     out << labelEnd << ":" << std::endl;
     invalidateRegs();
+}
+
+void CodeGenerator::visit(SwitchStatement& node) {
+    embedSource(node);
+    
+    // 1. Evaluate condition
+    bool oldNeeded = resultNeeded;
+    resultNeeded = true;
+    node.expression->accept(*this);
+    resultNeeded = oldNeeded;
+
+    // 2. Store in ZP
+    int zpExpr = allocateZP(2);
+    std::stringstream ss;
+    ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpExpr);
+    emit("sta $" + ss.str());
+    emit("txa");
+    std::stringstream ssHigh;
+    ssHigh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpExpr) + 1;
+    emit("sta $" + ssHigh.str());
+    invalidateRegs();
+
+    // 3. Prepare switch context
+    std::string labelBreak = newLabel();
+    
+    SwitchInfo info;
+    info.zpExpr = zpExpr;
+    info.breakLabel = labelBreak;
+    
+    switchStack.push_back(&info);
+    loopStack.push_back({"", labelBreak}); // Use loopStack for break support
+
+    // 4. First pass: collect cases
+    class CaseCollector : public ASTVisitor {
+    public:
+        SwitchInfo& info;
+        CodeGenerator& gen;
+        CaseCollector(SwitchInfo& i, CodeGenerator& g) : info(i), gen(g) {}
+        void visit(IntegerLiteral&) override {}
+        void visit(StringLiteral&) override {}
+        void visit(VariableReference&) override {}
+        void visit(Assignment& node) override { node.expression->accept(*this); }
+        void visit(BinaryOperation& node) override { node.left->accept(*this); node.right->accept(*this); }
+        void visit(UnaryOperation& node) override { node.operand->accept(*this); }
+        void visit(FunctionCall& node) override { for(auto& a : node.arguments) a->accept(*this); }
+        void visit(MemberAccess& node) override { node.structExpr->accept(*this); }
+        void visit(VariableDeclaration& node) override { if(node.initializer) node.initializer->accept(*this); }
+        void visit(ReturnStatement& node) override { if(node.expression) node.expression->accept(*this); }
+        void visit(BreakStatement&) override {}
+        void visit(ContinueStatement&) override {}
+        void visit(SwitchContinueStatement&) override {}
+        void visit(ExpressionStatement& node) override { node.expression->accept(*this); }
+        void visit(IfStatement& node) override { node.condition->accept(*this); node.thenBranch->accept(*this); if(node.elseBranch) node.elseBranch->accept(*this); }
+        void visit(WhileStatement& node) override { node.condition->accept(*this); node.body->accept(*this); }
+        void visit(DoWhileStatement& node) override { node.body->accept(*this); node.condition->accept(*this); }
+        void visit(ForStatement& node) override { if(node.initializer) node.initializer->accept(*this); if(node.condition) node.condition->accept(*this); if(node.increment) node.increment->accept(*this); node.body->accept(*this); }
+        void visit(SwitchStatement&) override {} // Nested switches have their own collector
+        void visit(CaseStatement& node) override {
+            uint32_t val = 0;
+            if (auto* lit = dynamic_cast<IntegerLiteral*>(node.value.get())) {
+                val = lit->value;
+            }
+            std::string l = gen.newLabel();
+            info.cases.push_back({val, l});
+            node.label = l;
+        }
+        void visit(DefaultStatement& node) override {
+            std::string l = gen.newLabel();
+            info.defaultLabel = l;
+            info.hasDefault = true;
+            node.label = l;
+        }
+        void visit(AsmStatement&) override {}
+        void visit(StaticAssert&) override {}
+        void visit(StructDefinition&) override {}
+        void visit(CompoundStatement& node) override { for(auto& s : node.statements) s->accept(*this); }
+        void visit(FunctionDeclaration&) override {}
+        void visit(TranslationUnit&) override {}
+    };
+
+    CaseCollector collector(info, *this);
+    node.body->accept(collector);
+
+    // 5. Emit comparisons
+    for (auto& c : info.cases) {
+        emit("ldax $" + ss.str());
+        std::stringstream ssVal;
+        ssVal << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)c.value;
+        emit("cpw .ax, " + ssVal.str());
+        emit("beq " + c.label);
+    }
+    
+    if (info.hasDefault) {
+        emit("bra " + info.defaultLabel);
+    } else {
+        emit("bra " + labelBreak);
+    }
+
+    // 6. Emit body
+    node.body->accept(*this);
+
+    // 7. Cleanup
+    out << labelBreak << ":" << std::endl;
+    invalidateRegs();
+    freeZP(zpExpr, 2);
+    switchStack.pop_back();
+    loopStack.pop_back();
+}
+
+void CodeGenerator::visit(CaseStatement& node) {
+    if (!node.label.empty()) {
+        out << node.label << ":" << std::endl;
+        invalidateRegs();
+    }
+}
+
+void CodeGenerator::visit(DefaultStatement& node) {
+    if (!node.label.empty()) {
+        out << node.label << ":" << std::endl;
+        invalidateRegs();
+    }
 }
 
 void CodeGenerator::visit(StructDefinition& node) {
@@ -1429,6 +1592,9 @@ public:
     }
     void visit(BreakStatement& /*node*/) override {}
     void visit(ContinueStatement& /*node*/) override {}
+    void visit(SwitchContinueStatement& node) override {
+        if (node.target) node.target->accept(*this);
+    }
     void visit(ExpressionStatement& node) override {
         if (node.expression) node.expression->accept(*this);
     }
@@ -1451,6 +1617,14 @@ public:
         if (node.increment) node.increment->accept(*this);
         node.body->accept(*this);
     }
+    void visit(SwitchStatement& node) override {
+        node.expression->accept(*this);
+        node.body->accept(*this);
+    }
+    void visit(CaseStatement& node) override {
+        node.value->accept(*this);
+    }
+    void visit(DefaultStatement& /*node*/) override {}
     void visit(AsmStatement& /*node*/) override {}
     void visit(StaticAssert& /*node*/) override {}
     void visit(StructDefinition& /*node*/) override {}

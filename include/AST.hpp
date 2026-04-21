@@ -110,6 +110,13 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class SwitchContinueStatement : public Statement {
+public:
+    std::unique_ptr<Expression> target; // nullptr means 'default'
+    SwitchContinueStatement(std::unique_ptr<Expression> t) : target(std::move(t)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class ExpressionStatement : public Statement {
 public:
     std::unique_ptr<Expression> expression;
@@ -151,12 +158,36 @@ public:
     std::unique_ptr<Expression> condition;
     std::unique_ptr<Expression> increment;
     std::unique_ptr<Statement> body;
-    ForStatement(std::unique_ptr<Statement> i, std::unique_ptr<Expression> c, std::unique_ptr<Expression> inc, std::unique_ptr<Statement> b)
-        : initializer(std::move(i)), condition(std::move(c)), increment(std::move(inc)), body(std::move(b)) {}
+    ForStatement(std::unique_ptr<Statement> init, std::unique_ptr<Expression> cond, std::unique_ptr<Expression> inc, std::unique_ptr<Statement> body)
+        : initializer(std::move(init)), condition(std::move(cond)), increment(std::move(inc)), body(std::move(body)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class SwitchStatement : public Statement {
+public:
+    std::unique_ptr<Expression> expression;
+    std::unique_ptr<Statement> body;
+    SwitchStatement(std::unique_ptr<Expression> expr, std::unique_ptr<Statement> body)
+        : expression(std::move(expr)), body(std::move(body)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class CaseStatement : public Statement {
+public:
+    std::unique_ptr<Expression> value;
+    std::string label;
+    CaseStatement(std::unique_ptr<Expression> val) : value(std::move(val)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class DefaultStatement : public Statement {
+public:
+    std::string label;
     void accept(ASTVisitor& visitor) override;
 };
 
 class AsmStatement : public Statement {
+
 public:
     std::string code;
     AsmStatement(const std::string& c) : code(c) {}
@@ -231,11 +262,15 @@ public:
     virtual void visit(ReturnStatement& node) = 0;
     virtual void visit(BreakStatement& node) = 0;
     virtual void visit(ContinueStatement& node) = 0;
+    virtual void visit(SwitchContinueStatement& node) = 0;
     virtual void visit(ExpressionStatement& node) = 0;
     virtual void visit(IfStatement& node) = 0;
     virtual void visit(WhileStatement& node) = 0;
     virtual void visit(DoWhileStatement& node) = 0;
     virtual void visit(ForStatement& node) = 0;
+    virtual void visit(SwitchStatement& node) = 0;
+    virtual void visit(CaseStatement& node) = 0;
+    virtual void visit(DefaultStatement& node) = 0;
     virtual void visit(AsmStatement& node) = 0;
     virtual void visit(StaticAssert& node) = 0;
     virtual void visit(StructDefinition& node) = 0;
