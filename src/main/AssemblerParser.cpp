@@ -990,6 +990,7 @@ std::vector<uint8_t> AssemblerParser::pass2() {
         uint32_t cP = 0;
         bool isDeadCode = false;
         for (auto& s : statements) {
+            pc = cP; // Update member pc for expression evaluation
             s->address = cP;
             if (!s->label.empty()) {
                 isDeadCode = false;

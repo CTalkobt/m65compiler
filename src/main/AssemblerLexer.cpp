@@ -97,7 +97,7 @@ AssemblerToken AssemblerLexer::nextToken() {
         }
         std::string upper = name;
         std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-        static const std::set<std::string> regs = {"A", "X", "Y", "Z", "SP", "AX", "AY", "AZ", "XY", "Q"};
+        static const std::set<std::string> regs = {"A", "X", "Y", "Z", "SP", "PC", "AX", "AY", "AZ", "XY", "Q"};
         if (regs.count(upper)) return {AssemblerTokenType::REGISTER, upper, startLine, startCol};
         return {AssemblerTokenType::DIRECTIVE, name, startLine, startCol};
     }

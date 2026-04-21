@@ -56,6 +56,7 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
     for (auto& [name, symbol] : parser->symbolTable) if (symbol.isVariable) symbol.value = symbol.initialValue;
 
     for (auto& stmt : parser->statements) {
+        parser->pc = stmt->address; // Update parser pc for .PC evaluations
         if (stmt->deleted) continue;
         if (!stmt->label.empty()) {
             isDeadCode = false;

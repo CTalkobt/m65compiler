@@ -39,6 +39,7 @@ public:
     bool optimize();
     std::vector<uint8_t> pass2();
     uint32_t getZPStart() const;
+    uint32_t getPC() const { return pc; }
     Symbol* resolveSymbol(const std::string& name, const std::string& scopePrefix = "");
 
 private:

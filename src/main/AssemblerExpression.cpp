@@ -14,11 +14,23 @@ void ConstantNode::emit(M65Emitter& e, AssemblerParser* parser, int width, const
 }
 
 // RegisterNode
-uint32_t RegisterNode::getValue(AssemblerParser*) const { return 0; }
-bool RegisterNode::isConstant(AssemblerParser*) const { return false; }
-bool RegisterNode::is16Bit(AssemblerParser*) const { return name.size() > 2; }
+uint32_t RegisterNode::getValue(AssemblerParser* parser) const {
+    if (name == ".PC" && parser) return parser->getPC();
+    return 0;
+}
+bool RegisterNode::isConstant(AssemblerParser* parser) const {
+    if (name == ".PC") return true;
+    return false;
+}
+bool RegisterNode::is16Bit(AssemblerParser*) const { return name == ".PC" || name.size() > 2; }
 void RegisterNode::emit(M65Emitter& e, AssemblerParser* parser, int width, const std::string&) {
     if (!parser) return;
+    if (name == ".PC") {
+        uint32_t val = parser->getPC();
+        e.lda_imm(val & 0xFF);
+        if (width >= 16) e.ldx_imm((val >> 8) & 0xFF);
+        return;
+    }
     if (width <= 8) {
         if (name == ".X") e.txa();
         else if (name == ".Y") e.tya();
@@ -281,7 +293,7 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
         if (t.type == AssemblerTokenType::DECIMAL_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value));
         if (t.type == AssemblerTokenType::HEX_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value.substr(1), nullptr, 16));
         if (t.type == AssemblerTokenType::BINARY_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value.substr(1), nullptr, 2));
-        if (t.type == AssemblerTokenType::REGISTER) return std::make_unique<RegisterNode>(t.value);
+        if (t.type == AssemblerTokenType::REGISTER) return std::make_unique<RegisterNode>("." + t.value);
         if (t.type == AssemblerTokenType::FLAG) return std::make_unique<FlagNode>(t.value[0]);
         if (t.type == AssemblerTokenType::IDENTIFIER) return std::make_unique<VariableNode>(t.value, scopePrefix);
         if (t.type == AssemblerTokenType::STAR) return std::make_unique<DereferenceNode>(parseExprAST(tokens, idx, symbolTable, scopePrefix));
