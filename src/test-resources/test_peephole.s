@@ -16,7 +16,7 @@ start:
     
     ; Test JMP to BRA conversion
     JMP target  ; Should become BRA target (2 bytes)
-    NOP
+    EOM
     
 target:
     ; Test @ labels (internal optimization window)

@@ -372,7 +372,7 @@ void AssemblerParser::pass1() {
  
 }
  else if (stmt->dir.name == "cpu") stmt->size = 0;
- else stmt->size = calculateDirectiveSize(stmt->dir);
+ else stmt->size = calculateDirectiveSize(stmt->dir, pc);
  
 }
 
@@ -444,6 +444,10 @@ void AssemblerParser::pass1() {
                 }
             } else {
                 stmt->instr.mnemonic = fullMnemonic;
+            }
+
+            if (stmt->instr.mnemonic == "nop") {
+                throw std::runtime_error("The 'nop' opcode is disallowed on 45GS02 as $EA is an instruction prefix. Use 'eom' if you specifically want $EA, or 'clv' ($B8) for a low-impact 1-byte NOP alternative.");
             }
 
             if (stmt->instr.mnemonic == "proc") {
@@ -940,22 +944,21 @@ int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t
 }
 
 
-int AssemblerParser::calculateDirectiveSize(const Directive& dir) {
-
+int AssemblerParser::calculateDirectiveSize(const Directive& dir, uint32_t currentAddr) {
     if (dir.name == "byte") return (int)dir.arguments.size();
-
     if (dir.name == "word") return (int)dir.arguments.size() * 2;
-
     if (dir.name == "dword" || dir.name == "long") return (int)dir.arguments.size() * 4;
-
     if (dir.name == "float") return (int)dir.arguments.size() * 5;
-
     if (dir.name == "text" || dir.name == "ascii") return (int)dir.arguments[0].size();
-
+    if (dir.name == "align" || dir.name == "balign") {
+        if (dir.arguments.empty()) return 0;
+        uint32_t align = parseNumericLiteral(dir.arguments[0]);
+        if (align == 0) return 0;
+        return (align - (currentAddr % align)) % align;
+    }
     return 0;
-
-
 }
+
 
 
 std::vector<uint8_t> AssemblerParser::pass2() {
@@ -1016,7 +1019,10 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                 else if (s->type == Statement::EXPR) {
                     std::vector<uint8_t> d;
                     emitExpressionCode(d, s->exprTarget, s->exprTokenIndex, s->scopePrefix);
-                    s->size = d.size();
+                    s->size = (int)d.size();
+                }
+                else if (s->type == Statement::DIRECTIVE) {
+                    s->size = calculateDirectiveSize(s->dir, cP);
                 }
             }
 

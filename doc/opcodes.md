@@ -312,6 +312,8 @@ This reference summarizes the instructions available in the `ca45` assembler for
   * *Description*: Memory Map Configuration. Remaps memory banks based on registers.
   * *Modes*: `imp`
 
-* **`NOP`**
-  * *Description*: No Operation. Takes up 1 byte and 1 cycle. (Note: the `$EA` / `EOM` prefix acts as a NOP if not followed by a compatible pointer instruction).
+* **`EOM`**
+  * *Description*: End of Message / Instruction Prefix. On 45GS02, `$EA` is used as a prefix for extended instructions. If used alone, it acts as a 1-cycle NOP.
   * *Modes*: `imp`
+
+> **Note**: The literal `NOP` mnemonic is disallowed in `ca45` to avoid confusion with its role as a prefix. Use `EOM` if you specifically want the `$EA` byte, or `CLV` (`$B8`) as a safe 1-byte NOP alternative.

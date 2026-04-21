@@ -64,7 +64,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **Anonymous Structures & Unions**: Support nested structs/unions without names.
 - [ ] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
 - [ ] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
-- [ ] **Global Variables**: Support top-level variable declarations.
+- [X] **Global Variables**: Support top-level variable declarations.
 - [ ] **Type Definitions**: Implement `typedef`.
 - [ ] **Signed Integers**: Support `signed` types and signed arithmetic/comparisons.
 
@@ -88,7 +88,7 @@ Steps required to bring the C compiler closer to C11 standards.
 
 ### 3. Memory & Alignment
 - [X] **Stack-relative Simulation**: Extended `STX/STY/STZ offset, s` with `TSX` sequences for thread-safety.
-- [ ] **Alignment Directive**: Implement `.align <n>` or `.balign <n>` to support C11 `_Alignas`.
+- [X] **Alignment Directive**: Implement `.align <n>` or `.balign <n>` to support C11 `_Alignas`.
 - [ ] **Segment Management**: Implement `.section` or `.segment` to support `_Thread_local` storage and separate data/text areas.
 
 

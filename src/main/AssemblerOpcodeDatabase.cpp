@@ -173,8 +173,8 @@ const std::map<std::pair<std::string, AddressingMode>, uint8_t>& AssemblerOpcode
         {{"lsr", AddressingMode::BASE_PAGE_X}, 0x56},
         {{"map", AddressingMode::IMPLIED}, 0x5C},
         {{"neg", AddressingMode::ACCUMULATOR}, 0x42},
-        {{"nop", AddressingMode::IMPLIED}, 0xEA},
         {{"ora", AddressingMode::BASE_PAGE_INDIRECT_Y}, 0x11},
+
         {{"ora", AddressingMode::BASE_PAGE_INDIRECT_Z}, 0x12},
         {{"ora", AddressingMode::FLAT_INDIRECT_Z}, 0x12},
         {{"ora", AddressingMode::STACK_RELATIVE}, 0x12},

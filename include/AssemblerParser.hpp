@@ -92,7 +92,7 @@ private:
     const AssemblerToken& expect(AssemblerTokenType type, const std::string& message);
 
     int calculateInstructionSize(const Instruction& instr, uint32_t currentAddr = 0, const std::string& scopePrefix = "");
-    int calculateDirectiveSize(const Directive& dir);
+    int calculateDirectiveSize(const Directive& dir, uint32_t currentAddr = 0);
     int calculateExprSize(int tokenIndex, const std::string& scopePrefix = "");
     uint32_t evaluateExpressionAt(int index, const std::string& scopePrefix = "");
     void emitExpressionCode(std::vector<uint8_t>& binary, const std::string& target, int tokenIndex, const std::string& scopePrefix = "");
