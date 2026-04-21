@@ -79,6 +79,10 @@ Token Lexer::nextToken() {
         return lexString();
     }
 
+    if (c == '\'') {
+        return lexChar();
+    }
+
     int startLine = line;
     int startCol = column;
     get();
@@ -151,6 +155,8 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"struct", TokenType::STRUCT},
         {"volatile", TokenType::VOLATILE},
         {"_Static_assert", TokenType::_Static_assert},
+        {"_Alignas", TokenType::_Alignas},
+        {"_Alignof", TokenType::_Alignof},
         {"break", TokenType::BREAK},
         {"continue", TokenType::CONTINUE},
         {"switch", TokenType::SWITCH},
@@ -207,4 +213,26 @@ Token Lexer::lexString() {
     }
     if (peek() == '"') get(); // skip closing quote
     return {TokenType::STRING_LITERAL, value, startLine, startCol};
+}
+
+Token Lexer::lexChar() {
+    int startLine = line;
+    int startCol = column;
+    get(); // skip opening '
+    char c = 0;
+    if (peek() == '\\') {
+        get();
+        char next = get();
+        switch (next) {
+            case 'n': c = '\n'; break;
+            case 'r': c = '\r'; break;
+            case 't': c = '\t'; break;
+            case '0': c = '\0'; break;
+            default: c = next; break;
+        }
+    } else {
+        c = get();
+    }
+    if (peek() == '\'') get(); // skip closing '
+    return {TokenType::INTEGER_LITERAL, std::to_string((int)(uint8_t)c), startLine, startCol};
 }

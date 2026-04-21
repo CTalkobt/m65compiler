@@ -35,7 +35,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Static Assertions**: Implement `_Static_assert(const-expr, string)` parsing and validation.
 - [ ] **Generic Selections**: Implement `_Generic` expressions for type-based dispatch.
 - [ ] **Function Specifiers**: Support `_Noreturn` (enabling optimization to skip return opcodes).
-- [ ] **Alignment**: Implement `_Alignas` and `_Alignof` to manage data alignment.
+- [X] **Alignment**: Implement `_Alignas` and `_Alignof` to manage data alignment.
 - [X] **Inline Assembly**: Support `asm("...")` or `__asm__("...")` for direct assembly insertion.
 - [X] **Preprocessor**: Support `#include`, `#define`, `#undef`, `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`.
 - [X] **Macro Expansion**: Support object-like, function-like, and variadic macros, rescanning, and `#` / `##` operators.

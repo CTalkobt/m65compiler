@@ -16,6 +16,8 @@ enum class TokenType {
     STRUCT,
     VOLATILE,
     _Static_assert,
+    _Alignas,
+    _Alignof,
     BREAK,
     CONTINUE,
     SWITCH,
@@ -87,6 +89,8 @@ struct Token {
             case TokenType::STRUCT: return "STRUCT";
             case TokenType::VOLATILE: return "VOLATILE";
             case TokenType::_Static_assert: return "_Static_assert";
+            case TokenType::_Alignas: return "_Alignas";
+            case TokenType::_Alignof: return "_Alignof";
             case TokenType::BREAK: return "BREAK";
             case TokenType::CONTINUE: return "CONTINUE";
             case TokenType::SWITCH: return "SWITCH";

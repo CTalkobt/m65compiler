@@ -59,6 +59,22 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
         // Look ahead to distinguish function from global variable
         size_t look = pos;
         bool isVol = false;
+        std::unique_ptr<Expression> alignmentExpr = nullptr;
+
+        if (tokens[look].type == TokenType::_Alignas) {
+            look++;
+            if (look < tokens.size() && tokens[look].type == TokenType::OPEN_PAREN) {
+                look++;
+                // Skip expression - this is a bit crude but works for simple cases
+                int parens = 1;
+                while (look < tokens.size() && parens > 0) {
+                    if (tokens[look].type == TokenType::OPEN_PAREN) parens++;
+                    else if (tokens[look].type == TokenType::CLOSE_PAREN) parens--;
+                    look++;
+                }
+            }
+        }
+
         if (tokens[look].type == TokenType::VOLATILE) {
             isVol = true;
             look++;
@@ -314,6 +330,24 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 }
 
 std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
+    std::unique_ptr<Expression> alignmentExpr = nullptr;
+    if (match(TokenType::_Alignas)) {
+        expect(TokenType::OPEN_PAREN, "Expected '(' after '_Alignas'");
+        if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::STRUCT || peek().type == TokenType::VOID) {
+            std::string aType;
+            if (match(TokenType::INT)) aType = "int";
+            else if (match(TokenType::CHAR)) aType = "char";
+            else if (match(TokenType::VOID)) aType = "void";
+            else if (match(TokenType::STRUCT)) aType = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+            int aPtr = 0;
+            while (match(TokenType::STAR)) aPtr++;
+            alignmentExpr = std::make_unique<AlignofExpression>(aType, aPtr);
+        } else {
+            alignmentExpr = parseExpression();
+        }
+        expect(TokenType::CLOSE_PAREN, "Expected ')' after alignment expression");
+    }
+
     const Token& typeToken = peek();
     std::string type;
     if (match(TokenType::INT)) type = "int";
@@ -330,6 +364,7 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
     std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
     auto decl = setPos(std::make_unique<VariableDeclaration>(type, name, ptrLevel), typeToken);
     decl->isVolatile = isVolatile;
+    decl->alignmentExpr = std::move(alignmentExpr);
 
     if (match(TokenType::EQUALS)) {
         decl->initializer = parseExpression();
@@ -355,6 +390,23 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition() {
     expect(TokenType::OPEN_BRACE, "Expected '{'");
     auto def = setPos(std::make_unique<StructDefinition>(name), startToken);
     while (peek().type != TokenType::CLOSE_BRACE && peek().type != TokenType::END_OF_FILE) {
+        std::unique_ptr<Expression> mAlignmentExpr = nullptr;
+        if (match(TokenType::_Alignas)) {
+            expect(TokenType::OPEN_PAREN, "Expected '(' after '_Alignas'");
+            if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::STRUCT || peek().type == TokenType::VOID) {
+                std::string aType;
+                if (match(TokenType::INT)) aType = "int";
+                else if (match(TokenType::CHAR)) aType = "char";
+                else if (match(TokenType::VOID)) aType = "void";
+                else if (match(TokenType::STRUCT)) aType = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+                int aPtr = 0;
+                while (match(TokenType::STAR)) aPtr++;
+                mAlignmentExpr = std::make_unique<AlignofExpression>(aType, aPtr);
+            } else {
+                mAlignmentExpr = parseExpression();
+            }
+            expect(TokenType::CLOSE_PAREN, "Expected ')' after alignment expression");
+        }
         std::string type;
         if (match(TokenType::INT)) type = "int";
         else if (match(TokenType::CHAR)) type = "char";
@@ -366,7 +418,7 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition() {
         int ptrLevel = 0;
         while (match(TokenType::STAR)) ptrLevel++;
         std::string memberName = expect(TokenType::IDENTIFIER, "Expected member name").value;
-        def->members.push_back({type, ptrLevel, memberName});
+        def->members.push_back({type, ptrLevel, memberName, 0, std::move(mAlignmentExpr)});
         expect(TokenType::SEMICOLON, "Expected ';'");
     }
     expect(TokenType::CLOSE_BRACE, "Expected '}'");
@@ -506,6 +558,22 @@ std::unique_ptr<Expression> Parser::parseUnary() {
 
 std::unique_ptr<Expression> Parser::parsePrimary() {
     std::unique_ptr<Expression> expr;
+    if (match(TokenType::_Alignof)) {
+        expect(TokenType::OPEN_PAREN, "Expected '(' after '_Alignof'");
+        std::string typeName;
+        if (match(TokenType::INT)) typeName = "int";
+        else if (match(TokenType::CHAR)) typeName = "char";
+        else if (match(TokenType::VOID)) typeName = "void";
+        else if (match(TokenType::STRUCT)) typeName = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+        else throw std::runtime_error("Expected type name in _Alignof");
+        
+        int aPtrLevel = 0;
+        while (match(TokenType::STAR)) aPtrLevel++;
+        
+        expect(TokenType::CLOSE_PAREN, "Expected ')' after _Alignof type");
+        return setPos(std::make_unique<AlignofExpression>(typeName, aPtrLevel), tokens[pos-1]);
+    }
+
     if (peek().type == TokenType::IDENTIFIER) {
         const Token& nameToken = advance();
         std::string name = nameToken.value;

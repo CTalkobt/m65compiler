@@ -82,6 +82,14 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class AlignofExpression : public Expression {
+public:
+    std::string typeName;
+    int pointerLevel;
+    AlignofExpression(const std::string& t, int p = 0) : typeName(t), pointerLevel(p) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class VariableDeclaration : public Statement {
 public:
     std::string type;
@@ -89,6 +97,8 @@ public:
     std::string name;
     bool isVolatile = false;
     bool isGlobal = false;
+    int alignment = 0;
+    std::unique_ptr<Expression> alignmentExpr;
     std::unique_ptr<Expression> initializer;
     VariableDeclaration(const std::string& t, const std::string& n, int p = 0) : type(t), pointerLevel(p), name(n) {}
     void accept(ASTVisitor& visitor) override;
@@ -214,6 +224,8 @@ struct StructMember {
     std::string type;
     int pointerLevel;
     std::string name;
+    int alignment = 0;
+    std::unique_ptr<Expression> alignmentExpr;
 };
 
 class StructDefinition : public Statement {
@@ -259,6 +271,7 @@ public:
     virtual void visit(UnaryOperation& node) = 0;
     virtual void visit(FunctionCall& node) = 0;
     virtual void visit(MemberAccess& node) = 0;
+    virtual void visit(AlignofExpression& node) = 0;
     virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ReturnStatement& node) = 0;
     virtual void visit(BreakStatement& node) = 0;

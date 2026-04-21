@@ -181,6 +181,20 @@ void CodeGenerator::visit(VariableDeclaration& node) {
 
     std::cerr << "CodeGenerator::Visiting VariableDeclaration: " << node.name << std::endl;
 
+    int currentAlignment = 1;
+    if (size == 2 || node.pointerLevel > 0 || node.type == "int") currentAlignment = 2;
+    if (node.alignment > currentAlignment) currentAlignment = node.alignment;
+
+    // Alignment for stack variables:
+    // We can't easily use .align on the stack at runtime without more complex logic.
+    // For now, let's just emit padding bytes (zeros) on the stack if needed.
+    // However, the stack offset is relative to SP, which might not be aligned.
+    // Assuming the stack starts aligned, we can track the current stack depth.
+    // But our current CodeGenerator doesn't track stack depth explicitly in a way that
+    // allows us to know the absolute alignment of SP.
+    // A better way for MEGA65 might be to use the stack-relative addressing with an aligned base.
+    // For now, we will skip runtime stack alignment but support the directive for globals and structs.
+    
     // Handle volatile variables first: always allocate.
     if (node.isVolatile) {
         std::cerr << "  Variable is VOLATILE. Always allocating." << std::endl;
@@ -639,9 +653,11 @@ void CodeGenerator::visit(SwitchStatement& node) {
         void visit(Assignment& node) override { node.expression->accept(*this); }
         void visit(BinaryOperation& node) override { node.left->accept(*this); node.right->accept(*this); }
         void visit(UnaryOperation& node) override { node.operand->accept(*this); }
-        void visit(FunctionCall& node) override { for(auto& a : node.arguments) a->accept(*this); }
+        void visit(FunctionCall& node) override { for (auto& arg : node.arguments) arg->accept(*this); }
         void visit(MemberAccess& node) override { node.structExpr->accept(*this); }
-        void visit(VariableDeclaration& node) override { if(node.initializer) node.initializer->accept(*this); }
+        void visit(AlignofExpression&) override {}
+        void visit(VariableDeclaration& node) override { if (node.initializer) node.initializer->accept(*this); }
+
         void visit(ReturnStatement& node) override { if(node.expression) node.expression->accept(*this); }
         void visit(BreakStatement&) override {}
         void visit(ContinueStatement&) override {}
@@ -722,12 +738,30 @@ void CodeGenerator::visit(StructDefinition& node) {
     StructInfo info;
     info.name = node.name;
     int currentOffset = 0;
+    int maxAlign = 1;
     for (auto& member : node.members) {
+        int mAlign = 1;
+        if (member.pointerLevel > 0 || member.type == "int") mAlign = 2;
+        else if (isStruct(member.type)) {
+            std::string sName = member.type.substr(7);
+            if (structs.count(sName)) mAlign = structs[sName].alignment;
+        }
+
+        if (member.alignment > mAlign) mAlign = member.alignment;
+        if (mAlign > maxAlign) maxAlign = mAlign;
+        
+        // Pad to alignment
+        if (currentOffset % mAlign != 0) {
+            currentOffset += mAlign - (currentOffset % mAlign);
+        }
+
         MemberInfo mInfo;
         mInfo.type = member.type;
         mInfo.pointerLevel = member.pointerLevel;
         mInfo.offset = currentOffset;
+        mInfo.alignment = mAlign;
         info.members[member.name] = mInfo;
+        
         if (member.pointerLevel > 0) currentOffset += 2;
         else if (member.type == "char") currentOffset += 1;
         else if (member.type == "int") currentOffset += 2;
@@ -737,7 +771,12 @@ void CodeGenerator::visit(StructDefinition& node) {
             else throw std::runtime_error("Unknown struct type in member: " + sName);
         }
     }
+    // Final padding to max alignment
+    if (currentOffset % maxAlign != 0) {
+        currentOffset += maxAlign - (currentOffset % maxAlign);
+    }
     info.totalSize = currentOffset;
+    info.alignment = maxAlign;
     structs[node.name] = info;
 }
 
@@ -1090,11 +1129,28 @@ void CodeGenerator::emitJumpIfFalse(Expression* cond, const std::string& labelEl
     }
 }
 
+void CodeGenerator::visit(AlignofExpression& node) {
+    int alignment = 1;
+    if (node.pointerLevel > 0 || node.typeName == "int") alignment = 2;
+    else if (node.typeName == "char") alignment = 1;
+    else if (node.typeName.substr(0, 7) == "struct ") {
+        std::string sName = node.typeName.substr(7);
+        if (structs.count(sName)) alignment = 1; // Structs are aligned to 1 by default unless we track internal alignment
+    }
+    emitter->lda_imm(alignment & 0xFF);
+    updateRegA(alignment & 0xFF);
+    invalidateFlags();
+}
+
 void CodeGenerator::emitData() {
     out << std::endl << "; Data Section" << std::endl;
 
     for (auto* gVar : globalVars) {
+        if (gVar->alignment > 1) {
+            out << "    .align " << std::to_string(gVar->alignment) << std::endl;
+        }
         out << "_g_" << gVar->name << ":" << std::endl;
+        variableTypes["_g_" + gVar->name] = {gVar->type, gVar->pointerLevel, gVar->isVolatile};
         int size = 0;
         if (gVar->pointerLevel > 0) size = 2;
         else if (gVar->type == "char") size = 1;
@@ -1641,6 +1697,7 @@ public:
     void visit(MemberAccess& node) override {
         node.structExpr->accept(*this);
     }
+    void visit(AlignofExpression& /*node*/) override {}
 
     // Statements
     void visit(VariableDeclaration& node) override {

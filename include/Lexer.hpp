@@ -22,4 +22,5 @@ private:
     Token lexIdentifierOrKeyword();
     Token lexNumber();
     Token lexString();
+    Token lexChar();
 };

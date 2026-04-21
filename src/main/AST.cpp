@@ -7,6 +7,7 @@ void Assignment::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void BinaryOperation::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void UnaryOperation::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void MemberAccess::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void AlignofExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionCall::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void VariableDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ReturnStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }

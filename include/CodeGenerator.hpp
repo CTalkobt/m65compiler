@@ -29,11 +29,13 @@ public:
         std::string type;
         int pointerLevel;
         int offset;
+        int alignment = 1;
     };
     struct StructInfo {
         std::string name;
         std::map<std::string, MemberInfo> members;
         int totalSize;
+        int alignment = 1;
     };
     std::map<std::string, VarInfo> variableTypes;
     std::map<std::string, StructInfo> structs;
@@ -48,6 +50,7 @@ public:
     void visit(UnaryOperation& node) override;
     void visit(FunctionCall& node) override;
     void visit(MemberAccess& node) override;
+    void visit(AlignofExpression& node) override;
     void visit(VariableDeclaration& node) override;
     void visit(ReturnStatement& node) override;
     void visit(BreakStatement& node) override;

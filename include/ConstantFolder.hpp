@@ -140,7 +140,15 @@ public:
         lastExpr = copyPos(std::make_unique<MemberAccess>(fold(std::move(node.structExpr)), node.memberName, node.isArrow), node);
     }
 
+    void visit(AlignofExpression& node) override;
+
     void visit(VariableDeclaration& node) override {
+        auto alignmentExpr = node.alignmentExpr ? fold(std::move(node.alignmentExpr)) : nullptr;
+        if (alignmentExpr) {
+            if (auto* lit = dynamic_cast<IntegerLiteral*>(alignmentExpr.get())) {
+                node.alignment = lit->value;
+            }
+        }
         auto initializer = node.initializer ? fold(std::move(node.initializer)) : nullptr;
         if (initializer) {
             if (auto* lit = dynamic_cast<IntegerLiteral*>(initializer.get())) {
@@ -151,6 +159,8 @@ public:
         }
         auto decl = copyPos(std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel), node);
         decl->initializer = std::move(initializer);
+        decl->alignmentExpr = std::move(alignmentExpr);
+        decl->alignment = node.alignment;
         decl->isVolatile = node.isVolatile;
         decl->isGlobal = node.isGlobal;
         lastStmt = std::move(decl);
@@ -250,7 +260,16 @@ public:
 
     void visit(StructDefinition& node) override {
         auto def = copyPos(std::make_unique<StructDefinition>(node.name), node);
-        def->members = node.members;
+        for (auto& m : node.members) {
+            auto alignmentExpr = m.alignmentExpr ? fold(std::move(m.alignmentExpr)) : nullptr;
+            int alignment = m.alignment;
+            if (alignmentExpr) {
+                if (auto* lit = dynamic_cast<IntegerLiteral*>(alignmentExpr.get())) {
+                    alignment = lit->value;
+                }
+            }
+            def->members.push_back({m.type, m.pointerLevel, m.name, alignment, std::move(alignmentExpr)});
+        }
         lastStmt = std::move(def);
     }
 

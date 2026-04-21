@@ -54,6 +54,11 @@ public:
         node.structExpr->accept(*this);
         indent--;
     }
+    void visit(AlignofExpression& node) override {
+        printIndent(); std::cout << "Alignof: " << node.typeName;
+        for (int i = 0; i < node.pointerLevel; i++) std::cout << "*";
+        std::cout << std::endl;
+    }
     void visit(VariableDeclaration& node) override {
         printIndent(); std::cout << "VariableDeclaration: " << node.name << " (" << node.type << ")" << std::endl;
         if (node.initializer) {
