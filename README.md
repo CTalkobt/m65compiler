@@ -60,3 +60,5 @@ This script compiles C source files from `src/test-resources/` and assembles the
 For detailed information on each tool, refer to:
 - [doc/cc45.md](doc/cc45.md) — Compiler Usage and Features
 - [doc/ca45.md](doc/ca45.md) — Assembler Syntax and Reference
+- [doc/cp45.md](doc/cp45.md) — Preprocessor Features and Usage
+- [doc/opcodes.md](doc/opcodes.md) — 45GS02 Instruction Reference

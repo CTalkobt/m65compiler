@@ -45,6 +45,8 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Expression Evaluation**: Support `defined()`, arithmetic, and logic in `#if` / `#elif`.
 - [X] **Line Continuation**: Support `\` at end of line.
 - [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`.
+- [ ] **Break/Continue**: Implement `break` and `continue` for loop control.
+- [ ] **Switch/Case**: Implement `switch`, `case`, and `default`.
 
 ## Roadmap - Linker & Libraries (ln45)
 - [ ] **Object Format**: Define the `.o45` relocatable object format as an extension of the `.o65` specification.
@@ -62,6 +64,9 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **Anonymous Structures & Unions**: Support nested structs/unions without names.
 - [ ] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
 - [ ] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
+- [ ] **Global Variables**: Support top-level variable declarations.
+- [ ] **Type Definitions**: Implement `typedef`.
+- [ ] **Signed Integers**: Support `signed` types and signed arithmetic/comparisons.
 
 ---
 
@@ -76,7 +81,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **PC Register**: Treat current program counter as a register named .PC similar to how .A, .X etc are defined. 
 
 ### 2. Segments
-- [I] **Local Optimization Windows**: Implemented `@` labels to define boundaries for register/flag tracking.
+- [X] **Local Optimization Windows**: Implemented `@` labels to define boundaries for register/flag tracking.
 - [ ] **Segment handling**: Ability to define segments to enforce local scope. 
       Also, allow anonymous segments where scope is merely defined. 
 - [ ] **Segment Address**: For named segments, allow mapping to various regions of memory. (eg: .segment "READONLY", .segment "CODE", etc. ). Have certain built-in segments pre-defined. Allow usage of other custom segments however. 
