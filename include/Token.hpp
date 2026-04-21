@@ -15,7 +15,9 @@ enum class TokenType {
     DO,
     STRUCT,
     VOLATILE,
-    STATIC_ASSERT,
+    _Static_assert,
+    BREAK,
+    CONTINUE,
     
     // Literals
     IDENTIFIER,
@@ -80,7 +82,9 @@ struct Token {
             case TokenType::DO: return "DO";
             case TokenType::STRUCT: return "STRUCT";
             case TokenType::VOLATILE: return "VOLATILE";
-            case TokenType::STATIC_ASSERT: return "STATIC_ASSERT";
+            case TokenType::_Static_assert: return "_Static_assert";
+            case TokenType::BREAK: return "BREAK";
+            case TokenType::CONTINUE: return "CONTINUE";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";

@@ -50,6 +50,8 @@ public:
     void visit(MemberAccess& node) override;
     void visit(VariableDeclaration& node) override;
     void visit(ReturnStatement& node) override;
+    void visit(BreakStatement& node) override;
+    void visit(ContinueStatement& node) override;
     void visit(ExpressionStatement& node) override;
     void visit(IfStatement& node) override;
     void visit(WhileStatement& node) override;
@@ -109,6 +111,12 @@ public:
     std::vector<std::string> sourceLines;
     int lastEmbeddedLine = -1;
     bool resultNeeded = true;
+
+    struct LoopLabels {
+        std::string continueLabel;
+        std::string breakLabel;
+    };
+    std::vector<LoopLabels> loopStack;
 
     void emit(const std::string& line);
     void emitData();

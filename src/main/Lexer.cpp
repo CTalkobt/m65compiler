@@ -149,8 +149,11 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"__asm__", TokenType::ASM},
         {"struct", TokenType::STRUCT},
         {"volatile", TokenType::VOLATILE},
-        {"_Static_assert", TokenType::STATIC_ASSERT}
-    };
+        {"_Static_assert", TokenType::_Static_assert},
+        {"break", TokenType::BREAK},
+        {"continue", TokenType::CONTINUE}
+        };
+
 
     auto it = keywords.find(value);
     if (it != keywords.end()) {

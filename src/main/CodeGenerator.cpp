@@ -411,6 +411,24 @@ void CodeGenerator::visit(ReturnStatement& node) {
     invalidateRegs();
 }
 
+void CodeGenerator::visit(BreakStatement& node) {
+    embedSource(node);
+    if (!loopStack.empty()) {
+        emit("bra " + loopStack.back().breakLabel);
+    } else {
+        std::cerr << "Error: 'break' statement outside of loop at " << node.line << ":" << node.column << std::endl;
+    }
+}
+
+void CodeGenerator::visit(ContinueStatement& node) {
+    embedSource(node);
+    if (!loopStack.empty()) {
+        emit("bra " + loopStack.back().continueLabel);
+    } else {
+        std::cerr << "Error: 'continue' statement outside of loop at " << node.line << ":" << node.column << std::endl;
+    }
+}
+
 void CodeGenerator::visit(ExpressionStatement& node) {
     embedSource(node);
     bool oldNeeded = resultNeeded;
@@ -449,7 +467,10 @@ void CodeGenerator::visit(WhileStatement& node) {
 
     emitJumpIfFalse(node.condition.get(), labelEnd);
 
+    loopStack.push_back({labelStart, labelEnd});
     node.body->accept(*this);
+    loopStack.pop_back();
+
     emit("bra " + labelStart);
     out << labelEnd << ":" << std::endl;
     invalidateRegs();
@@ -458,13 +479,21 @@ void CodeGenerator::visit(WhileStatement& node) {
 void CodeGenerator::visit(DoWhileStatement& node) {
     embedSource(node);
     std::string labelStart = newLabel();
+    std::string labelCondition = newLabel();
+    std::string labelEnd = newLabel();
+
     out << labelStart << ":" << std::endl;
+    invalidateRegs();
+
+    loopStack.push_back({labelCondition, labelEnd});
     node.body->accept(*this);
-    
+    loopStack.pop_back();
+
+    out << labelCondition << ":" << std::endl;
     emitJumpIfTrue(node.condition.get(), labelStart);
+    out << labelEnd << ":" << std::endl;
     invalidateRegs();
 }
-
 void CodeGenerator::visit(ForStatement& node) {
     embedSource(node);
     if (node.initializer) {
@@ -474,12 +503,18 @@ void CodeGenerator::visit(ForStatement& node) {
         resultNeeded = oldNeeded;
     }
     std::string labelStart = newLabel();
+    std::string labelIncrement = newLabel();
     std::string labelEnd = newLabel();
     out << labelStart << ":" << std::endl;
     if (node.condition) {
         emitJumpIfFalse(node.condition.get(), labelEnd);
     }
+    
+    loopStack.push_back({labelIncrement, labelEnd});
     node.body->accept(*this);
+    loopStack.pop_back();
+
+    out << labelIncrement << ":" << std::endl;
     if (node.increment) {
         bool oldNeeded = resultNeeded;
         resultNeeded = false;
@@ -1392,6 +1427,8 @@ public:
     void visit(ReturnStatement& node) override {
         if (node.expression) node.expression->accept(*this);
     }
+    void visit(BreakStatement& /*node*/) override {}
+    void visit(ContinueStatement& /*node*/) override {}
     void visit(ExpressionStatement& node) override {
         if (node.expression) node.expression->accept(*this);
     }

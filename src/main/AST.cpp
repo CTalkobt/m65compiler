@@ -10,6 +10,8 @@ void MemberAccess::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionCall::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void VariableDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ReturnStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void BreakStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void ContinueStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ExpressionStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void IfStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void WhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }

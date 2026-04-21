@@ -30,6 +30,7 @@ TEST_FILES=(
     "src/test-resources/test_preproc_macros.c"
     "src/test-resources/test_preproc_v3.c"
     "src/test-resources/test_static_assert_pass.c"
+    "src/test-resources/test_break_continue.c"
 )
 
 mkdir -p build/test

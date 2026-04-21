@@ -49,7 +49,7 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             expect(TokenType::CLOSE_PAREN, "Expected ')' after asm code");
             expect(TokenType::SEMICOLON, "Expected ';'");
             unit->topLevelDecls.push_back(setPos(std::make_unique<AsmStatement>(code), tokens[pos-5]));
-        } else if (peek().type == TokenType::STATIC_ASSERT) {
+        } else if (peek().type == TokenType::_Static_assert) {
             unit->topLevelDecls.push_back(parseStaticAssert());
         } else {
             unit->topLevelDecls.push_back(parseFunctionDeclaration());
@@ -160,14 +160,27 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     if (match(TokenType::RETURN)) {
         const Token& startToken = tokens[pos-1];
         std::unique_ptr<Expression> expr = nullptr;
-        if (peek().type != TokenType::SEMICOLON) {
+        if (!match(TokenType::SEMICOLON)) {
             expr = parseExpression();
+            expect(TokenType::SEMICOLON, "Expected ';' after return expression");
         }
-        expect(TokenType::SEMICOLON, "Expected ';'");
         return setPos(std::make_unique<ReturnStatement>(std::move(expr)), startToken);
     }
 
+    if (match(TokenType::BREAK)) {
+        const Token& startToken = tokens[pos-1];
+        expect(TokenType::SEMICOLON, "Expected ';' after break");
+        return setPos(std::make_unique<BreakStatement>(), startToken);
+    }
+
+    if (match(TokenType::CONTINUE)) {
+        const Token& startToken = tokens[pos-1];
+        expect(TokenType::SEMICOLON, "Expected ';' after continue");
+        return setPos(std::make_unique<ContinueStatement>(), startToken);
+    }
+
     if (match(TokenType::IF)) {
+
         const Token& startToken = tokens[pos-1];
         expect(TokenType::OPEN_PAREN, "Expected '(' after 'if'");
         auto condition = parseExpression();
@@ -230,7 +243,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return setPos(std::make_unique<AsmStatement>(code), startToken);
     }
 
-    if (peek().type == TokenType::STATIC_ASSERT) {
+    if (peek().type == TokenType::_Static_assert) {
         return parseStaticAssert();
     }
 
@@ -245,7 +258,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 }
 
 std::unique_ptr<StaticAssert> Parser::parseStaticAssert() {
-    const Token& startToken = expect(TokenType::STATIC_ASSERT, "Expected '_Static_assert'");
+    const Token& startToken = expect(TokenType::_Static_assert, "Expected '_Static_assert'");
     expect(TokenType::OPEN_PAREN, "Expected '(' after '_Static_assert'");
     auto condition = parseExpression();
     expect(TokenType::COMMA, "Expected ',' after condition in '_Static_assert'");

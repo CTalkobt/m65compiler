@@ -45,7 +45,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Expression Evaluation**: Support `defined()`, arithmetic, and logic in `#if` / `#elif`.
 - [X] **Line Continuation**: Support `\` at end of line.
 - [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`.
-- [ ] **Break/Continue**: Implement `break` and `continue` for loop control.
+- [X] **Break/Continue**: Implement `break` and `continue` for loop control.
 - [ ] **Switch/Case**: Implement `switch`, `case`, and `default`.
 
 ## Roadmap - Linker & Libraries (ln45)

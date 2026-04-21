@@ -100,6 +100,16 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class BreakStatement : public Statement {
+public:
+    void accept(ASTVisitor& visitor) override;
+};
+
+class ContinueStatement : public Statement {
+public:
+    void accept(ASTVisitor& visitor) override;
+};
+
 class ExpressionStatement : public Statement {
 public:
     std::unique_ptr<Expression> expression;
@@ -219,6 +229,8 @@ public:
     virtual void visit(MemberAccess& node) = 0;
     virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ReturnStatement& node) = 0;
+    virtual void visit(BreakStatement& node) = 0;
+    virtual void visit(ContinueStatement& node) = 0;
     virtual void visit(ExpressionStatement& node) = 0;
     virtual void visit(IfStatement& node) = 0;
     virtual void visit(WhileStatement& node) = 0;

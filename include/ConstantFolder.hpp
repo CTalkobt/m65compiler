@@ -23,7 +23,7 @@ public:
         // Their visit methods don't set lastStmt.
         if (dynamic_cast<CompoundStatement*>(stmt.get()) || dynamic_cast<FunctionDeclaration*>(stmt.get())) {
             stmt->accept(*this);
-            return std::move(stmt);
+            return stmt;
         } else {
             stmt->accept(*this);
             return std::move(lastStmt);
@@ -156,6 +156,14 @@ public:
 
     void visit(ReturnStatement& node) override {
         lastStmt = copyPos(std::make_unique<ReturnStatement>(fold(std::move(node.expression))), node);
+    }
+
+    void visit(BreakStatement& node) override {
+        lastStmt = copyPos(std::make_unique<BreakStatement>(), node);
+    }
+
+    void visit(ContinueStatement& node) override {
+        lastStmt = copyPos(std::make_unique<ContinueStatement>(), node);
     }
 
     void visit(ExpressionStatement& node) override {

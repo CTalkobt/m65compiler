@@ -62,8 +62,16 @@ void M65Emitter::emitInstruction(const std::string& mnemonic, AddressingMode amo
                 case AddressingMode::ABSOLUTE_X_INDIRECT: operand = "(" + hex16((uint16_t)value) + ",x)"; break;
                 case AddressingMode::STACK_RELATIVE: operand = std::to_string((int)value) + ",s"; break;
                 case AddressingMode::FLAT_INDIRECT_Z: operand = "[" + hex8((uint8_t)value) + "],z"; break;
-                case AddressingMode::RELATIVE: operand = "*+" + std::to_string((int)(int8_t)value); break;
-                case AddressingMode::RELATIVE16: operand = "*+" + std::to_string((int)(int16_t)value); break;
+                case AddressingMode::RELATIVE: {
+                    int8_t v = (int8_t)value;
+                    operand = "*" + (v >= 0 ? std::string("+") : "") + std::to_string((int)v);
+                    break;
+                }
+                case AddressingMode::RELATIVE16: {
+                    int16_t v = (int16_t)value;
+                    operand = "*" + (v >= 0 ? std::string("+") : "") + std::to_string((int)v);
+                    break;
+                }
                 default: operand = hex16((uint16_t)value); break;
             }
         } else if (amode == AddressingMode::ACCUMULATOR) {

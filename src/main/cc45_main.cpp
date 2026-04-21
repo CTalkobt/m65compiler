@@ -70,6 +70,12 @@ public:
             indent--;
         }
     }
+    void visit(BreakStatement&) override {
+        printIndent(); std::cout << "BreakStatement" << std::endl;
+    }
+    void visit(ContinueStatement&) override {
+        printIndent(); std::cout << "ContinueStatement" << std::endl;
+    }
     void visit(ExpressionStatement& node) override {
         printIndent(); std::cout << "ExpressionStatement" << std::endl;
         indent++;
