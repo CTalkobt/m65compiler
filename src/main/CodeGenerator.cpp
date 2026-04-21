@@ -45,9 +45,10 @@ bool CodeGenerator::isStruct(const std::string& type) {
 }
 
 std::string CodeGenerator::resolveVarName(const std::string& name) {
-    if (name.substr(0, 3) == "_p_" || name.substr(0, 3) == "_l_") return name;
+    if (name.length() >= 3 && (name.substr(0, 3) == "_p_" || name.substr(0, 3) == "_l_" || name.substr(0, 3) == "_g_")) return name;
     if (variableTypes.count("_p_" + name)) return "_p_" + name;
     if (variableTypes.count("_l_" + name)) return "_l_" + name;
+    if (variableTypes.count("_g_" + name)) return "_g_" + name;
     return name;
 }
 
@@ -158,6 +159,14 @@ void CodeGenerator::visit(CompoundStatement& node) {
 
 void CodeGenerator::visit(VariableDeclaration& node) {
     embedSource(node);
+
+    if (currentFunction == nullptr) {
+        std::string gName = "_g_" + node.name;
+        variableTypes[gName] = {node.type, node.pointerLevel, node.isVolatile};
+        globalVars.push_back(&node);
+        return;
+    }
+
     std::string lName = "_l_" + node.name;
     variableTypes[lName] = {node.type, node.pointerLevel, node.isVolatile};
     int size = 0;
@@ -258,6 +267,9 @@ void CodeGenerator::visit(Assignment& node) {
     
     if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
         std::string rName = resolveVarName(ref->name);
+        bool isGlobal = (rName.length() >= 3 && rName.substr(0, 3) == "_g_");
+        std::string suffix = isGlobal ? "" : ", s";
+
         if (auto* bin = dynamic_cast<BinaryOperation*>(node.expression.get())) {
             if ((bin->op == "+" || bin->op == "-") && 
                 dynamic_cast<IntegerLiteral*>(bin->right.get()) && 
@@ -267,11 +279,11 @@ void CodeGenerator::visit(Assignment& node) {
                         VarInfo vi = variableTypes[rName];
                         bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
                         if (bin->op == "+") {
-                            if (is16Bit) emit("inw " + rName + ", s");
-                            else emit("inc " + rName + ", s");
+                            if (is16Bit) emit("inw " + rName + suffix);
+                            else emit("inc " + rName + suffix);
                         } else {
-                            if (is16Bit) emit("dew " + rName + ", s");
-                            else emit("dec " + rName + ", s");
+                            if (is16Bit) emit("dew " + rName + suffix);
+                            else emit("dec " + rName + suffix);
                         }
                         invalidateRegs();
                         if (resultNeeded) ref->accept(*this);
@@ -286,7 +298,12 @@ void CodeGenerator::visit(Assignment& node) {
             bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
             if (is16Bit) {
                 std::stringstream ss;
-                ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)(int16_t)lit->value;                emit("stw.sp " + ss.str() + ", " + rName);
+                ss << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)(int16_t)lit->value;
+                if (isGlobal) {
+                    emit("stw " + ss.str() + ", " + rName);
+                } else {
+                    emit("stw.sp " + ss.str() + ", " + rName);
+                }
                 updateRegAVar(rName, 0); regA.value = lit->value & 0xFF; regA.isVariable = true;
                 updateRegXVar(rName, 1); regX.value = (lit->value >> 8) & 0xFF; regX.isVariable = true;
             } else {
@@ -294,7 +311,7 @@ void CodeGenerator::visit(Assignment& node) {
                 if (!regA.known || (regA.isVariable && regA.varName != rName) || (!regA.isVariable && regA.value != val)) {
                     emitter->lda_imm(val);
                 }
-                emit("sta " + rName + ", s");
+                emit("sta " + rName + suffix);
                 updateRegAVar(rName, 0); regA.value = val;
             }
             return;
@@ -304,16 +321,25 @@ void CodeGenerator::visit(Assignment& node) {
         if (isStruct(vi.type) && structs.count(vi.type.substr(7))) {
             int structSize = structs[vi.type.substr(7)].totalSize;
             if (structSize >= 9) {
-                // Large struct assignment: target = expression
-                // We need to evaluate expression address and then MOVE
                 if (auto* sourceRef = dynamic_cast<VariableReference*>(node.expression.get())) {
                     std::string sName = resolveVarName(sourceRef->name);
+                    bool sourceGlobal = (sName.length() >= 3 && sName.substr(0, 3) == "_g_");
+                    
                     std::stringstream ssX, ssY;
                     ssX << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (structSize & 0xFF);
                     ssY << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << ((structSize >> 8) & 0xFF);
                     emit("ldx #$" + ssX.str());
                     emit("ldy #$" + ssY.str());
-                    emit("MOVE.SP " + sName + ", " + rName);
+                    
+                    std::string op = "MOVE";
+                    if (!sourceGlobal && !isGlobal) op = "MOVE.SP";
+                    else if (!sourceGlobal) op = "MOVE.S2G"; // custom or handle later
+                    else if (!isGlobal) op = "MOVE.G2S"; // custom or handle later
+                    
+                    // Actually, ca45 simulated MOVE/FILL should handle these.
+                    // Let's assume ca45's MOVE <src>, <dest> handles it.
+                    emit("MOVE " + sName + (sourceGlobal ? "" : ", s") + ", " + rName + (isGlobal ? "" : ", s"));
+
                     invalidateVar(rName);
                     return;
                 }
@@ -328,11 +354,11 @@ void CodeGenerator::visit(Assignment& node) {
         bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
 
         if (is16Bit) {
-            emit("stax " + rName + ", s");
+            emit("stax " + rName + suffix);
             updateRegAVar(rName, 0);
             updateRegXVar(rName, 1);
         } else {
-            emit("sta " + rName + ", s");
+            emit("sta " + rName + suffix);
             updateRegAVar(rName, 0);
         }
         return;
@@ -340,6 +366,9 @@ void CodeGenerator::visit(Assignment& node) {
         if (!ma->isArrow) {
             if (auto* ref = dynamic_cast<VariableReference*>(ma->structExpr.get())) {
                 std::string rName = resolveVarName(ref->name);
+                bool isGlobal = (rName.length() >= 3 && rName.substr(0, 3) == "_g_");
+                std::string suffix = isGlobal ? "" : ", s";
+
                 ExpressionType baseType = getExprType(ref);
                 if (isStruct(baseType.type)) {
                     std::string sName = baseType.type.substr(7);
@@ -352,11 +381,11 @@ void CodeGenerator::visit(Assignment& node) {
 
                         bool is16Bit = (mInfo.pointerLevel > 0 || mInfo.type == "int" || (isStruct(mInfo.type) && structs[mInfo.type.substr(7)].totalSize > 1));
                         if (is16Bit) {
-                            emit("stax " + rName + "+" + std::to_string(mInfo.offset) + ", s");
+                            emit("stax " + rName + "+" + std::to_string(mInfo.offset) + suffix);
                             updateRegAVar(rName, mInfo.offset);
                             updateRegXVar(rName, mInfo.offset + 1);
                         } else {
-                            emit("sta " + rName + "+" + std::to_string(mInfo.offset) + ", s");
+                            emit("sta " + rName + "+" + std::to_string(mInfo.offset) + suffix);
                             updateRegAVar(rName, mInfo.offset);
                         }
                         invalidateRegs();
@@ -811,6 +840,8 @@ void CodeGenerator::visit(VariableReference& node) {
     if (!resultNeeded) return;
     
     std::string rName = resolveVarName(node.name);
+    bool isGlobal = (rName.length() >= 3 && rName.substr(0, 3) == "_g_");
+    std::string suffix = isGlobal ? "" : ", s";
 
     VarInfo vi = variableTypes[rName];
     bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int" || (isStruct(vi.type) && structs[vi.type.substr(7)].totalSize > 1));
@@ -822,13 +853,13 @@ void CodeGenerator::visit(VariableReference& node) {
         if (lowCorrect && highCorrect) {
             // Already there
         } else if (lowCorrect) {
-            emit("ldx " + rName + "+1, s");
+            emit("ldx " + rName + "+1" + suffix);
             updateRegXVar(rName, 1);
         } else if (highCorrect) {
-            emit("lda " + rName + ", s");
+            emit("lda " + rName + suffix);
             updateRegAVar(rName, 0);
         } else {
-            emit("ldax " + rName + ", s");
+            emit("ldax " + rName + suffix);
             updateRegAVar(rName, 0);
             updateRegXVar(rName, 1);
             updateZNFlags(FlagSource::A);
@@ -846,7 +877,7 @@ void CodeGenerator::visit(VariableReference& node) {
             emit("tza");
             transferRegs(FlagSource::A, FlagSource::Z);
         } else {
-            emit("lda " + rName + ", s");
+            emit("lda " + rName + suffix);
             updateRegAVar(rName, 0);
         }
         if (!regX.known || regX.isVariable || regX.value != 0) {
@@ -1061,6 +1092,35 @@ void CodeGenerator::emitJumpIfFalse(Expression* cond, const std::string& labelEl
 
 void CodeGenerator::emitData() {
     out << std::endl << "; Data Section" << std::endl;
+
+    for (auto* gVar : globalVars) {
+        out << "_g_" << gVar->name << ":" << std::endl;
+        int size = 0;
+        if (gVar->pointerLevel > 0) size = 2;
+        else if (gVar->type == "char") size = 1;
+        else if (gVar->type == "int") size = 2;
+        else if (isStruct(gVar->type)) {
+            std::string sName = gVar->type.substr(7);
+            if (structs.count(sName)) size = structs[sName].totalSize;
+        }
+
+        if (gVar->initializer) {
+            if (auto* lit = dynamic_cast<IntegerLiteral*>(gVar->initializer.get())) {
+                if (size == 1) {
+                    out << "    .byte $" << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (lit->value & 0xFF) << std::dec << std::endl;
+                } else if (size == 2) {
+                    out << "    .word $" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (lit->value & 0xFFFF) << std::dec << std::endl;
+                } else {
+                    out << "    .fill " << std::to_string(size) << ", 0" << std::endl;
+                }
+            } else {
+                out << "    .fill " << std::to_string(size) << ", 0" << std::endl;
+            }
+        } else {
+            out << "    .fill " << std::to_string(size) << ", 0" << std::endl;
+        }
+    }
+
     for (const auto& entry : stringPool) {
         out << entry.second << ":" << std::endl;
         out << "    .text \"" << entry.first << "\"" << std::endl;

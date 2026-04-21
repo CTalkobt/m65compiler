@@ -28,6 +28,7 @@ private:
     std::unique_ptr<FunctionDeclaration> parseFunctionDeclaration();
     std::unique_ptr<CompoundStatement> parseCompoundStatement();
     std::unique_ptr<Statement> parseStatement();
+    std::unique_ptr<Statement> parseVariableDeclaration(bool isVolatile);
     std::unique_ptr<StaticAssert> parseStaticAssert();
     std::unique_ptr<StructDefinition> parseStructDefinition();
     std::unique_ptr<Expression> parseExpression();

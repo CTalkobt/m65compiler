@@ -151,6 +151,8 @@ public:
         }
         auto decl = copyPos(std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel), node);
         decl->initializer = std::move(initializer);
+        decl->isVolatile = node.isVolatile;
+        decl->isGlobal = node.isGlobal;
         lastStmt = std::move(decl);
     }
 

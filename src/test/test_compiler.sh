@@ -33,6 +33,7 @@ TEST_FILES=(
     "src/test-resources/test_break_continue.c"
     "src/test-resources/test_switch.c"
     "src/test-resources/test_switch_continue.c"
+    "src/test-resources/test_global_vars.c"
 )
 
 mkdir -p build/test

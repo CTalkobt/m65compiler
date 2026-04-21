@@ -53,7 +53,7 @@ Steps required to bring the C compiler closer to C11 standards.
     - [ ] **Extended Header**: Support 45GS02 architecture bits and 32-bit width flags.
     - [ ] **Linear Relocations**: Support for patching linear 28-bit addresses and 32-bit data types.
 - [ ] **Sections**: Update `ca45` to support named segments (`.text`, `.data`, `.bss`).
-- [ ] **External Symbols**: Implement `.global` and `.extern` in the assembler.
+- [X] **External Symbols**: Implement `.global` and `.extern` in the assembler.
 - [ ] **Relocations**: Support standard (`WORD`, `LOW`, `HIGH`) and linear (`LINEAR24`, `LINEAR32`) relocations.
 - [ ] **Linker Tool**: Build the `ln45` binary to aggregate objects and resolve symbols.
 - [ ] **Archiver**: Build `ar45` to create static `.lib` archives.

@@ -33,24 +33,70 @@ const Token& Parser::expect(TokenType type, const std::string& message) {
 std::unique_ptr<TranslationUnit> Parser::parse() {
     auto unit = setPos(std::make_unique<TranslationUnit>(), tokens[0]);
     while (peek().type != TokenType::END_OF_FILE) {
-        if (peek().type == TokenType::STRUCT) {
-            // Check if it's a definition: struct name { ... };
-            if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER &&
-                pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
-                advance(); // struct
-                unit->topLevelDecls.push_back(parseStructDefinition());
-            } else {
-                unit->topLevelDecls.push_back(parseFunctionDeclaration());
-            }
-        } else if (peek().type == TokenType::ASM) {
+        if (peek().type == TokenType::ASM) {
             advance();
             expect(TokenType::OPEN_PAREN, "Expected '(' after asm");
             std::string code = expect(TokenType::STRING_LITERAL, "Expected string literal for asm code").value;
             expect(TokenType::CLOSE_PAREN, "Expected ')' after asm code");
             expect(TokenType::SEMICOLON, "Expected ';'");
             unit->topLevelDecls.push_back(setPos(std::make_unique<AsmStatement>(code), tokens[pos-5]));
+            continue;
         } else if (peek().type == TokenType::_Static_assert) {
             unit->topLevelDecls.push_back(parseStaticAssert());
+            continue;
+        }
+
+        if (peek().type == TokenType::STRUCT) {
+            // Check if it's a definition: struct name { ... };
+            if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER &&
+                pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
+                advance(); // struct
+                unit->topLevelDecls.push_back(parseStructDefinition());
+                continue;
+            }
+        }
+
+        // Look ahead to distinguish function from global variable
+        size_t look = pos;
+        bool isVol = false;
+        if (tokens[look].type == TokenType::VOLATILE) {
+            isVol = true;
+            look++;
+        }
+
+        if (look < tokens.size() && (tokens[look].type == TokenType::INT || 
+                                     tokens[look].type == TokenType::CHAR || 
+                                     tokens[look].type == TokenType::VOID ||
+                                     tokens[look].type == TokenType::STRUCT)) {
+            if (tokens[look].type == TokenType::STRUCT) {
+                look++; // skip struct
+                if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
+                    look++; // skip struct name
+                } else {
+                    unit->topLevelDecls.push_back(parseFunctionDeclaration());
+                    continue;
+                }
+            } else {
+                look++; // skip int/char/void
+            }
+            
+            while (look < tokens.size() && tokens[look].type == TokenType::STAR) look++;
+            
+            if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
+                look++;
+                if (look < tokens.size() && tokens[look].type == TokenType::OPEN_PAREN) {
+                    unit->topLevelDecls.push_back(parseFunctionDeclaration());
+                } else {
+                    if (isVol) match(TokenType::VOLATILE); // consume volatile
+                    auto decl = parseVariableDeclaration(isVol);
+                    if (auto* vd = dynamic_cast<VariableDeclaration*>(decl.get())) {
+                        vd->isGlobal = true;
+                    }
+                    unit->topLevelDecls.push_back(std::move(decl));
+                }
+            } else {
+                unit->topLevelDecls.push_back(parseFunctionDeclaration());
+            }
         } else {
             unit->topLevelDecls.push_back(parseFunctionDeclaration());
         }
@@ -123,38 +169,16 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         isVolatile = true;
     }
 
-    if (match(TokenType::STRUCT)) {
-        const Token& startToken = tokens[pos-1];
-        if (peek().type == TokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::OPEN_BRACE) {
+    if (peek().type == TokenType::STRUCT) {
+        if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER && pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
+            advance(); // struct
             return parseStructDefinition();
         }
-        // struct name var;
-        std::string structName = expect(TokenType::IDENTIFIER, "Expected struct name").value;
-        int ptrLevel = 0;
-        while (match(TokenType::STAR)) ptrLevel++;
-        std::string varName = expect(TokenType::IDENTIFIER, "Expected variable name").value;
-        auto decl = setPos(std::make_unique<VariableDeclaration>("struct " + structName, varName, ptrLevel), startToken);
-        decl->isVolatile = isVolatile;
-        if (match(TokenType::EQUALS)) {
-            decl->initializer = parseExpression();
-        }
-        expect(TokenType::SEMICOLON, "Expected ';'");
-        return decl;
+        return parseVariableDeclaration(isVolatile);
     }
 
     if (peek().type == TokenType::INT || peek().type == TokenType::CHAR) {
-        const Token& startToken = peek();
-        std::string type = (advance().type == TokenType::INT) ? "int" : "char";
-        int ptrLevel = 0;
-        while (match(TokenType::STAR)) ptrLevel++;
-        std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
-        auto decl = setPos(std::make_unique<VariableDeclaration>(type, name, ptrLevel), startToken);
-        decl->isVolatile = isVolatile;
-        if (match(TokenType::EQUALS)) {
-            decl->initializer = parseExpression();
-        }
-        expect(TokenType::SEMICOLON, "Expected ';'");
-        return decl;
+        return parseVariableDeclaration(isVolatile);
     }
 
     if (match(TokenType::RETURN)) {
@@ -287,6 +311,31 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     auto expr = parseExpression();
     expect(TokenType::SEMICOLON, "Expected ';'");
     return setPos(std::make_unique<ExpressionStatement>(std::move(expr)), startToken);
+}
+
+std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
+    const Token& typeToken = peek();
+    std::string type;
+    if (match(TokenType::INT)) type = "int";
+    else if (match(TokenType::CHAR)) type = "char";
+    else if (match(TokenType::STRUCT)) {
+        type = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+    } else {
+        throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected type for variable declaration. Found '" + peek().typeToString() + "' instead.");
+    }
+
+    int ptrLevel = 0;
+    while (match(TokenType::STAR)) ptrLevel++;
+
+    std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
+    auto decl = setPos(std::make_unique<VariableDeclaration>(type, name, ptrLevel), typeToken);
+    decl->isVolatile = isVolatile;
+
+    if (match(TokenType::EQUALS)) {
+        decl->initializer = parseExpression();
+    }
+    expect(TokenType::SEMICOLON, "Expected ';'");
+    return decl;
 }
 
 std::unique_ptr<StaticAssert> Parser::parseStaticAssert() {

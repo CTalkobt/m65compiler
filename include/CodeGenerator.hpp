@@ -152,6 +152,7 @@ public:
         bool inUse = false;
     };
     std::vector<ZPReg> zpRegs;
+    std::vector<VariableDeclaration*> globalVars;
     FunctionDeclaration* currentFunction = nullptr;
     bool isVariableUsed(const std::string& varName, FunctionDeclaration& func);
 };

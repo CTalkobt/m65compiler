@@ -88,6 +88,7 @@ public:
     int pointerLevel;
     std::string name;
     bool isVolatile = false;
+    bool isGlobal = false;
     std::unique_ptr<Expression> initializer;
     VariableDeclaration(const std::string& t, const std::string& n, int p = 0) : type(t), pointerLevel(p), name(n) {}
     void accept(ASTVisitor& visitor) override;
