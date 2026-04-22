@@ -39,19 +39,26 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             std::string code = expect(TokenType::STRING_LITERAL, "Expected string literal for asm code").value;
             expect(TokenType::CLOSE_PAREN, "Expected ')' after asm code");
             expect(TokenType::SEMICOLON, "Expected ';'");
+            flushPending(*unit);
             unit->topLevelDecls.push_back(setPos(std::make_unique<AsmStatement>(code), tokens[pos-5]));
             continue;
-        } else if (peek().type == TokenType::_Static_assert) {
-            unit->topLevelDecls.push_back(parseStaticAssert());
+        }
+        if (peek().type == TokenType::_Static_assert) {
+            auto decl = parseStaticAssert();
+            flushPending(*unit);
+            unit->topLevelDecls.push_back(std::unique_ptr<Statement>(std::move(decl)));
             continue;
         }
 
-        if (peek().type == TokenType::STRUCT) {
-            // Check if it's a definition: struct name { ... };
+        if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION) {
+            bool isUnion = peek().type == TokenType::UNION;
+            // Check if it's a definition: struct/union name { ... };
             if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER &&
                 pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
-                advance(); // struct
-                unit->topLevelDecls.push_back(parseStructDefinition());
+                advance(); // struct/union
+                auto def = parseStructDefinition(isUnion);
+                flushPending(*unit);
+                unit->topLevelDecls.push_back(std::move(def));
                 continue;
             }
         }
@@ -59,13 +66,11 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
         // Look ahead to distinguish function from global variable
         size_t look = pos;
         bool isVol = false;
-        std::unique_ptr<Expression> alignmentExpr = nullptr;
 
         if (tokens[look].type == TokenType::_Alignas) {
             look++;
             if (look < tokens.size() && tokens[look].type == TokenType::OPEN_PAREN) {
                 look++;
-                // Skip expression - this is a bit crude but works for simple cases
                 int parens = 1;
                 while (look < tokens.size() && parens > 0) {
                     if (tokens[look].type == TokenType::OPEN_PAREN) parens++;
@@ -83,13 +88,24 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
         if (look < tokens.size() && (tokens[look].type == TokenType::INT || 
                                      tokens[look].type == TokenType::CHAR || 
                                      tokens[look].type == TokenType::VOID ||
-                                     tokens[look].type == TokenType::STRUCT)) {
-            if (tokens[look].type == TokenType::STRUCT) {
-                look++; // skip struct
+                                     tokens[look].type == TokenType::STRUCT ||
+                                     tokens[look].type == TokenType::UNION)) {
+            if (tokens[look].type == TokenType::STRUCT || tokens[look].type == TokenType::UNION) {
+                look++; // skip struct/union
                 if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
-                    look++; // skip struct name
+                    look++; // skip struct/union name
+                } else if (look < tokens.size() && tokens[look].type == TokenType::OPEN_BRACE) {
+                    int braceLevel = 1;
+                    look++;
+                    while (look < tokens.size() && braceLevel > 0) {
+                        if (tokens[look].type == TokenType::OPEN_BRACE) braceLevel++;
+                        else if (tokens[look].type == TokenType::CLOSE_BRACE) braceLevel--;
+                        look++;
+                    }
                 } else {
-                    unit->topLevelDecls.push_back(parseFunctionDeclaration());
+                    auto decl = parseFunctionDeclaration();
+                    flushPending(*unit);
+                    unit->topLevelDecls.push_back(std::move(decl));
                     continue;
                 }
             } else {
@@ -101,20 +117,27 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
                 look++;
                 if (look < tokens.size() && tokens[look].type == TokenType::OPEN_PAREN) {
-                    unit->topLevelDecls.push_back(parseFunctionDeclaration());
+                    auto decl = parseFunctionDeclaration();
+                    flushPending(*unit);
+                    unit->topLevelDecls.push_back(std::move(decl));
                 } else {
-                    if (isVol) match(TokenType::VOLATILE); // consume volatile
+                    if (isVol) match(TokenType::VOLATILE);
                     auto decl = parseVariableDeclaration(isVol);
                     if (auto* vd = dynamic_cast<VariableDeclaration*>(decl.get())) {
                         vd->isGlobal = true;
                     }
+                    flushPending(*unit);
                     unit->topLevelDecls.push_back(std::move(decl));
                 }
             } else {
-                unit->topLevelDecls.push_back(parseFunctionDeclaration());
+                auto decl = parseFunctionDeclaration();
+                flushPending(*unit);
+                unit->topLevelDecls.push_back(std::move(decl));
             }
         } else {
-            unit->topLevelDecls.push_back(parseFunctionDeclaration());
+            auto decl = parseFunctionDeclaration();
+            flushPending(*unit);
+            unit->topLevelDecls.push_back(std::unique_ptr<Statement>(std::move(decl)));
         }
     }
     return unit;
@@ -126,10 +149,13 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     if (match(TokenType::INT)) returnType = "int";
     else if (match(TokenType::CHAR)) returnType = "char";
     else if (match(TokenType::VOID)) returnType = "void";
-    else if (match(TokenType::STRUCT)) returnType = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+    else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+        bool isU = tokens[pos-1].type == TokenType::UNION;
+        returnType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+    }
     else {
         std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
-        throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type (int, char, void, struct) for function declaration. Found '" + foundStr + "' instead.");
+        throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type (int, char, void, struct, union) for function declaration. Found '" + foundStr + "' instead.");
     }
 
     match(TokenType::STAR); // return pointer (optional)
@@ -147,10 +173,13 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
             std::string pType;
             if (match(TokenType::INT)) pType = "int";
             else if (match(TokenType::CHAR)) pType = "char";
-            else if (match(TokenType::STRUCT)) pType = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+            else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+                bool isU = tokens[pos-1].type == TokenType::UNION;
+                pType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+            }
             else {
                 std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
-                throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type (int, char, struct). Found '" + foundStr + "' instead.");
+                throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type (int, char, struct, union). Found '" + foundStr + "' instead.");
             }
 
             int pPtrLevel = 0;
@@ -185,10 +214,11 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         isVolatile = true;
     }
 
-    if (peek().type == TokenType::STRUCT) {
+    if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION) {
+        bool isUnion = peek().type == TokenType::UNION;
         if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER && pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
-            advance(); // struct
-            return parseStructDefinition();
+            advance(); // struct/union
+            return parseStructDefinition(isUnion);
         }
         return parseVariableDeclaration(isVolatile);
     }
@@ -352,8 +382,9 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
     std::string type;
     if (match(TokenType::INT)) type = "int";
     else if (match(TokenType::CHAR)) type = "char";
-    else if (match(TokenType::STRUCT)) {
-        type = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+    else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+        bool isU = tokens[pos-1].type == TokenType::UNION;
+        type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
     } else {
         throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected type for variable declaration. Found '" + peek().typeToString() + "' instead.");
     }
@@ -384,21 +415,30 @@ std::unique_ptr<StaticAssert> Parser::parseStaticAssert() {
     return setPos(std::make_unique<StaticAssert>(std::move(condition), message), startToken);
 }
 
-std::unique_ptr<StructDefinition> Parser::parseStructDefinition() {
-    const Token& startToken = tokens[pos-1]; // 'struct'
-    std::string name = expect(TokenType::IDENTIFIER, "Expected struct name").value;
+std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
+    const Token& startToken = tokens[pos-1]; // 'struct' or 'union'
+    std::string name;
+    if (peek().type == TokenType::IDENTIFIER) {
+        name = advance().value;
+    } else {
+        name = (isUnion ? "<anon_union_" : "<anon_struct_") + std::to_string(anonymousAggregateCount++) + ">";
+    }
+
     expect(TokenType::OPEN_BRACE, "Expected '{'");
-    auto def = setPos(std::make_unique<StructDefinition>(name), startToken);
+    auto def = setPos(std::make_unique<StructDefinition>(name, isUnion), startToken);
     while (peek().type != TokenType::CLOSE_BRACE && peek().type != TokenType::END_OF_FILE) {
         std::unique_ptr<Expression> mAlignmentExpr = nullptr;
         if (match(TokenType::_Alignas)) {
             expect(TokenType::OPEN_PAREN, "Expected '(' after '_Alignas'");
-            if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::STRUCT || peek().type == TokenType::VOID) {
+            if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::STRUCT || peek().type == TokenType::UNION || peek().type == TokenType::VOID) {
                 std::string aType;
                 if (match(TokenType::INT)) aType = "int";
                 else if (match(TokenType::CHAR)) aType = "char";
                 else if (match(TokenType::VOID)) aType = "void";
-                else if (match(TokenType::STRUCT)) aType = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+                else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+                    bool isU = tokens[pos-1].type == TokenType::UNION;
+                    aType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+                }
                 int aPtr = 0;
                 while (match(TokenType::STAR)) aPtr++;
                 mAlignmentExpr = std::make_unique<AlignofExpression>(aType, aPtr);
@@ -407,11 +447,33 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition() {
             }
             expect(TokenType::CLOSE_PAREN, "Expected ')' after alignment expression");
         }
+
+        if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION) {
+            bool isNestedUnion = peek().type == TokenType::UNION;
+            if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::OPEN_BRACE) {
+                // Anonymous nested struct/union
+                advance(); // struct/union
+                auto nestedDef = parseStructDefinition(isNestedUnion);
+                std::string nestedTypeName = (isNestedUnion ? "union " : "struct ") + nestedDef->name;
+                def->members.push_back({nestedTypeName, 0, "", 0, nullptr, true});
+                pendingDefinitions.push_back(std::move(nestedDef));
+                continue; 
+            }
+        }
+
         std::string type;
         if (match(TokenType::INT)) type = "int";
         else if (match(TokenType::CHAR)) type = "char";
-        else if (match(TokenType::STRUCT)) {
-            type = "struct " + expect(TokenType::IDENTIFIER, "Expected struct name").value;
+        else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+            bool isU = tokens[pos-1].type == TokenType::UNION;
+            if (peek().type == TokenType::OPEN_BRACE) {
+                // Inline definition: struct { ... } var;
+                auto nestedDef = parseStructDefinition(isU);
+                type = (isU ? "union " : "struct ") + nestedDef->name;
+                pendingDefinitions.push_back(std::move(nestedDef));
+            } else {
+                type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+            }
         } else {
             throw std::runtime_error("Expected member type");
         }
@@ -614,4 +676,11 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         }
     }
     return expr;
+}
+
+void Parser::flushPending(TranslationUnit& unit) {
+    for (auto& def : pendingDefinitions) {
+        if (def) unit.topLevelDecls.push_back(std::move(def));
+    }
+    pendingDefinitions.clear();
 }

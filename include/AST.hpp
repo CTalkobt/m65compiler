@@ -226,13 +226,15 @@ struct StructMember {
     std::string name;
     int alignment = 0;
     std::unique_ptr<Expression> alignmentExpr;
+    bool isAnonymous = false;
 };
 
 class StructDefinition : public Statement {
 public:
     std::string name;
+    bool isUnion = false;
     std::vector<StructMember> members;
-    StructDefinition(const std::string& n) : name(n) {}
+    StructDefinition(const std::string& n, bool isUnion = false) : name(n), isUnion(isUnion) {}
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -243,7 +245,7 @@ struct Parameter {
     bool isVolatile = false; // New: volatile qualifier
 };
 
-class FunctionDeclaration : public ASTNode {
+class FunctionDeclaration : public Statement {
 public:
     std::string name;
     std::string returnType;
@@ -256,9 +258,10 @@ public:
 
 class TranslationUnit : public ASTNode {
 public:
-    std::vector<std::unique_ptr<ASTNode>> topLevelDecls;
+    std::vector<std::unique_ptr<Statement>> topLevelDecls;
     void accept(ASTVisitor& visitor) override;
 };
+
 
 class ASTVisitor {
 public:

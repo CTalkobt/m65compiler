@@ -23,10 +23,9 @@ static uint32_t parseNumericLiteral(const std::string& literal) {
  return std::stoul(literal);
  
 } catch (...) {
-    throw std::runtime_error("Invalid numeric literal: " + literal);
+    throw std::runtime_error("Invalid numeric literal: '" + literal + "'");
 }
 }
-
 
 // --- AssemblerParser Implementation ---
 
@@ -825,8 +824,9 @@ aN, sz
                         }
                     } else {
                         if (!stmt->instr.forceMode) {
-                            if (fT == AssemblerTokenType::IDENTIFIER && o.find_first_of("+-*/") == std::string::npos) stmt->instr.mode = AddressingMode::ABSOLUTE;
-                            else {
+                            if (fT == AssemblerTokenType::IDENTIFIER && o.find_first_of("+-*/") == std::string::npos) {
+                                stmt->instr.mode = AddressingMode::ABSOLUTE;
+                            } else if (fT == AssemblerTokenType::IDENTIFIER || fT == AssemblerTokenType::HEX_LITERAL || fT == AssemblerTokenType::DECIMAL_LITERAL || fT == AssemblerTokenType::BINARY_LITERAL) {
                                 try {
                                     uint32_t val = parseNumericLiteral(o);
                                     if (val > 0xFF || stmt->instr.mnemonic == "jsr" || stmt->instr.mnemonic == "jmp" || stmt->instr.mnemonic == "phw") stmt->instr.mode = AddressingMode::ABSOLUTE;

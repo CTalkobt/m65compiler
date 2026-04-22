@@ -153,6 +153,7 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"asm", TokenType::ASM},
         {"__asm__", TokenType::ASM},
         {"struct", TokenType::STRUCT},
+        {"union", TokenType::UNION},
         {"volatile", TokenType::VOLATILE},
         {"_Static_assert", TokenType::_Static_assert},
         {"_Alignas", TokenType::_Alignas},

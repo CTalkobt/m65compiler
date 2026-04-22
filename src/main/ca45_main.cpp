@@ -125,6 +125,7 @@ int main(int argc, char** argv) {
         }
     } catch (const std::exception& e) {
         std::cerr << "Assembly Error: " << e.what() << std::endl;
+        // Optionally print more context if we can find it in the exception message
         return 1;
     }
 

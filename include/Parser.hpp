@@ -30,7 +30,7 @@ private:
     std::unique_ptr<Statement> parseStatement();
     std::unique_ptr<Statement> parseVariableDeclaration(bool isVolatile);
     std::unique_ptr<StaticAssert> parseStaticAssert();
-    std::unique_ptr<StructDefinition> parseStructDefinition();
+    std::unique_ptr<StructDefinition> parseStructDefinition(bool isUnion = false);
     std::unique_ptr<Expression> parseExpression();
     std::unique_ptr<Expression> parseLogicalOr();
     std::unique_ptr<Expression> parseLogicalAnd();
@@ -44,4 +44,8 @@ private:
     std::unique_ptr<Expression> parseMultiplicative();
     std::unique_ptr<Expression> parseUnary();
     std::unique_ptr<Expression> parsePrimary();
+
+    int anonymousAggregateCount = 0;
+    std::vector<std::unique_ptr<StructDefinition>> pendingDefinitions;
+    void flushPending(TranslationUnit& unit);
 };

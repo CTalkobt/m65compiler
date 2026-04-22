@@ -34,6 +34,8 @@ TEST_FILES=(
     "src/test-resources/test_switch.c"
     "src/test-resources/test_switch_continue.c"
     "src/test-resources/test_global_vars.c"
+    "src/test-resources/test_anon_struct.c"
+    "src/test-resources/test_union.c"
 )
 
 mkdir -p build/test

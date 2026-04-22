@@ -14,6 +14,7 @@ enum class TokenType {
     ASM,
     DO,
     STRUCT,
+    UNION,
     VOLATILE,
     _Static_assert,
     _Alignas,
@@ -87,6 +88,7 @@ struct Token {
             case TokenType::ASM: return "ASM";
             case TokenType::DO: return "DO";
             case TokenType::STRUCT: return "STRUCT";
+            case TokenType::UNION: return "UNION";
             case TokenType::VOLATILE: return "VOLATILE";
             case TokenType::_Static_assert: return "_Static_assert";
             case TokenType::_Alignas: return "_Alignas";

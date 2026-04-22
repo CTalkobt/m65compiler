@@ -197,12 +197,14 @@ public:
         printIndent(); std::cout << "StaticAssert: " << node.message << std::endl;
     }
     void visit(StructDefinition& node) override {
-        printIndent(); std::cout << "StructDefinition: " << node.name << std::endl;
+        printIndent(); std::cout << (node.isUnion ? "UnionDefinition: " : "StructDefinition: ") << node.name << std::endl;
         indent++;
         for (const auto& member : node.members) {
             std::string ptrs = "";
             for (int i = 0; i < member.pointerLevel; i++) ptrs += "*";
-            printIndent(); std::cout << "Member: " << member.name << " (" << member.type << ptrs << ")" << std::endl;
+            printIndent(); 
+            if (member.isAnonymous) std::cout << "(Anonymous) ";
+            std::cout << "Member: " << member.name << " (" << member.type << ptrs << ")" << std::endl;
         }
         indent--;
     }
@@ -376,19 +378,19 @@ int main(int argc, char** argv) {
 
     Parser parser(tokens);
     try {
+        if (verbose) std::cout << "Parsing " << input_file << "..." << std::endl;
         auto ast = parser.parse();
+        if (verbose) std::cout << "Parsing complete." << std::endl;
 
-        // if (verbose) {
-        //     std::cout << "Folding constants..." << std::endl;
-        // }
+        if (verbose) std::cout << "Constant folding..." << std::endl;
         ConstantFolder folder;
         ast = folder.foldTranslationUnit(std::move(ast));
+        if (verbose) std::cout << "Constant folding complete." << std::endl;
 
-        if (verbose) {
+        if (verbose && listingLevel >= 1) {
             ASTPrinter printer;
             ast->accept(printer);
         }
-
 
         std::ofstream asmOut(output_file);
         if (!asmOut.is_open()) {
@@ -396,6 +398,7 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        if (verbose) std::cout << "Code generation..." << std::endl;
         CodeGenerator codegen(asmOut);
         codegen.zeroPageStart = zeroPageStart;
         codegen.zeroPageAvail = zeroPageAvail;
@@ -405,6 +408,7 @@ int main(int argc, char** argv) {
             std::cout << "Generated assembly in " << output_file << std::endl;
         }
         asmOut.close();
+        if (verbose) std::cout << "Code generation complete." << std::endl;
 
         if (listingLevel == 2) {
             if (verbose) std::cout << "Generating expanded listing..." << std::endl;

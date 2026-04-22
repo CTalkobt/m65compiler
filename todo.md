@@ -61,7 +61,7 @@ Steps required to bring the C compiler closer to C11 standards.
 ### 2. Type System Enhancements
 - [X] **Structures**: Support `struct` definitions, members, and dot/arrow operators.
 - [X] **Pointers**: Multi-level indirection, dereferencing (`*`), and address-of (`&`).
-- [ ] **Anonymous Structures & Unions**: Support nested structs/unions without names.
+- [X] **Anonymous Structures & Unions**: Support nested structs/unions without names.
 - [ ] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
 - [ ] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
 - [X] **Global Variables**: Support top-level variable declarations.

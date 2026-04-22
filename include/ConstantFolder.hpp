@@ -259,7 +259,7 @@ public:
     void visit(StaticAssert& node) override;
 
     void visit(StructDefinition& node) override {
-        auto def = copyPos(std::make_unique<StructDefinition>(node.name), node);
+        auto def = copyPos(std::make_unique<StructDefinition>(node.name, node.isUnion), node);
         for (auto& m : node.members) {
             auto alignmentExpr = m.alignmentExpr ? fold(std::move(m.alignmentExpr)) : nullptr;
             int alignment = m.alignment;
@@ -268,7 +268,7 @@ public:
                     alignment = lit->value;
                 }
             }
-            def->members.push_back({m.type, m.pointerLevel, m.name, alignment, std::move(alignmentExpr)});
+            def->members.push_back({m.type, m.pointerLevel, m.name, alignment, std::move(alignmentExpr), m.isAnonymous});
         }
         lastStmt = std::move(def);
     }

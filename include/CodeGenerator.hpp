@@ -38,7 +38,8 @@ public:
         int alignment = 1;
     };
     std::map<std::string, VarInfo> variableTypes;
-    std::map<std::string, StructInfo> structs;
+    std::map<std::string, VarInfo> globalVariableTypes;
+    std::map<std::string, std::shared_ptr<StructInfo>> structs;
     uint32_t zeroPageStart = 0x02;
     uint32_t zeroPageAvail = 9;
 
@@ -147,6 +148,7 @@ public:
     ExpressionType getExprType(Expression* expr);
     bool isStruct(const std::string& type);
     std::string resolveVarName(const std::string& name);
+    std::string getAggregateName(const std::string& type);
 
     int allocateZP(int size);
     void freeZP(int index, int size);
