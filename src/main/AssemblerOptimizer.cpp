@@ -2,6 +2,7 @@
 #include "AssemblerParser.hpp"
 #include <algorithm>
 #include <map> // Required for std::map
+#include <iostream>
 
 bool AssemblerOptimizer::optimize(AssemblerParser* parser) {
     bool changed = false; // Flag to track if any code modification occurred

@@ -158,11 +158,15 @@ public:
 
     void emitByte(uint8_t b);
     void emitWord(uint16_t w);
+    void setAddress(uint32_t addr);
+    uint32_t getAddress() const { return currentAddress; }
 
 private:
     std::ostream* out = nullptr;
     std::vector<uint8_t>* binary = nullptr;
     Mode mode;
     uint32_t zeroPageStart;
+    uint32_t currentAddress = 0;
+    bool addressSet = false;
     void emitText(const std::string& mnemonic, const std::string& operand = "");
 };

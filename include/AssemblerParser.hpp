@@ -58,6 +58,17 @@ private:
     std::shared_ptr<ProcContext> currentProc;
     std::map<uint32_t, std::shared_ptr<ProcContext>> procedures;
 
+    struct Segment {
+        std::string name;
+        uint32_t pc = 0;
+        uint32_t startAddress = 0xFFFFFFFF;
+        bool hasOrg = false;
+    };
+    std::map<std::string, std::shared_ptr<Segment>> segments;
+    std::shared_ptr<Segment> currentSegment;
+    std::vector<std::shared_ptr<Segment>> segmentOrder;
+    std::vector<std::string> segmentStack;
+
     struct Statement {
         enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV, STACK_INC, STACK_DEC, STACK_INC8, STACK_DEC8,
                     ADD16, SUB16, AND16, ORA16, EOR16, CPW, LDW, STW, SWAP, ZERO,
@@ -71,6 +82,7 @@ private:
         int size = 0;
         int line = 0;
         std::string scopePrefix;
+        std::string segmentName;
         std::shared_ptr<ProcContext> procCtx;
 
         // EXPR specific
@@ -86,6 +98,8 @@ private:
         bool deleted = false;
     };
     std::deque<std::unique_ptr<Statement>> statements;
+
+    void switchSegment(const std::string& name);
 
     const AssemblerToken& peek() const;
     const AssemblerToken& advance();

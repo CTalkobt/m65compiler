@@ -22,12 +22,42 @@ static std::string hex16(uint16_t val) {
 }
 
 void M65Emitter::emitByte(uint8_t b) {
-    if (mode == Mode::BINARY) binary->push_back(b);
+    if (mode == Mode::BINARY) {
+        binary->push_back(b);
+        currentAddress++;
+    }
     else emitText(".byte", hex8(b));
 }
 void M65Emitter::emitWord(uint16_t w) {
-    if (mode == Mode::BINARY) { binary->push_back(w & 0xFF); binary->push_back(w >> 8); }
+    if (mode == Mode::BINARY) {
+        binary->push_back(w & 0xFF);
+        binary->push_back(w >> 8);
+        currentAddress += 2;
+    }
     else emitText(".word", hex16(w));
+}
+
+void M65Emitter::setAddress(uint32_t addr) {
+    if (!addressSet) {
+        currentAddress = addr;
+        addressSet = true;
+        if (mode == Mode::TEXT) emitText(".org", hex16((uint16_t)addr));
+        return;
+    }
+
+    if (addr < currentAddress) {
+        throw std::runtime_error("Cannot set address backward: current=" + hex16((uint16_t)currentAddress) + " new=" + hex16((uint16_t)addr));
+    }
+
+    if (addr > currentAddress) {
+        uint32_t gap = addr - currentAddress;
+        if (mode == Mode::BINARY) {
+            for (uint32_t i = 0; i < gap; ++i) binary->push_back(0);
+        } else {
+            emitText(".org", hex16((uint16_t)addr));
+        }
+        currentAddress = addr;
+    }
 }
 void M65Emitter::emitText(const std::string& mnemonic, const std::string& operand) {
     *out << "    " << std::left << std::setw(8) << mnemonic << operand << std::endl;

@@ -30,10 +30,30 @@ static uint32_t parseNumericLiteral(const std::string& literal) {
 // --- AssemblerParser Implementation ---
 
 AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens) : tokens(tokens), pos(0), pc(0) {
+    switchSegment("default");
 }
 
 AssemblerParser::AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols) : tokens(tokens), pos(0), pc(0), nextScopeId(0) {
-for (const auto& [name, val] : predefinedSymbols) symbolTable[name] = {val, false, 2, false, 0, false, 0};
+    for (const auto& [name, val] : predefinedSymbols) symbolTable[name] = {val, false, 2, false, 0, false, 0};
+    switchSegment("default");
+}
+
+void AssemblerParser::switchSegment(const std::string& name) {
+    if (currentSegment) {
+        currentSegment->pc = pc;
+    }
+    
+    if (segments.find(name) == segments.end()) {
+        auto seg = std::make_shared<Segment>();
+        seg->name = name;
+        seg->pc = 0;
+        seg->hasOrg = false;
+        segments[name] = seg;
+        segmentOrder.push_back(seg);
+    }
+    
+    currentSegment = segments[name];
+    pc = currentSegment->pc;
 }
 
 const AssemblerToken& AssemblerParser::peek() const {
@@ -238,43 +258,41 @@ void AssemblerParser::emitPHWStackCode(std::vector<uint8_t>& binary, int tokenIn
 }
 
 void AssemblerParser::pass1() {
-
-    pc = 0;
- pos = 0;
- statements.clear();
- scopeStack.clear();
- nextScopeId = 0;
- procedures.clear();
- currentProc = nullptr;
+    segments.clear();
+    segmentOrder.clear();
+    segmentStack.clear();
+    switchSegment("default");
+    
+    pos = 0;
+    statements.clear();
+    scopeStack.clear();
+    nextScopeId = 0;
+    procedures.clear();
+    currentProc = nullptr;
 
     std::vector<std::shared_ptr<ProcContext>> pass1ProcStack;
 
     auto currentScopePrefix = [&]() {
- std::string p = "";
- for (const auto& s : scopeStack) p += s + ":";
- return p;
- 
-}
-;
+        std::string p = "";
+        for (const auto& s : scopeStack) p += s + ":";
+        return p;
+    };
 
     while (pos < tokens.size()) {
-        // ... (rest of pass1 remains same until the convergence loop)
-
-
         while (match(AssemblerTokenType::NEWLINE));
- if (peek().type == AssemblerTokenType::END_OF_FILE) break;
+        if (peek().type == AssemblerTokenType::END_OF_FILE) break;
 
         auto stmt = std::make_unique<Statement>();
- stmt->address = pc;
- stmt->line = peek().line;
- stmt->scopePrefix = currentScopePrefix();
+        stmt->address = pc;
+        stmt->line = peek().line;
+        stmt->scopePrefix = currentScopePrefix();
+        stmt->segmentName = currentSegment->name;
 
         if (peek().type == AssemblerTokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == AssemblerTokenType::COLON) {
- stmt->label = stmt->scopePrefix + advance().value;
- advance();
- symbolTable[stmt->label] = {pc, true, 2, false, 0, false, 0};
- 
-}
+            stmt->label = stmt->scopePrefix + advance().value;
+            advance();
+            symbolTable[stmt->label] = {pc, true, 2, false, 0, false, 0};
+        }
 
         if (peek().type == AssemblerTokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == AssemblerTokenType::EQUALS) {
             std::string name = advance().value;
@@ -286,25 +304,49 @@ void AssemblerParser::pass1() {
         }
 
         if (match(AssemblerTokenType::OPEN_CURLY)) {
- scopeStack.push_back("_S" + std::to_string(nextScopeId++));
- stmt->size = 0;
- statements.push_back(std::move(stmt));
- continue;
- 
-}
+            scopeStack.push_back("_S" + std::to_string(nextScopeId++));
+            segmentStack.push_back(""); // Regular scope
+            stmt->size = 0;
+            statements.push_back(std::move(stmt));
+            continue;
+        }
 
         else if (match(AssemblerTokenType::CLOSE_CURLY)) {
- if (!scopeStack.empty()) scopeStack.pop_back();
- stmt->size = 0;
- statements.push_back(std::move(stmt));
- continue;
- 
-}
+            if (!scopeStack.empty()) scopeStack.pop_back();
+            if (!segmentStack.empty()) {
+                std::string prevSeg = segmentStack.back();
+                segmentStack.pop_back();
+                if (!prevSeg.empty()) switchSegment(prevSeg);
+            }
+            stmt->size = 0;
+            statements.push_back(std::move(stmt));
+            continue;
+        }
 
         else if (match(AssemblerTokenType::DIRECTIVE)) {
 
             stmt->type = Statement::DIRECTIVE;
- stmt->dir.name = tokens[pos-1].value;
+            stmt->dir.name = tokens[pos-1].value;
+
+            if (stmt->dir.name == "segment" || stmt->dir.name == "text" || stmt->dir.name == "data" || stmt->dir.name == "bss") {
+                std::string newSeg;
+                if (stmt->dir.name == "segment") {
+                    if (peek().type == AssemblerTokenType::STRING_LITERAL) newSeg = advance().value;
+                    else newSeg = expect(AssemblerTokenType::IDENTIFIER, "Expected segment name").value;
+                } else newSeg = stmt->dir.name;
+                
+                std::string oldSeg = currentSegment->name;
+                switchSegment(newSeg);
+                if (match(AssemblerTokenType::OPEN_CURLY)) {
+                    scopeStack.push_back("_S" + std::to_string(nextScopeId++));
+                    segmentStack.push_back(oldSeg);
+                }
+                stmt->size = 0;
+                stmt->address = pc;
+                stmt->segmentName = currentSegment->name;
+                statements.push_back(std::move(stmt));
+                continue;
+            }
 
             if (stmt->dir.name == "var") {
 
@@ -364,12 +406,11 @@ void AssemblerParser::pass1() {
  stmt->dir.arguments.push_back(advance().value);
  
 }
- if (stmt->dir.name == "org") {
- stmt->address = pc;
- if (!stmt->dir.arguments.empty()) pc = parseNumericLiteral(stmt->dir.arguments[0]);
- stmt->size = 0;
- 
-}
+                if (stmt->dir.name == "org") {
+                    if (!stmt->dir.arguments.empty()) pc = parseNumericLiteral(stmt->dir.arguments[0]);
+                    stmt->address = pc;
+                    stmt->size = 0;
+                }
  else if (stmt->dir.name == "cpu") stmt->size = 0;
  else stmt->size = calculateDirectiveSize(stmt->dir, pc);
  
@@ -382,17 +423,9 @@ void AssemblerParser::pass1() {
  advance();
  stmt->type = Statement::DIRECTIVE;
  stmt->dir.name = "org";
- stmt->address = pc;
- while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
- if (peek().type == AssemblerTokenType::COMMA) {
- advance();
- continue;
- 
-}
  stmt->dir.arguments.push_back(advance().value);
- 
-}
  if (!stmt->dir.arguments.empty()) pc = parseNumericLiteral(stmt->dir.arguments[0]);
+ stmt->address = pc;
  stmt->size = 0;
  
 }
@@ -963,6 +996,7 @@ int AssemblerParser::calculateDirectiveSize(const Directive& dir, uint32_t curre
 
 std::vector<uint8_t> AssemblerParser::pass2() {
     bool overallChanged;
+    int iteration = 0;
     do {
         overallChanged = false; // Reset for this iteration
 
@@ -972,13 +1006,11 @@ std::vector<uint8_t> AssemblerParser::pass2() {
             overallChanged = true;
         }
 
-        // 2. Remove deleted statements
         std::deque<std::unique_ptr<Statement>> newStatements;
         for (auto& s : statements) {
             if (!s->deleted) {
                 newStatements.push_back(std::move(s));
             } else {
-                // If a statement was deleted, it's a change that needs to be reflected in overallChanged
                 overallChanged = true;
             }
         }
@@ -987,9 +1019,36 @@ std::vector<uint8_t> AssemblerParser::pass2() {
 
         // 3. Recalculate addresses and sizes, and check for changes
         bool addressRecalculationMadeChanges = false;
+        std::map<std::string, uint32_t> pass2PCs;
+        std::map<std::string, bool> segmentStarted;
+        for (auto const& [name, seg] : segments) {
+            pass2PCs[name] = 0;
+            segmentStarted[name] = false;
+        }
+        std::string activeSegment = "default";
         uint32_t cP = 0;
         bool isDeadCode = false;
+        
         for (auto& s : statements) {
+            if (s->type == Statement::DIRECTIVE && (s->dir.name == "segment" || s->dir.name == "text" || s->dir.name == "data" || s->dir.name == "bss")) {
+                pass2PCs[activeSegment] = cP;
+                activeSegment = s->segmentName;
+                cP = pass2PCs[activeSegment];
+            }
+
+            if (s->type == Statement::DIRECTIVE && s->dir.name == "org") {
+                if (!s->dir.arguments.empty()) {
+                    cP = parseNumericLiteral(s->dir.arguments[0]);
+                    if (segments[activeSegment]->startAddress == 0xFFFFFFFF) {
+                        segments[activeSegment]->startAddress = cP;
+                    }
+                }
+            }
+
+            if (segments[activeSegment]->startAddress == 0xFFFFFFFF && (s->size > 0 || s->type == Statement::INSTRUCTION)) {
+                segments[activeSegment]->startAddress = cP;
+            }
+
             pc = cP; // Update member pc for expression evaluation
             s->address = cP;
             if (!s->label.empty()) {
@@ -1001,6 +1060,7 @@ std::vector<uint8_t> AssemblerParser::pass2() {
             }
             if (s->type == Statement::DIRECTIVE && s->dir.name == "org") {
                 if (!s->dir.arguments.empty()) cP = parseNumericLiteral(s->dir.arguments[0]);
+                s->address = cP;
             }
             
             int oS = s->size;
