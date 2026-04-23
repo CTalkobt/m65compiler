@@ -146,6 +146,8 @@ Token Lexer::lexIdentifierOrKeyword() {
     static const std::map<std::string, TokenType> keywords = {
         {"int", TokenType::INT},
         {"char", TokenType::CHAR},
+        {"auto", TokenType::AUTO},
+        {"unsigned", TokenType::UNSIGNED},
         {"return", TokenType::RETURN},
         {"void", TokenType::VOID},
         {"if", TokenType::IF},

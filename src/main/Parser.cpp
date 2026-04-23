@@ -86,17 +86,26 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             }
         }
 
-        if (tokens[look].type == TokenType::VOLATILE) {
-            isVol = true;
+        while (tokens[look].type == TokenType::VOLATILE || tokens[look].type == TokenType::AUTO) {
+            if (tokens[look].type == TokenType::VOLATILE) isVol = true;
+            else {
+                // 'auto' is not allowed at top level, but let's handle it for lookahead
+            }
             look++;
         }
 
         if (look < tokens.size() && (tokens[look].type == TokenType::INT || 
                                      tokens[look].type == TokenType::CHAR || 
+                                     tokens[look].type == TokenType::UNSIGNED ||
                                      tokens[look].type == TokenType::VOID ||
                                      tokens[look].type == TokenType::STRUCT ||
                                      tokens[look].type == TokenType::UNION)) {
-            if (tokens[look].type == TokenType::STRUCT || tokens[look].type == TokenType::UNION) {
+            if (tokens[look].type == TokenType::UNSIGNED) {
+                look++;
+                if (look < tokens.size() && (tokens[look].type == TokenType::INT || tokens[look].type == TokenType::CHAR)) {
+                    look++;
+                }
+            } else if (tokens[look].type == TokenType::STRUCT || tokens[look].type == TokenType::UNION) {
                 look++; // skip struct/union
                 if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
                     look++; // skip struct/union name
@@ -124,13 +133,14 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                 look++;
                 if (look < tokens.size() && tokens[look].type == TokenType::OPEN_PAREN) {
                     if (isNR) match(TokenType::_Noreturn);
+                    while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
                     auto decl = parseFunctionDeclaration();
                     decl->isNoreturn = isNR;
                     flushPending(*unit);
                     unit->topLevelDecls.push_back(std::move(decl));
                 } else {
                     if (isNR) match(TokenType::_Noreturn);
-                    if (isVol) match(TokenType::VOLATILE);
+                    while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
                     auto decl = parseVariableDeclaration(isVol);
                     if (auto* vd = dynamic_cast<VariableDeclaration*>(decl.get())) {
                         vd->isGlobal = true;
@@ -140,6 +150,7 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                 }
             } else {
                 if (isNR) match(TokenType::_Noreturn);
+                while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
                 auto decl = parseFunctionDeclaration();
                 decl->isNoreturn = isNR;
                 flushPending(*unit);
@@ -147,6 +158,7 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             }
         } else {
             if (isNR) match(TokenType::_Noreturn);
+            while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
             auto decl = parseFunctionDeclaration();
             decl->isNoreturn = isNR;
             flushPending(*unit);
@@ -160,7 +172,12 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     const Token& startToken = peek();
     bool isNR = match(TokenType::_Noreturn);
     std::string returnType;
-    if (match(TokenType::INT)) returnType = "int";
+    if (match(TokenType::UNSIGNED)) {
+        if (match(TokenType::INT)) returnType = "int";
+        else if (match(TokenType::CHAR)) returnType = "char";
+        else returnType = "int"; // bare 'unsigned' is 'unsigned int'
+    }
+    else if (match(TokenType::INT)) returnType = "int";
     else if (match(TokenType::CHAR)) returnType = "char";
     else if (match(TokenType::VOID)) returnType = "void";
     else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
@@ -185,7 +202,12 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
                 pIsVolatile = true;
             }
             std::string pType;
-            if (match(TokenType::INT)) pType = "int";
+            if (match(TokenType::UNSIGNED)) {
+                if (match(TokenType::INT)) pType = "int";
+                else if (match(TokenType::CHAR)) pType = "char";
+                else pType = "int";
+            }
+            else if (match(TokenType::INT)) pType = "int";
             else if (match(TokenType::CHAR)) pType = "char";
             else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
                 bool isU = tokens[pos-1].type == TokenType::UNION;
@@ -225,8 +247,15 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 
 std::unique_ptr<Statement> Parser::parseStatement() {
     bool isVolatile = false;
-    if (match(TokenType::VOLATILE)) {
-        isVolatile = true;
+    bool isAuto = false;
+    while (true) {
+        if (match(TokenType::VOLATILE)) {
+            isVolatile = true;
+        } else if (match(TokenType::AUTO)) {
+            isAuto = true;
+        } else {
+            break;
+        }
     }
 
     if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION) {
@@ -238,7 +267,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return parseVariableDeclaration(isVolatile);
     }
 
-    if (peek().type == TokenType::INT || peek().type == TokenType::CHAR) {
+    if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::UNSIGNED) {
         return parseVariableDeclaration(isVolatile);
     }
 
@@ -395,7 +424,12 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
 
     const Token& typeToken = peek();
     std::string type;
-    if (match(TokenType::INT)) type = "int";
+    if (match(TokenType::UNSIGNED)) {
+        if (match(TokenType::INT)) type = "int";
+        else if (match(TokenType::CHAR)) type = "char";
+        else type = "int";
+    }
+    else if (match(TokenType::INT)) type = "int";
     else if (match(TokenType::CHAR)) type = "char";
     else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
         bool isU = tokens[pos-1].type == TokenType::UNION;

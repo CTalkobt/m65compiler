@@ -76,7 +76,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Global Variables**: Support top-level variable declarations.
 - [ ] **Type Definitions**: Implement `typedef`.
 - [ ] **Signed Integers**: Support `signed` types and signed arithmetic/comparisons.
-- [ ] **`unsigned` Keyword**: Support the explicit `unsigned` type specifier for variables and return types.
+- [X] **`unsigned` Keyword**: Support the explicit `unsigned` type specifier for variables and return types.
 - [ ] **`short` Type**: Support 16-bit `short` integer type.
 - [ ] **`long` Type**: Support 32-bit `long` integer type.
 - [ ] **`long long` Type**: Support 64-bit `long long` integer type (C99).
@@ -86,7 +86,9 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **`const` Qualifier**: Support `const` type qualifier and associated read-only variable semantics.
 - [ ] **`restrict` Qualifier**: Support C99 `restrict` pointer qualifier to declare non-aliasing pointer arguments.
 - [ ] **`inline` Specifier**: Support the `inline` function specifier for inlining hints (C99).
-- [ ] **Storage Classes**: Implement `static` (local persistence and file-scope linkage), `extern` (external linkage), `register` (hint), and `auto` (default local) storage class specifiers.
+- [X] **Storage Classes**: Implement `auto` (default local) and `volatile` (qualifier).
+- [ ] **Modern Type Inference**: Implement `auto` as C23/C++ style type inference for declarations with initializers.
+- [ ] **Storage Classes (remaining)**: Implement `static` (local persistence and file-scope linkage), `extern` (external linkage), `register` (hint).
 - [X] **Arrays**: Implement native array declarations (`type name[size]`), subscript indexing (`a[i]`), and pointer decay.
 - [ ] **Array Initializers**: Support initialized array declarations including partial initialization and `= {0}` zero-fill.
 - [ ] **Designated Initializers**: Support C99 designated initializers for structs (`{.x=1}`) and arrays (`{[2]=3}`).

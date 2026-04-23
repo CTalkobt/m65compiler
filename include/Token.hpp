@@ -5,6 +5,8 @@ enum class TokenType {
     // Keywords
     INT,
     CHAR,
+    AUTO,
+    UNSIGNED,
     RETURN,
     VOID,
     IF,
@@ -84,6 +86,8 @@ struct Token {
         switch (type) {
             case TokenType::INT: return "INT";
             case TokenType::CHAR: return "CHAR";
+            case TokenType::AUTO: return "AUTO";
+            case TokenType::UNSIGNED: return "UNSIGNED";
             case TokenType::RETURN: return "RETURN";
             case TokenType::VOID: return "VOID";
             case TokenType::IF: return "IF";
