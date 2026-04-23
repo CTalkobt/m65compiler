@@ -251,6 +251,7 @@ public:
     std::string returnType;
     std::vector<Parameter> parameters;
     std::unique_ptr<CompoundStatement> body;
+    bool isNoreturn = false;
     FunctionDeclaration(const std::string& n, const std::string& rt) : name(n), returnType(rt) {}
     void accept(ASTVisitor& visitor) override;
 };

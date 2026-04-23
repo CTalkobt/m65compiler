@@ -215,7 +215,9 @@ public:
         indent--;
     }
     void visit(FunctionDeclaration& node) override {
-        printIndent(); std::cout << "FunctionDeclaration: " << node.name << " (" << node.returnType << ")" << std::endl;
+        printIndent(); std::cout << "FunctionDeclaration: " << node.name << " (" << node.returnType << ")";
+        if (node.isNoreturn) std::cout << " [noreturn]";
+        std::cout << std::endl;
         indent++;
         for (const auto& param : node.parameters) {
             std::string ptrs = "";

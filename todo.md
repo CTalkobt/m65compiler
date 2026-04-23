@@ -34,7 +34,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Regression Testing**: Implement automated build and test runner (`test_compiler.sh`).
 - [X] **Static Assertions**: Implement `_Static_assert(const-expr, string)` parsing and validation.
 - [ ] **Generic Selections**: Implement `_Generic` expressions for type-based dispatch.
-- [ ] **Function Specifiers**: Support `_Noreturn` (enabling optimization to skip return opcodes).
+- [X] **Function Specifiers**: Support `_Noreturn` (enabling optimization to skip return opcodes).
 - [X] **Alignment**: Implement `_Alignas` and `_Alignof` to manage data alignment.
 - [X] **Inline Assembly**: Support `asm("...")` or `__asm__("...")` for direct assembly insertion.
 - [X] **Preprocessor**: Support `#include`, `#define`, `#undef`, `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`.
@@ -47,6 +47,15 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`.
 - [X] **Break/Continue**: Implement `break` and `continue` for loop control.
 - [X] **Switch/Case**: Implement `switch`, `case`, and `default`.
+- [ ] **`goto` Statement**: Implement `goto` and labeled statements for unconditional jumps within a function.
+- [ ] **Ternary Operator**: Implement the `? :` conditional expression operator.
+- [ ] **`sizeof` Operator**: Implement `sizeof(type)` and `sizeof expr` to return the byte size of a type or expression at compile time.
+- [ ] **Compound Assignment Operators**: Support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
+- [ ] **Bitwise Binary Operators**: Support binary `&`, `|`, `^`, `<<`, `>>` as user-level expression operators.
+- [ ] **Modulo Operator**: Support `%` for integer remainder in expressions.
+- [ ] **`for` Loop Declarations**: Support variable declarations in the `for` loop initializer clause (C99: `for (int i = 0; ...)`).
+- [ ] **Mixed Declarations and Code**: Allow variable declarations to appear anywhere within a block, not just at the start (C99).
+- [ ] **`__func__` Identifier**: Support the predefined `__func__` string literal containing the enclosing function name (C99).
 
 ## Roadmap - Linker & Libraries (ln45)
 - [ ] **Object Format**: Define the `.o45` relocatable object format as an extension of the `.o65` specification.
@@ -67,6 +76,25 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Global Variables**: Support top-level variable declarations.
 - [ ] **Type Definitions**: Implement `typedef`.
 - [ ] **Signed Integers**: Support `signed` types and signed arithmetic/comparisons.
+- [ ] **`unsigned` Keyword**: Support the explicit `unsigned` type specifier for variables and return types.
+- [ ] **`short` Type**: Support 16-bit `short` integer type.
+- [ ] **`long` Type**: Support 32-bit `long` integer type.
+- [ ] **`long long` Type**: Support 64-bit `long long` integer type (C99).
+- [ ] **`_Bool` Type**: Support C99 `_Bool` boolean type and `<stdbool.h>` header.
+- [ ] **`float` / `double` Types**: Support floating-point types (may leverage Commodore 40-bit float format via assembler).
+- [ ] **`enum` Types**: Implement `enum` for defining named integer constant sets.
+- [ ] **`const` Qualifier**: Support `const` type qualifier and associated read-only variable semantics.
+- [ ] **`restrict` Qualifier**: Support C99 `restrict` pointer qualifier to declare non-aliasing pointer arguments.
+- [ ] **`inline` Specifier**: Support the `inline` function specifier for inlining hints (C99).
+- [ ] **Storage Classes**: Implement `static` (local persistence and file-scope linkage), `extern` (external linkage), `register` (hint), and `auto` (default local) storage class specifiers.
+- [ ] **Arrays**: Implement native array declarations (`type name[size]`), subscript indexing (`a[i]`), and pointer decay.
+- [ ] **Array Initializers**: Support initialized array declarations including partial initialization and `= {0}` zero-fill.
+- [ ] **Designated Initializers**: Support C99 designated initializers for structs (`{.x=1}`) and arrays (`{[2]=3}`).
+- [ ] **Compound Literals**: Support C99 compound literals for creating unnamed temporary objects inline (e.g., `(struct Point){.x=1, .y=2}`).
+- [ ] **Flexible Array Members**: Support C99 flexible array members as the last member of a struct (`int data[]`).
+- [ ] **Function Pointers**: Support declaration, assignment, and call-through of function pointer types.
+- [ ] **Variadic Functions**: Support defining variadic functions and the `va_list`, `va_start`, `va_arg`, `va_end` macros.
+- [ ] **Local `_Alignas`**: Extend `_Alignas` support to local (stack-allocated) variables.
 
 ---
 
@@ -82,14 +110,14 @@ Steps required to bring the C compiler closer to C11 standards.
 
 ### 2. Segments
 - [X] **Local Optimization Windows**: Implemented `@` labels to define boundaries for register/flag tracking.
-- [ ] **Segment handling**: Ability to define segments to enforce local scope. 
+- [X] **Segment handling**: Ability to define segments to enforce local scope. 
       Also, allow anonymous segments where scope is merely defined. 
-- [ ] **Segment Address**: For named segments, allow mapping to various regions of memory. (eg: .segment "READONLY", .segment "CODE", etc. ). Have certain built-in segments pre-defined. Allow usage of other custom segments however. 
+- [X] **Segment Address**: For named segments, allow mapping to various regions of memory. (eg: .segment "READONLY", .segment "CODE", etc. ). Have certain built-in segments pre-defined. Allow usage of other custom segments however. 
 
 ### 3. Memory & Alignment
 - [X] **Stack-relative Simulation**: Extended `STX/STY/STZ offset, s` with `TSX` sequences for thread-safety.
 - [X] **Alignment Directive**: Implement `.align <n>` or `.balign <n>` to support C11 `_Alignas`.
-- [ ] **Segment Management**: Implement `.section` or `.segment` to support `_Thread_local` storage and separate data/text areas.
+- [X] **Segment Management**: Implement `.section` or `.segment` to support `_Thread_local` storage and separate data/text areas.
 
 
 ### 4. Expanded Literals

@@ -328,25 +328,43 @@ void AssemblerParser::pass1() {
             stmt->type = Statement::DIRECTIVE;
             stmt->dir.name = tokens[pos-1].value;
 
-            if (stmt->dir.name == "segment" || stmt->dir.name == "text" || stmt->dir.name == "data" || stmt->dir.name == "bss") {
-                std::string newSeg;
-                if (stmt->dir.name == "segment") {
-                    if (peek().type == AssemblerTokenType::STRING_LITERAL) newSeg = advance().value;
-                    else newSeg = expect(AssemblerTokenType::IDENTIFIER, "Expected segment name").value;
-                } else newSeg = stmt->dir.name;
-                
-                std::string oldSeg = currentSegment->name;
-                switchSegment(newSeg);
-                if (match(AssemblerTokenType::OPEN_CURLY)) {
-                    scopeStack.push_back("_S" + std::to_string(nextScopeId++));
-                    segmentStack.push_back(oldSeg);
+                if (stmt->dir.name == "segment" || stmt->dir.name == "code" || stmt->dir.name == "text" || stmt->dir.name == "data" || stmt->dir.name == "bss") {
+                    bool isData = (stmt->dir.name == "text" && peek().type == AssemblerTokenType::STRING_LITERAL);
+                    
+                    if (!isData) {
+                        std::string newSeg;
+                        if (stmt->dir.name == "segment") {
+                            if (peek().type == AssemblerTokenType::STRING_LITERAL) newSeg = advance().value;
+                            else newSeg = expect(AssemblerTokenType::IDENTIFIER, "Expected segment name").value;
+                        } else if (stmt->dir.name == "text") {
+                            newSeg = "code"; // standard name
+                        } else {
+                            newSeg = stmt->dir.name;
+                        }
+                        
+                        std::string oldSeg = currentSegment->name;
+                        switchSegment(newSeg);
+                        if (match(AssemblerTokenType::OPEN_CURLY)) {
+                            scopeStack.push_back("_S" + std::to_string(nextScopeId++));
+                            segmentStack.push_back(oldSeg);
+                        }
+                        stmt->size = 0;
+                        stmt->address = pc;
+                        stmt->segmentName = currentSegment->name;
+                        statements.push_back(std::move(stmt));
+                        continue;
+                    }
                 }
-                stmt->size = 0;
-                stmt->address = pc;
-                stmt->segmentName = currentSegment->name;
-                statements.push_back(std::move(stmt));
-                continue;
-            }
+
+                if (stmt->dir.name == "segmentOrder") {
+                    while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE && peek().type != AssemblerTokenType::COMMA) {
+                        if (peek().type == AssemblerTokenType::COMMA) { advance(); continue; }
+                        requestedSegmentOrder.push_back(advance().value);
+                    }
+                    stmt->size = 0;
+                    statements.push_back(std::move(stmt));
+                    continue;
+                }
 
             if (stmt->dir.name == "var") {
 
@@ -1021,6 +1039,8 @@ std::vector<uint8_t> AssemblerParser::pass2() {
         bool addressRecalculationMadeChanges = false;
         std::map<std::string, uint32_t> pass2PCs;
         std::map<std::string, bool> segmentStarted;
+        pass2PCs["default"] = 0;
+        segmentStarted["default"] = false;
         for (auto const& [name, seg] : segments) {
             pass2PCs[name] = 0;
             segmentStarted[name] = false;
@@ -1030,7 +1050,7 @@ std::vector<uint8_t> AssemblerParser::pass2() {
         bool isDeadCode = false;
         
         for (auto& s : statements) {
-            if (s->type == Statement::DIRECTIVE && (s->dir.name == "segment" || s->dir.name == "text" || s->dir.name == "data" || s->dir.name == "bss")) {
+            if (s->type == Statement::DIRECTIVE && (s->dir.name == "segment" || s->dir.name == "code" || s->dir.name == "text" || s->dir.name == "data" || s->dir.name == "bss")) {
                 pass2PCs[activeSegment] = cP;
                 activeSegment = s->segmentName;
                 cP = pass2PCs[activeSegment];

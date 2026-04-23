@@ -68,6 +68,7 @@ private:
     std::shared_ptr<Segment> currentSegment;
     std::vector<std::shared_ptr<Segment>> segmentOrder;
     std::vector<std::string> segmentStack;
+    std::vector<std::string> requestedSegmentOrder;
 
     struct Statement {
         enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV, STACK_INC, STACK_DEC, STACK_INC8, STACK_DEC8,

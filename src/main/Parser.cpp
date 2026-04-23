@@ -66,6 +66,12 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
         // Look ahead to distinguish function from global variable
         size_t look = pos;
         bool isVol = false;
+        bool isNR = false;
+
+        if (tokens[look].type == TokenType::_Noreturn) {
+            isNR = true;
+            look++;
+        }
 
         if (tokens[look].type == TokenType::_Alignas) {
             look++;
@@ -117,10 +123,13 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
                 look++;
                 if (look < tokens.size() && tokens[look].type == TokenType::OPEN_PAREN) {
+                    if (isNR) match(TokenType::_Noreturn);
                     auto decl = parseFunctionDeclaration();
+                    decl->isNoreturn = isNR;
                     flushPending(*unit);
                     unit->topLevelDecls.push_back(std::move(decl));
                 } else {
+                    if (isNR) match(TokenType::_Noreturn);
                     if (isVol) match(TokenType::VOLATILE);
                     auto decl = parseVariableDeclaration(isVol);
                     if (auto* vd = dynamic_cast<VariableDeclaration*>(decl.get())) {
@@ -130,12 +139,16 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                     unit->topLevelDecls.push_back(std::move(decl));
                 }
             } else {
+                if (isNR) match(TokenType::_Noreturn);
                 auto decl = parseFunctionDeclaration();
+                decl->isNoreturn = isNR;
                 flushPending(*unit);
                 unit->topLevelDecls.push_back(std::move(decl));
             }
         } else {
+            if (isNR) match(TokenType::_Noreturn);
             auto decl = parseFunctionDeclaration();
+            decl->isNoreturn = isNR;
             flushPending(*unit);
             unit->topLevelDecls.push_back(std::unique_ptr<Statement>(std::move(decl)));
         }
@@ -145,6 +158,7 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
 
 std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     const Token& startToken = peek();
+    bool isNR = match(TokenType::_Noreturn);
     std::string returnType;
     if (match(TokenType::INT)) returnType = "int";
     else if (match(TokenType::CHAR)) returnType = "char";
@@ -195,6 +209,7 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     auto func = setPos(std::make_unique<FunctionDeclaration>(name, returnType), startToken);
     func->parameters = std::move(params);
     func->body = std::move(body);
+    func->isNoreturn = isNR;
     return func;
 }
 

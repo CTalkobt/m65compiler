@@ -19,6 +19,7 @@ enum class TokenType {
     _Static_assert,
     _Alignas,
     _Alignof,
+    _Noreturn,
     BREAK,
     CONTINUE,
     SWITCH,
@@ -93,6 +94,7 @@ struct Token {
             case TokenType::_Static_assert: return "_Static_assert";
             case TokenType::_Alignas: return "_Alignas";
             case TokenType::_Alignof: return "_Alignof";
+            case TokenType::_Noreturn: return "_Noreturn";
             case TokenType::BREAK: return "BREAK";
             case TokenType::CONTINUE: return "CONTINUE";
             case TokenType::SWITCH: return "SWITCH";

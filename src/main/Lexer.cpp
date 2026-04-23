@@ -158,6 +158,7 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"_Static_assert", TokenType::_Static_assert},
         {"_Alignas", TokenType::_Alignas},
         {"_Alignof", TokenType::_Alignof},
+        {"_Noreturn", TokenType::_Noreturn},
         {"break", TokenType::BREAK},
         {"continue", TokenType::CONTINUE},
         {"switch", TokenType::SWITCH},

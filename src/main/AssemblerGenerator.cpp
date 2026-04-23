@@ -55,22 +55,31 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
 
     for (auto& [name, symbol] : parser->symbolTable) if (symbol.isVariable) symbol.value = symbol.initialValue;
 
-    // Sort segments by start address to ensure monotonic emission
-    std::vector<std::shared_ptr<AssemblerParser::Segment>> sortedSegments = parser->segmentOrder;
-    for (auto const& seg : sortedSegments) {
+    std::vector<std::string> order = parser->requestedSegmentOrder;
+    if (order.empty()) {
+        order = {"code", "data", "bss"};
+    }
+    
+    // Create a list of all known segments to ensure they are all processed
+    std::vector<std::string> allSegNames;
+    for (const auto& s : order) {
+        if (parser->segments.count(s)) allSegNames.push_back(s);
+    }
+    // Also include any segments not in the requested order
+    for (auto const& seg : parser->segmentOrder) {
+        bool found = false;
+        for (const auto& s : order) if (s == seg->name) { found = true; break; }
+        if (!found) allSegNames.push_back(seg->name);
     }
 
-    std::sort(sortedSegments.begin(), sortedSegments.end(), [](const std::shared_ptr<AssemblerParser::Segment>& a, const std::shared_ptr<AssemblerParser::Segment>& b) {
-        return a->startAddress < b->startAddress;
-    });
-
-    for (auto const& seg : sortedSegments) {
-        if (seg->name == "bss") continue; // Skip BSS segments for binary output
+    for (const auto& segName : allSegNames) {
+        if (segName == "bss") continue; // Skip BSS segments for binary output
+        auto seg = parser->segments[segName];
         if (seg->startAddress == 0xFFFFFFFF) continue; // Skip segments with no content
 
         bool isDeadCode = false;
         for (auto& stmt : parser->statements) {
-            if (stmt->segmentName != seg->name) continue;
+            if (stmt->segmentName != segName) continue;
             
             if (stmt->address > e.getAddress()) {
                 e.setAddress(stmt->address);
