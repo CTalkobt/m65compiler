@@ -172,28 +172,59 @@ void AssemblerSimulatedOps::emitAddSub16Code(AssemblerParser* parser, M65Emitter
     auto srcAst = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!srcAst) return;
     std::string DEST = dest;
-    if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    if (!DEST.empty() && DEST[0] != '.' && DEST[0] != '$' && !isdigit(DEST[0]) && DEST[0] != '#') DEST = "." + DEST;
     std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
-    if (DEST == ".AX") {
-        if (isAdd) e.clc(); else e.sec();
-        if (srcAst->isConstant(parser)) {
-            uint32_t val = srcAst->getValue(parser);
-            if (isAdd) e.adc_imm(val & 0xFF); else e.sbc_imm(val & 0xFF);
-            e.pha(); e.txa();
-            if (isAdd) e.adc_imm((val >> 8) & 0xFF); else e.sbc_imm((val >> 8) & 0xFF);
-            e.tax(); e.pla();
+    
+    auto emitWithTarget = [&](const std::string& target) {
+        if (target == ".AX" || target == ".AY" || target == ".AZ") {
+            char reg2 = target[2];
+            if (isAdd) e.clc(); else e.sec();
+            if (srcAst->isConstant(parser)) {
+                uint32_t val = srcAst->getValue(parser);
+                if (isAdd) e.adc_imm(val & 0xFF); else e.sbc_imm(val & 0xFF);
+                e.pha(); if (reg2 == 'X') e.txa(); else if (reg2 == 'Y') e.tya(); else e.tza();
+                if (isAdd) e.adc_imm((val >> 8) & 0xFF); else e.sbc_imm((val >> 8) & 0xFF);
+                if (reg2 == 'X') e.tax(); else if (reg2 == 'Y') e.tay(); else if (reg2 == 'Z') e.taz();
+                e.pla();
+            } else {
+                uint32_t addr = 0;
+                try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+                catch(...) {
+                     std::string src = parser->tokens[tokenIndex].value;
+                     if (parser->tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src = "." + src;
+                     Symbol* sym = parser->resolveSymbol(src, scopePrefix);
+                     if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(src); } catch(...) { addr = 0; } }
+                }
+                if (isAdd) e.adc_abs(addr); else e.sbc_abs(addr);
+                e.pha(); if (reg2 == 'X') e.txa(); else if (reg2 == 'Y') e.tya(); else if (reg2 == 'Z') e.tza();
+                if (isAdd) e.adc_abs(addr + 1); else e.sbc_abs(addr + 1);
+                if (reg2 == 'X') e.tax(); else if (reg2 == 'Y') e.tay(); else if (reg2 == 'Z') e.taz();
+                e.pla();
+            }
         } else {
-            std::string src = parser->tokens[tokenIndex].value;
-            if (parser->tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src = "." + src;
-            else if (!src.empty() && src[0] != '.' && (src=="A"||src=="X"||src=="Y"||src=="Z"||src=="a"||src=="x"||src=="y"||src=="z")) src = "." + src;
-            Symbol* sym = parser->resolveSymbol(src, scopePrefix);
-            uint32_t addr = 0; if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(src); } catch(...) { addr = 0; } }
-            if (isAdd) e.adc_abs(addr); else e.sbc_abs(addr);
-            e.pha(); e.txa();
-            if (isAdd) e.adc_abs(addr + 1); else e.sbc_abs(addr + 1);
-            e.tax(); e.pla();
+            // Memory target
+            Symbol* sym = parser->resolveSymbol(dest, scopePrefix);
+            uint32_t dAddr = 0; if (sym) dAddr = sym->value; else { try { dAddr = parseNumericLiteral(dest); } catch(...) { dAddr = 0; } }
+            if (isAdd) e.clc(); else e.sec();
+            if (srcAst->isConstant(parser)) {
+                uint32_t val = srcAst->getValue(parser);
+                e.lda_abs(dAddr); if (isAdd) e.adc_imm(val & 0xFF); else e.sbc_imm(val & 0xFF); e.sta_abs(dAddr);
+                e.lda_abs(dAddr+1); if (isAdd) e.adc_imm((val >> 8) & 0xFF); else e.sbc_imm((val >> 8) & 0xFF); e.sta_abs(dAddr+1);
+            } else {
+                uint32_t sAddr = 0;
+                try { sAddr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+                catch(...) {
+                     std::string src = parser->tokens[tokenIndex].value;
+                     if (parser->tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src = "." + src;
+                     Symbol* symS = parser->resolveSymbol(src, scopePrefix);
+                     if (symS) sAddr = symS->value; else { try { sAddr = parseNumericLiteral(src); } catch(...) { sAddr = 0; } }
+                }
+                e.lda_abs(dAddr); if (isAdd) e.adc_abs(sAddr); else e.sbc_abs(sAddr); e.sta_abs(dAddr);
+                e.lda_abs(dAddr+1); if (isAdd) e.adc_abs(sAddr+1); else e.sbc_abs(sAddr+1); e.sta_abs(dAddr+1);
+            }
         }
-    } else throw std::runtime_error("Simulated ADD.16/SUB.16 only supports .AX, found " + DEST);
+    };
+    emitWithTarget(DEST);
 }
 
 void AssemblerSimulatedOps::emitBitwise16Code(AssemblerParser* parser, M65Emitter& e, const std::string& mnemonic, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
@@ -245,6 +276,34 @@ void AssemblerSimulatedOps::emitCMP16Code(AssemblerParser* parser, M65Emitter& e
             e.cmp_abs(addr); e.bne(0x04); e.txa(); e.cmp_abs(addr + 1);
         }
     } else throw std::runtime_error("Simulated CMP.16 only supports .AX as first operand");
+}
+
+void AssemblerSimulatedOps::emitCMP_S16Code(AssemblerParser* parser, M65Emitter& e, const std::string& src1, int tokenIndex, const std::string& scopePrefix) {
+    int idx = tokenIndex;
+    auto src2Ast = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
+    if (!src2Ast) return;
+    std::string SRC1 = src1;
+    if (!SRC1.empty() && SRC1[0] != '.') SRC1 = "." + SRC1;
+    std::transform(SRC1.begin(), SRC1.end(), SRC1.begin(), ::toupper);
+    if (SRC1 == ".AX") {
+        if (src2Ast->isConstant(parser)) {
+            uint32_t val = src2Ast->getValue(parser);
+            e.cmp_imm(val & 0xFF); e.bne(0x06); e.txa(); e.eor_imm(0x80); e.cmp_imm(((val >> 8) & 0xFF) ^ 0x80);
+        } else {
+            uint32_t addr = 0;
+            try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+            catch(...) {
+                std::string src2 = parser->tokens[tokenIndex].value;
+                if (parser->tokens[tokenIndex].type == AssemblerTokenType::REGISTER) src2 = "." + src2;
+                Symbol* sym = parser->resolveSymbol(src2, scopePrefix);
+                if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(src2); } catch(...) { addr = 0; } }
+            }
+            e.cmp_abs(addr); e.bne(0x07); e.txa(); e.eor_imm(0x80); e.pha(); e.lda_abs(addr + 1); e.eor_imm(0x80); e.sta_abs(0); e.pla(); e.cmp_abs(0);
+            // This is getting complex, maybe just use a simpler signed high-byte cmp.
+            // Simplified: CMP low, BNE done, TXA EOR #$80, STA temp, LDA high EOR #$80, CMP temp
+            // Actually: CMP low, BNE +7, TXA, EOR #$80, STA temp, LDA high, EOR #$80, CMP temp
+        }
+    } else throw std::runtime_error("Simulated CMP.S16 only supports .AX as first operand");
 }
 
 void AssemblerSimulatedOps::emitLDWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
@@ -582,6 +641,10 @@ void AssemblerSimulatedOps::emitASR16Code(AssemblerParser* parser, M65Emitter& e
         catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
         e.lda_abs(addr + 1); e.cmp_imm(0x80); e.ror_abs(addr + 1); e.ror_abs(addr);
     }
+}
+
+void AssemblerSimulatedOps::emitSXT8Code(AssemblerParser*, M65Emitter& e, int, const std::string&) {
+    e.pha(); e.cmp_imm(0x80); e.lda_imm(0); e.bcc(0x02); e.lda_imm(0xFF); e.tax(); e.pla();
 }
 
 static std::vector<std::string> getRegistersFromMnemonic(std::string reg) {

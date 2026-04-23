@@ -160,6 +160,11 @@ void AssemblerParser::emitCMP16Code(std::vector<uint8_t>& binary, const std::str
     AssemblerSimulatedOps::emitCMP16Code(this, e, src1, tokenIndex, scopePrefix);
 }
 
+void AssemblerParser::emitCMP_S16Code(std::vector<uint8_t>& binary, const std::string& src1, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitCMP_S16Code(this, e, src1, tokenIndex, scopePrefix);
+}
+
 void AssemblerParser::emitLDWCode(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
     M65Emitter e(binary, getZPStart());
     AssemblerSimulatedOps::emitLDWCode(this, e, dest, tokenIndex, scopePrefix, forceStack);
@@ -399,10 +404,13 @@ void AssemblerParser::pass1() {
 
             if (fullMnemonic == "add.16") stmt->type = Statement::ADD16;
             else if (fullMnemonic == "sub.16") stmt->type = Statement::SUB16;
+            else if (fullMnemonic == "add.s16") stmt->type = Statement::ADDS16;
+            else if (fullMnemonic == "sub.s16") stmt->type = Statement::SUBS16;
             else if (fullMnemonic == "and.16") stmt->type = Statement::AND16;
             else if (fullMnemonic == "ora.16") stmt->type = Statement::ORA16;
             else if (fullMnemonic == "eor.16") stmt->type = Statement::EOR16;
             else if (fullMnemonic == "cmp.16" || fullMnemonic == "cpw") stmt->type = Statement::CMP16;
+            else if (fullMnemonic == "cmp.s16") stmt->type = Statement::CMP_S16;
             else if (fullMnemonic == "ldw" || fullMnemonic == "ldw.sp") stmt->type = Statement::LDW;
             else if (fullMnemonic == "stw" || fullMnemonic == "stw.sp") stmt->type = Statement::STW;
             else if (fullMnemonic == "fill" || fullMnemonic == "fill.sp") stmt->type = Statement::FILL;
@@ -410,7 +418,9 @@ void AssemblerParser::pass1() {
             else if (fullMnemonic == "swap") stmt->type = Statement::SWAP;
             else if (fullMnemonic == "neg.16") stmt->type = Statement::NEG16;
             else if (fullMnemonic == "not.16") stmt->type = Statement::NOT16;
+            else if (fullMnemonic == "neg.s16") stmt->type = Statement::NEG_S16;
             else if (fullMnemonic == "abs.16") stmt->type = Statement::ABS16;
+            else if (fullMnemonic == "abs.s16") stmt->type = Statement::ABS_S16;
             else if (fullMnemonic == "chkzero.8") stmt->type = Statement::CHKZERO8;
             else if (fullMnemonic == "chkzero.16") stmt->type = Statement::CHKZERO16;
             else if (fullMnemonic == "chknonzero.8") stmt->type = Statement::CHKNONZERO8;
@@ -430,6 +440,18 @@ void AssemblerParser::pass1() {
             else if (fullMnemonic == "rol.16") stmt->type = Statement::ROL16;
             else if (fullMnemonic == "ror.16") stmt->type = Statement::ROR16;
             else if (fullMnemonic == "asr.16") stmt->type = Statement::ASR16;
+            else if (fullMnemonic == "lsl.s16") stmt->type = Statement::LSL_S16;
+            else if (fullMnemonic == "lsr.s16") stmt->type = Statement::LSR_S16;
+            else if (fullMnemonic == "rol.s16") stmt->type = Statement::ROL_S16;
+            else if (fullMnemonic == "ror.s16") stmt->type = Statement::ROR_S16;
+            else if (fullMnemonic == "asr.s16") stmt->type = Statement::ASR_S16;
+            else if (fullMnemonic == "sxt.8") {
+                stmt->type = Statement::SXT8;
+                if (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
+                     // Optionally consume 'a' if present? C compilers sometimes use 'sxt.8 a' or similar. 
+                     // For now just keep it simple.
+                }
+            }
             else if (fullMnemonic == "push") stmt->type = Statement::PUSH;
             else if (fullMnemonic == "pop") stmt->type = Statement::POP;
 
@@ -474,45 +496,54 @@ void AssemblerParser::pass1() {
                 stmt->size = d.size();
             }
             else if (stmt->isSimulatedOp()) {
-                stmt->instr.operandTokenIndex = (int)pos;
-                if (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
-                    if (peek().type == AssemblerTokenType::REGISTER) {
-                        stmt->instr.operand = "." + advance().value;
-                    } else if (peek().type == AssemblerTokenType::HASH) {
-                        std::string immStr = advance().value;
-                        stmt->instr.operandTokenIndex = (int)pos;
-                        std::string valPart;
-                        int tempPos = (int)pos;
-                        while(tokens[tempPos].type != AssemblerTokenType::NEWLINE && tokens[tempPos].type != AssemblerTokenType::END_OF_FILE && tokens[tempPos].type != AssemblerTokenType::COMMA) {
-                            valPart += tokens[tempPos].value;
-                            tempPos++;
+                if (stmt->type == Statement::SXT8) {
+                    // No operand
+                } else {
+                    stmt->instr.operandTokenIndex = (int)pos;
+                    stmt->exprTokenIndex = (int)pos; // Initialize exprTokenIndex too
+                    if (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
+                        if (peek().type == AssemblerTokenType::REGISTER) {
+                            stmt->instr.operand = "." + advance().value;
+                        } else {
+                            if (peek().type == AssemblerTokenType::HASH) {
+                                std::string immStr = advance().value;
+                                stmt->instr.operandTokenIndex = (int)pos - 1; // HASH
+                                stmt->exprTokenIndex = (int)pos;
+                                std::string valPart;
+                                int tempPos = (int)pos;
+                                while(tempPos < (int)tokens.size() && tokens[tempPos].type != AssemblerTokenType::NEWLINE && tokens[tempPos].type != AssemblerTokenType::END_OF_FILE && tokens[tempPos].type != AssemblerTokenType::COMMA) {
+                                    valPart += tokens[tempPos].value;
+                                    tempPos++;
+                                }
+                                stmt->instr.operand = immStr + valPart;
+                                while(peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE && peek().type != AssemblerTokenType::COMMA) advance();
+                            } else {
+                                int idx = (int)pos;
+                                auto ast = parseExprAST(tokens, idx, symbolTable, stmt->scopePrefix);
+                                if (ast) {
+                                    if (auto* v = dynamic_cast<VariableNode*>(ast.get())) stmt->instr.operand = v->name;
+                                    else stmt->instr.operand = "EXPR";
+                                }
+                                pos = idx;
+                            }
                         }
-                        stmt->instr.operand = immStr + valPart;
-                        while(peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE && peek().type != AssemblerTokenType::COMMA) advance();
-                    } else {
-                        int idx = (int)pos;
-                        auto ast = parseExprAST(tokens, idx, symbolTable, stmt->scopePrefix);
-                        if (ast) {
-                            if (auto* v = dynamic_cast<VariableNode*>(ast.get())) stmt->instr.operand = v->name;
-                            else stmt->instr.operand = "EXPR";
+                        if (match(AssemblerTokenType::COMMA)) {
+                            stmt->exprTokenIndex = (int)pos;
+                            while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
                         }
-                        pos = idx;
-                    }
-                    if (match(AssemblerTokenType::COMMA)) {
-                        stmt->exprTokenIndex = (int)pos;
-                        while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
                     }
                 }
                 std::vector<uint8_t> d;
-                if (stmt->type == Statement::ADD16 || stmt->type == Statement::SUB16) emitAddSub16Code(d, stmt->type == Statement::ADD16, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                if (stmt->type == Statement::ADD16 || stmt->type == Statement::SUB16 || stmt->type == Statement::ADDS16 || stmt->type == Statement::SUBS16) emitAddSub16Code(d, stmt->type == Statement::ADD16 || stmt->type == Statement::ADDS16, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::AND16 || stmt->type == Statement::ORA16 || stmt->type == Statement::EOR16) emitBitwise16Code(d, stmt->instr.mnemonic, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::CMP16) emitCMP16Code(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::CMP_S16) emitCMP_S16Code(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::LDW) emitLDWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "ldw.sp");
                 else if (stmt->type == Statement::STW) emitSTWCode(d, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "stw.sp");
                 else if (stmt->type == Statement::FILL) emitFillCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "fill.sp");
                 else if (stmt->type == Statement::COPY) emitMoveCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix, stmt->instr.mnemonic == "move.sp");
-                else if (stmt->type == Statement::NEG16 || stmt->type == Statement::NOT16) emitNegNot16Code(d, stmt->type == Statement::NEG16, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::ABS16) emitABS16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::NEG16 || stmt->type == Statement::NOT16 || stmt->type == Statement::NEG_S16) emitNegNot16Code(d, stmt->type == Statement::NEG16 || stmt->type == Statement::NEG_S16, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::ABS16 || stmt->type == Statement::ABS_S16) emitABS16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::CHKZERO8) emitChkZeroCode(d, false, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::CHKZERO16) emitChkZeroCode(d, true, false, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::CHKNONZERO8) emitChkZeroCode(d, false, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
@@ -524,11 +555,12 @@ void AssemblerParser::pass1() {
                 else if (stmt->type == Statement::LDWF || stmt->type == Statement::STWF || stmt->type == Statement::INCF || stmt->type == Statement::DECF) emitFlatMemoryCode(d, stmt->instr.mnemonic, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::ASW) emitASWCode(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::ROW) emitROWCode(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::LSL16) emitLSL16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::LSR16) emitLSR16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::ROL16) emitROL16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::ROR16) emitROR16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::ASR16) emitASR16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::LSL16 || stmt->type == Statement::LSL_S16) emitLSL16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::LSR16 || stmt->type == Statement::LSR_S16) emitLSR16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::ROL16 || stmt->type == Statement::ROL_S16) emitROL16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::ROR16 || stmt->type == Statement::ROR_S16) emitROR16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::ASR16 || stmt->type == Statement::ASR_S16) emitASR16Code(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::SXT8) emitSXT8Code(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::PUSH || stmt->type == Statement::POP) emitPushPopCode(d, stmt->type == Statement::PUSH, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 if (stmt->type != Statement::INSTRUCTION) stmt->size = d.size();
             }
@@ -745,6 +777,11 @@ void AssemblerParser::emitASR16Code(std::vector<uint8_t>& binary, const std::str
     AssemblerSimulatedOps::emitASR16Code(this, e, dest, tokenIndex, scopePrefix);
 }
 
+void AssemblerParser::emitSXT8Code(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitSXT8Code(this, e, tokenIndex, scopePrefix);
+}
+
 void AssemblerParser::emitPushPopCode(std::vector<uint8_t>& binary, bool isPush, int tokenIndex, const std::string& scopePrefix) {
     M65Emitter e(binary);
     std::string reg = tokens[tokenIndex].value;
@@ -899,15 +936,16 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                 if (s->type == Statement::INSTRUCTION) s->size = calculateInstructionSize(s->instr, cP, s->scopePrefix);
                 else if (s->isSimulatedOp()) {
                     std::vector<uint8_t> d;
-                    if (s->type == Statement::ADD16 || s->type == Statement::SUB16) emitAddSub16Code(d, s->type == Statement::ADD16, s->instr.operand, s->exprTokenIndex, s->scopePrefix);
+                    if (s->type == Statement::ADD16 || s->type == Statement::SUB16 || s->type == Statement::ADDS16 || s->type == Statement::SUBS16) emitAddSub16Code(d, s->type == Statement::ADD16 || s->type == Statement::ADDS16, s->instr.operand, s->exprTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::AND16 || s->type == Statement::ORA16 || s->type == Statement::EOR16) emitBitwise16Code(d, s->instr.mnemonic, s->instr.operand, s->exprTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::CMP16) emitCMP16Code(d, s->instr.operand, s->exprTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::CMP_S16) emitCMP_S16Code(d, s->instr.operand, s->exprTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::LDW) emitLDWCode(d, s->instr.operand, s->exprTokenIndex, s->scopePrefix, s->instr.mnemonic == "ldw.sp");
                     else if (s->type == Statement::STW) emitSTWCode(d, s->instr.operand, s->exprTokenIndex, s->scopePrefix, s->instr.mnemonic == "stw.sp");
                     else if (s->type == Statement::FILL) emitFillCode(d, s->instr.operandTokenIndex, s->scopePrefix, s->instr.mnemonic == "fill.sp");
                     else if (s->type == Statement::COPY) emitMoveCode(d, s->instr.operandTokenIndex, s->scopePrefix, s->instr.mnemonic == "move.sp");
-                    else if (s->type == Statement::NEG16 || s->type == Statement::NOT16) emitNegNot16Code(d, s->type == Statement::NEG16, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
-                    else if (s->type == Statement::ABS16) emitABS16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::NEG16 || s->type == Statement::NOT16 || s->type == Statement::NEG_S16) emitNegNot16Code(d, s->type == Statement::NEG16 || s->type == Statement::NEG_S16, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::ABS16 || s->type == Statement::ABS_S16) emitABS16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::CHKZERO8) emitChkZeroCode(d, false, false, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::CHKZERO16) emitChkZeroCode(d, true, false, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::CHKNONZERO8) emitChkZeroCode(d, false, true, s->instr.operandTokenIndex, s->scopePrefix);
@@ -919,11 +957,12 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                     else if (s->type == Statement::LDWF || s->type == Statement::STWF || s->type == Statement::INCF || s->type == Statement::DECF) emitFlatMemoryCode(d, s->instr.mnemonic, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::ASW) emitASWCode(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::ROW) emitROWCode(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
-                    else if (s->type == Statement::LSL16) emitLSL16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
-                    else if (s->type == Statement::LSR16) emitLSR16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
-                    else if (s->type == Statement::ROL16) emitROL16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
-                    else if (s->type == Statement::ROR16) emitROR16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
-                    else if (s->type == Statement::ASR16) emitASR16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::LSL16 || s->type == Statement::LSL_S16) emitLSL16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::LSR16 || s->type == Statement::LSR_S16) emitLSR16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::ROL16 || s->type == Statement::ROL_S16) emitROL16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::ROR16 || s->type == Statement::ROR_S16) emitROR16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::ASR16 || s->type == Statement::ASR_S16) emitASR16Code(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::SXT8) emitSXT8Code(d, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::PUSH || s->type == Statement::POP) emitPushPopCode(d, s->type == Statement::PUSH, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::EXPR) emitExpressionCode(d, s->exprTarget, s->exprTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::MUL || s->type == Statement::DIV) {
