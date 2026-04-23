@@ -521,3 +521,51 @@ void AssemblerSimulatedOps::emitASR16Code(AssemblerParser* parser, M65Emitter& e
         e.sta_abs(addr); e.stx_abs(addr + 1);
     }
 }
+
+static std::vector<std::string> getRegistersFromMnemonic(std::string reg) {
+    std::transform(reg.begin(), reg.end(), reg.begin(), ::toupper);
+    if (!reg.empty() && reg[0] == '.') reg = reg.substr(1);
+    
+    if (reg == "A") return {"A"};
+    if (reg == "X") return {"X"};
+    if (reg == "Y") return {"Y"};
+    if (reg == "Z") return {"Z"};
+    if (reg == "AX") return {"A", "X"};
+    if (reg == "AY") return {"A", "Y"};
+    if (reg == "AZ") return {"A", "Z"};
+    if (reg == "XY") return {"X", "Y"};
+    if (reg == "XZ") return {"X", "Z"};
+    if (reg == "YZ") return {"Y", "Z"};
+    if (reg == "AXY") return {"A", "X", "Y"};
+    if (reg == "AXZ") return {"A", "X", "Z"};
+    if (reg == "AYZ") return {"A", "Y", "Z"};
+    if (reg == "XYZ") return {"X", "Y", "Z"};
+    if (reg == "AXYZ" || reg == "Q") return {"A", "X", "Y", "Z"};
+    return {};
+}
+
+void AssemblerSimulatedOps::emitPushPopCode(AssemblerParser*, M65Emitter& e, bool isPush, const std::string& reg, int, const std::string&) {
+    std::vector<std::string> regs = getRegistersFromMnemonic(reg);
+    if (isPush) {
+        // Push in order
+        for (const auto& r : regs) {
+            if (r == "A") e.pha();
+            else if (r == "X") e.phx();
+            else if (r == "Y") e.phy();
+            else if (r == "Z") e.phz();
+        }
+    } else {
+        // Pop in reverse order
+        std::reverse(regs.begin(), regs.end());
+        for (const auto& r : regs) {
+            if (r == "A") e.pla();
+            else if (r == "X") e.plx();
+            else if (r == "Y") e.ply();
+            else if (r == "Z") e.plz();
+        }
+    }
+}
+
+int AssemblerSimulatedOps::getPushPopSize(AssemblerParser*, bool, const std::string& reg, int, const std::string&) {
+    return (int)getRegistersFromMnemonic(reg).size();
+}

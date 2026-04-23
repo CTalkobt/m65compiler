@@ -261,6 +261,38 @@ void M65Emitter::inz() { emitInstruction("inz", AddressingMode::IMPLIED); }
 void M65Emitter::dez() { emitInstruction("dez", AddressingMode::IMPLIED); }
 
 // --- Stack Operations ---
+void M65Emitter::push(const std::string& reg) {
+    if (mode == Mode::TEXT) {
+        emitText("push", reg);
+    } else {
+        // Fallback or binary emission if needed, but cc45 mainly uses TEXT for ca45 input.
+        // For binary, we'd need to manually call pha/phx/etc.
+        if (reg == "a" || reg == ".a") pha();
+        else if (reg == "x" || reg == ".x") phx();
+        else if (reg == "y" || reg == ".y") phy();
+        else if (reg == "z" || reg == ".z") phz();
+        else if (reg == ".ax") { pha(); phx(); }
+        else if (reg == ".ay") { pha(); phy(); }
+        else if (reg == ".az") { pha(); phz(); }
+        else if (reg == ".q" || reg == ".axyz") { pha(); phx(); phy(); phz(); }
+    }
+}
+
+void M65Emitter::pop(const std::string& reg) {
+    if (mode == Mode::TEXT) {
+        emitText("pop", reg);
+    } else {
+        if (reg == "a" || reg == ".a") pla();
+        else if (reg == "x" || reg == ".x") plx();
+        else if (reg == "y" || reg == ".y") ply();
+        else if (reg == "z" || reg == ".z") plz();
+        else if (reg == ".ax") { plx(); pla(); }
+        else if (reg == ".ay") { ply(); pla(); }
+        else if (reg == ".az") { plz(); pla(); }
+        else if (reg == ".q" || reg == ".axyz") { plz(); ply(); plx(); pla(); }
+    }
+}
+
 void M65Emitter::pha() { emitInstruction("pha", AddressingMode::IMPLIED); }
 void M65Emitter::pla() { emitInstruction("pla", AddressingMode::IMPLIED); }
 void M65Emitter::phx() { emitInstruction("phx", AddressingMode::IMPLIED); }
@@ -329,6 +361,4 @@ void M65Emitter::not_16() {
     else { eor_imm(0xFF); pha(); txa(); eor_imm(0xFF); tax(); pla(); }
 }
 
-void M65Emitter::push_ax() { phx(); pha(); }
-void M65Emitter::pop_ax() { pla(); plx(); }
 void M65Emitter::transfer_ax_to_zp(uint8_t addr) { sta_zp(addr); stx_zp(addr + 1); }

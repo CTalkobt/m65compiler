@@ -208,6 +208,10 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitZeroCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;
             }
+            if (stmt->type == AssemblerParser::Statement::PUSH || stmt->type == AssemblerParser::Statement::POP) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitPushPopCode(parser, e, stmt->type == AssemblerParser::Statement::PUSH, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
 
             if (stmt->type == AssemblerParser::Statement::BASIC_UPSTART) {
                 if (!isDeadCode) {

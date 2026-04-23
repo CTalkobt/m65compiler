@@ -141,3 +141,24 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **Macros**: Implement `.macro` system.
 - [X] **Preprocessor**: Implement `#include`, `#define`, `#undef`, `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`, `#line`, `#error`, `#warning`, `#pragma`. Support function-like macros and operators.
 - [ ] **Standard Library**: Add built-in functions like `sin()`, `cos()`, `round()`.
+
+---
+
+## Roadmap - Companion Utilities
+
+### High Priority (directly support the linker workflow)
+
+- [ ] **`dis45` — Disassembler**: Disassemble `.bin`/`.prg` output or `.o45` sections back to 45GS02 assembly. Critical for verifying compiler and linker output; no existing disassembler fully covers the 45GS02 instruction set (quad-mode, linear addressing, etc.).
+- [ ] **`nm45` — Symbol Lister**: Lists exported/imported symbols in `.o45` object files and `.lib` archives. Shows symbol name, segment, offset, and type (export/import/undefined). Essential for diagnosing linker errors before invoking `ln45`.
+- [ ] **`readobj45` — Object File Inspector**: Human-readable dump of `.o45` file internals: header fields, segment sizes, relocation tables, symbol table. Analogous to `readelf`; primary debugging tool during `ln45` development.
+
+### Medium Priority
+
+- [ ] **`size45` — Segment Size Reporter**: Reports `.text`, `.data`, `.bss`, `.zp` sizes for one or more `.o45` files or the final binary. Critical on the MEGA65's constrained memory map.
+- [ ] **`strip45` — Symbol Stripper**: Removes symbol/debug information from a final linked binary to reduce size. Particularly relevant since `.zp` space is precious.
+- [ ] **`prg45` — PRG File Utility**: Inspect, split, or re-header `.prg` files (2-byte load-address format). Could also handle multi-part PRG loads or inject a BASIC stub.
+- [ ] **Linker Map File**: `-M` flag on `ln45` to emit a map file showing final address assignment for every symbol and segment.
+
+### Required Deliverable (not a standalone tool)
+
+- [ ] **`crt45.s` — C Runtime Startup**: Assembly source linked into every C program. Responsibilities: copy initialized `.data` from ROM to RAM, zero `.bss`, set up the zero-page register pool (the `B` register for Direct Page), then `JSR main` and handle return.

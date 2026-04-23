@@ -116,6 +116,10 @@ public:
     void dez();
 
     // --- Stack Operations ---
+    void push(const std::string& reg);
+    void pop(const std::string& reg);
+    void push_ax() { push(".ax"); }
+    void pop_ax() { pop(".ax"); }
     void pha();
     void pla();
     void phx();
@@ -152,8 +156,6 @@ public:
     void sub_16_imm(uint16_t val);
     void neg_16();
     void not_16();
-    void push_ax();
-    void pop_ax();
     void transfer_ax_to_zp(uint8_t addr);
 
     void emitByte(uint8_t b);

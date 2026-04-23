@@ -1254,11 +1254,11 @@ void CodeGenerator::visit(MemberAccess& node) {
         if (structs.count(nestedSName) && structs[nestedSName]->totalSize > 1) is16 = true;
     }
     if (is16) {
-        emitter->pha(); emitter->ldy_imm(1); updateRegY(1);
+        emitter->push("a"); emitter->ldy_imm(1); updateRegY(1);
         std::stringstream ss2;
         ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
         emit("lda ($" + ss2.str() + "),y");
-        regA.known = false; emitter->tax(); emitter->pla();
+        regA.known = false; emitter->tax(); emitter->pop("a");
     } else {
         emitter->ldx_imm(0); updateRegX(0);
     }
@@ -1376,7 +1376,7 @@ void CodeGenerator::visit(FunctionCall& node) {
                 if (structs.count(sName) && structs[sName]->totalSize > 1) is16Bit = true;
             }
             if (is16Bit) emit("phw.s " + rName + ", s");
-            else { arg->accept(*this); emitter->pha(); }
+            else { arg->accept(*this); emitter->push("a"); }
         } else { arg->accept(*this); emitter->push_ax(); }
     }
     resultNeeded = oldNeeded; emit("jsr " + node.name);

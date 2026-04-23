@@ -675,7 +675,8 @@ aN, sz
                      stmt->instr.mnemonic == "fill" || stmt->instr.mnemonic == "fill.sp" ||
                      stmt->instr.mnemonic == "move" || stmt->instr.mnemonic == "move.sp" ||
                      stmt->instr.mnemonic == "inc.f" || stmt->instr.mnemonic == "dec.f" ||
-                     stmt->instr.mnemonic == "asr.16") {
+                     stmt->instr.mnemonic == "asr.16" ||
+                     stmt->instr.mnemonic == "push" || stmt->instr.mnemonic == "pop") {
 
                      if (stmt->instr.mnemonic == "add.16") stmt->type = Statement::ADD16;
                      else if (stmt->instr.mnemonic == "sub.16") stmt->type = Statement::SUB16;
@@ -702,6 +703,8 @@ aN, sz
                      else if (stmt->instr.mnemonic == "stw.f") stmt->type = Statement::STWF;
                      else if (stmt->instr.mnemonic == "inc.f") stmt->type = Statement::INCF;
                      else if (stmt->instr.mnemonic == "asr.16") stmt->type = Statement::ASR16;
+                     else if (stmt->instr.mnemonic == "push") stmt->type = Statement::PUSH;
+                     else if (stmt->instr.mnemonic == "pop") stmt->type = Statement::POP;
 
                      stmt->instr.operandTokenIndex = (int)pos;
 
@@ -767,6 +770,7 @@ aN, sz
                 else if (stmt->type == Statement::PTRSTACK) emitPtrStackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::PTRDEREF) emitPtrDerefCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::LDWF || stmt->type == Statement::STWF || stmt->type == Statement::INCF || stmt->type == Statement::DECF) emitFlatMemoryCode(d, stmt->instr.mnemonic, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::PUSH || stmt->type == Statement::POP) emitPushPopCode(d, stmt->type == Statement::PUSH, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 
                 if (stmt->type != Statement::INSTRUCTION) stmt->size = d.size();
             }
@@ -902,6 +906,8 @@ aN, sz
                     std::vector<uint8_t> d;
                     emitPHWStackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                     stmt->size = d.size();
+                } else if (stmt->type == Statement::PUSH || stmt->type == Statement::POP) {
+                    stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
                 } else {
                     stmt->size = calculateInstructionSize(stmt->instr, pc, stmt->scopePrefix);
                 }
@@ -922,6 +928,9 @@ aN, sz
 int AssemblerParser::calculateInstructionSize(const Instruction& instr, uint32_t currentAddr, const std::string& scopePrefix) {
     if (instr.mnemonic == "proc") return 0;
     if (instr.mnemonic == "endproc") return (instr.procParamSize == 0) ? 1 : 2;
+    if (instr.mnemonic == "push" || instr.mnemonic == "pop") {
+        return AssemblerSimulatedOps::getPushPopSize(this, instr.mnemonic == "push", instr.operand, instr.operandTokenIndex, scopePrefix);
+    }
 
     AddressingMode resolvedMode = instr.mode;
     
@@ -1103,6 +1112,9 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                 if (s->type == Statement::INSTRUCTION) {
                     s->size = calculateInstructionSize(s->instr, cP, s->scopePrefix);
                 }
+                else if (s->type == Statement::PUSH || s->type == Statement::POP) {
+                    s->size = calculateInstructionSize(s->instr, cP, s->scopePrefix);
+                }
                 else if (s->type == Statement::EXPR) {
                     std::vector<uint8_t> d;
                     emitExpressionCode(d, s->exprTarget, s->exprTokenIndex, s->scopePrefix);
@@ -1130,5 +1142,12 @@ std::vector<uint8_t> AssemblerParser::pass2() {
     } while (overallChanged); // Continue if any change was made in this iteration
 
     return AssemblerGenerator::generate(this);
+}
+
+void AssemblerParser::emitPushPopCode(std::vector<uint8_t>& binary, bool isPush, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary);
+    std::string reg = tokens[tokenIndex].value;
+    if (tokens[tokenIndex].type == AssemblerTokenType::REGISTER) reg = "." + reg;
+    AssemblerSimulatedOps::emitPushPopCode(this, e, isPush, reg, tokenIndex, scopePrefix);
 }
 
