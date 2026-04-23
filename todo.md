@@ -113,6 +113,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Segment handling**: Ability to define segments to enforce local scope. 
       Also, allow anonymous segments where scope is merely defined. 
 - [X] **Segment Address**: For named segments, allow mapping to various regions of memory. (eg: .segment "READONLY", .segment "CODE", etc. ). Have certain built-in segments pre-defined. Allow usage of other custom segments however. 
+- [ ] **Banked Segments**: Ability to define segments as being in different banks and have an associated loader which shifts the segments upon load to the appropriate place. 
 
 ### 3. Memory & Alignment
 - [X] **Stack-relative Simulation**: Extended `STX/STY/STZ offset, s` with `TSX` sequences for thread-safety.

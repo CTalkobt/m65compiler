@@ -43,6 +43,7 @@ AS_TEST_FILES=(
     "src/test-resources/test_segments.s"
     "src/test-resources/test_res.s"
     "src/test-resources/test_pushpop.s"
+    "src/test-resources/test_addr_helpers.s"
 )
 
 for f in "${AS_TEST_FILES[@]}"; do

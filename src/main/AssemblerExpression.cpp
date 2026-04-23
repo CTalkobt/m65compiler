@@ -2,6 +2,7 @@
 #include "AssemblerParser.hpp"
 #include "M65Emitter.hpp"
 #include <stdexcept>
+#include <algorithm>
 
 // ConstantNode
 uint32_t ConstantNode::getValue(AssemblerParser*) const { return value; }
@@ -116,8 +117,9 @@ uint32_t UnaryExpr::getValue(AssemblerParser* parser) const {
     if (op == "!") return val == 0 ? 1 : 0;
     if (op == "~") return ~val;
     if (op == "-") return -val;
-    if (op == "<") return val & 0xFF;
-    if (op == ">") return (val >> 8) & 0xFF;
+    if (op == "<" || op == "lo") return val & 0xFF;
+    if (op == ">" || op == "hi") return (val >> 8) & 0xFF;
+    if (op == "bank") return (val >> 16) & 0xFF;
     return 0;
 }
 bool UnaryExpr::isConstant(AssemblerParser* parser) const { return operand ? operand->isConstant(parser) : true; }
@@ -138,11 +140,31 @@ void UnaryExpr::emit(M65Emitter& e, AssemblerParser* parser, int width, const st
     } else if (op == "-") {
         e.neg_a();
         if (width >= 16) { e.pha(); e.txa(); e.eor_imm(0xFF); e.adc_imm(0); e.tax(); e.pla(); }
-    } else if (op == "<") {
+    } else if (op == "<" || op == "lo") {
         if (width >= 16) e.ldx_imm(0);
-    } else if (op == ">") {
+    } else if (op == ">" || op == "hi") {
         if (width >= 16) { e.txa(); e.ldx_imm(0); }
         else { e.txa(); }
+    } else if (op == "bank") {
+        if (operand->isConstant(parser)) {
+            uint32_t val = operand->getValue(parser);
+            e.lda_imm((val >> 16) & 0xFF);
+            if (width >= 16) e.ldx_imm(0);
+        } else {
+            // For non-constants, this is harder if they are not simple variables.
+            // If it's a variable, we can load the third byte.
+            if (auto* v = dynamic_cast<VariableNode*>(operand.get())) {
+                Symbol* sym = parser->resolveSymbol(v->name, v->scopePrefix);
+                if (sym && sym->isAddress && !sym->isStackRelative) {
+                    e.lda_abs(sym->value + 2);
+                    if (width >= 16) e.ldx_imm(0);
+                } else {
+                    throw std::runtime_error("bank() operator only supported for constant values or absolute addresses");
+                }
+            } else {
+                throw std::runtime_error("bank() operator only supported for constant values or absolute addresses");
+            }
+        }
     }
 }
 
@@ -295,7 +317,18 @@ std::unique_ptr<ExprAST> parseExprAST(const std::vector<AssemblerToken>& tokens,
         if (t.type == AssemblerTokenType::BINARY_LITERAL) return std::make_unique<ConstantNode>(std::stoul(t.value.substr(1), nullptr, 2));
         if (t.type == AssemblerTokenType::REGISTER) return std::make_unique<RegisterNode>("." + t.value);
         if (t.type == AssemblerTokenType::FLAG) return std::make_unique<FlagNode>(t.value[0]);
-        if (t.type == AssemblerTokenType::IDENTIFIER) return std::make_unique<VariableNode>(t.value, scopePrefix);
+        if (t.type == AssemblerTokenType::IDENTIFIER) {
+            std::string name = t.value;
+            std::string lowerName = name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            if ((lowerName == "lo" || lowerName == "hi" || lowerName == "bank") && idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::OPEN_PAREN) {
+                idx++; // consume (
+                auto expr = parseExprAST(tokens, idx, symbolTable, scopePrefix);
+                if (idx < (int)tokens.size() && tokens[idx].type == AssemblerTokenType::CLOSE_PAREN) idx++; // consume )
+                return std::make_unique<UnaryExpr>(lowerName, std::move(expr));
+            }
+            return std::make_unique<VariableNode>(t.value, scopePrefix);
+        }
         if (t.type == AssemblerTokenType::STAR) return std::make_unique<DereferenceNode>(parseExprAST(tokens, idx, symbolTable, scopePrefix));
         if (t.type == AssemblerTokenType::OPEN_BRACKET) {
             auto addr = parseExprAST(tokens, idx, symbolTable, scopePrefix);
