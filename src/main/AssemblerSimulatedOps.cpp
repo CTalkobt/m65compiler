@@ -225,7 +225,7 @@ void AssemblerSimulatedOps::emitBitwise16Code(AssemblerParser* parser, M65Emitte
     } else throw std::runtime_error("Simulated bitwise 16-bit only supports .AX destination");
 }
 
-void AssemblerSimulatedOps::emitCPWCode(AssemblerParser* parser, M65Emitter& e, const std::string& src1, int tokenIndex, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitCMP16Code(AssemblerParser* parser, M65Emitter& e, const std::string& src1, int tokenIndex, const std::string& scopePrefix) {
     int idx = tokenIndex;
     auto src2Ast = parseExprAST(parser->tokens, idx, parser->symbolTable, scopePrefix);
     if (!src2Ast) return;
@@ -244,7 +244,7 @@ void AssemblerSimulatedOps::emitCPWCode(AssemblerParser* parser, M65Emitter& e, 
             uint32_t addr = 0; if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(src2); } catch(...) { addr = 0; } }
             e.cmp_abs(addr); e.bne(0x04); e.txa(); e.cmp_abs(addr + 1);
         }
-    } else throw std::runtime_error("Simulated CPW only supports .AX as first operand");
+    } else throw std::runtime_error("Simulated CMP.16 only supports .AX as first operand");
 }
 
 void AssemblerSimulatedOps::emitLDWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix, bool forceStack) {
@@ -359,12 +359,33 @@ void AssemblerSimulatedOps::emitNegNot16Code(AssemblerParser* parser, M65Emitter
     uint32_t offset = 0;
     if (parser->isStackRelativeOperand(tokenIndex, offset, scopePrefix)) {
         e.tsx();
-        if (isNeg) { e.lda_abs_x(0x0101 + offset); e.eor_imm(0xFF); e.clc(); e.adc_imm(1); e.sta_abs_x(0x0101 + offset); e.lda_abs_x(0x0102 + offset); e.eor_imm(0xFF); e.adc_imm(0); e.sta_abs_x(0x0102 + offset); }
+        if (isNeg) { e.lda_abs_x(0x0101 + offset); e.eor_imm(0xFF); e.sec(); e.adc_imm(1); e.sta_abs_x(0x0101 + offset); e.lda_abs_x(0x0102 + offset); e.eor_imm(0xFF); e.adc_imm(0); e.sta_abs_x(0x0102 + offset); }
         else { e.lda_abs_x(0x0101 + offset); e.eor_imm(0xFF); e.sta_abs_x(0x0101 + offset); e.lda_abs_x(0x0102 + offset); e.eor_imm(0xFF); e.sta_abs_x(0x0102 + offset); }
     } else {
-        Symbol* sym = parser->resolveSymbol(operand, scopePrefix); uint32_t addr = 0; if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(operand); } catch(...) { addr = 0; } }
-        if (isNeg) { e.lda_abs(addr); e.eor_imm(0xFF); e.clc(); e.adc_imm(1); e.sta_abs(addr); e.lda_abs(addr + 1); e.eor_imm(0xFF); e.adc_imm(0); e.sta_abs(addr + 1); }
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(operand, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(operand); } catch(...) { addr = 0; } } }
+        if (isNeg) { e.lda_abs(addr); e.eor_imm(0xFF); e.sec(); e.adc_imm(1); e.sta_abs(addr); e.lda_abs(addr + 1); e.eor_imm(0xFF); e.adc_imm(0); e.sta_abs(addr + 1); }
         else { e.lda_abs(addr); e.eor_imm(0xFF); e.sta_abs(addr); e.lda_abs(addr + 1); e.eor_imm(0xFF); e.sta_abs(addr + 1); }
+    }
+}
+
+void AssemblerSimulatedOps::emitABS16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX" || DEST == "") { e.txa(); e.bpl(0x02); e.neg_16(); return; }
+    uint32_t offset = 0;
+    if (parser->isStackRelativeOperand(tokenIndex, offset, scopePrefix)) {
+        e.tsx(); e.lda_abs_x(0x0102 + offset); e.bpl(0x0D);
+        e.lda_abs_x(0x0101 + offset); e.eor_imm(0xFF); e.sec(); e.adc_imm(1); e.sta_abs_x(0x0101 + offset);
+        e.lda_abs_x(0x0102 + offset); e.eor_imm(0xFF); e.adc_imm(0); e.sta_abs_x(0x0102 + offset);
+    } else {
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.lda_abs(addr + 1); e.bpl(0x0D);
+        e.lda_abs(addr); e.eor_imm(0xFF); e.sec(); e.adc_imm(1); e.sta_abs(addr);
+        e.lda_abs(addr + 1); e.eor_imm(0xFF); e.adc_imm(0); e.sta_abs(addr + 1);
     }
 }
 
@@ -472,53 +493,94 @@ void AssemblerSimulatedOps::emitPHWStackCode(AssemblerParser* parser, M65Emitter
     e.tsx(); e.lda_abs_x(0x0102 + offset); e.pha(); e.lda_abs_x(0x0101 + offset); e.pha();
 }
 
-void AssemblerSimulatedOps::emitASWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitASWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
     std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
     std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
     if (DEST == ".AX") {
-        e.asl_a(); e.txa(); e.rol_a(); e.tax();
+        e.asl_a(); e.pha(); e.txa(); e.rol_a(); e.tax(); e.pla();
     } else {
-        // Load into AX, perform shift, store back
-        Symbol* sym = parser->resolveSymbol(dest, scopePrefix);
-        if (!sym) throw std::runtime_error("Undefined symbol for ASW: " + dest);
-        uint32_t addr = sym->value;
-        e.lda_abs(addr); e.txa(); e.ldx_abs(addr + 1);
-        e.asl_a(); e.txa(); e.rol_a(); e.tax();
-        e.sta_abs(addr); e.stx_abs(addr + 1);
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.asw_abs(addr);
     }
 }
 
-void AssemblerSimulatedOps::emitROWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitROWCode(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
     std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
     std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
     if (DEST == ".AX") {
-        e.ror_a(); e.txa(); e.ror_a(); e.tax();
+        e.pha(); e.txa(); e.ror_a(); e.tax(); e.pla(); e.ror_a();
     } else {
-        // Load into AX, perform rotation, store back
-        Symbol* sym = parser->resolveSymbol(dest, scopePrefix);
-        if (!sym) throw std::runtime_error("Undefined symbol for ROW: " + dest);
-        uint32_t addr = sym->value;
-        e.lda_abs(addr); e.txa(); e.ldx_abs(addr + 1);
-        e.ror_a(); e.txa(); e.ror_a(); e.tax();
-        e.sta_abs(addr); e.stx_abs(addr + 1);
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.row_abs(addr);
     }
 }
 
-void AssemblerSimulatedOps::emitASR16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int /*tokenIndex*/, const std::string& scopePrefix) {
+void AssemblerSimulatedOps::emitLSL16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
     std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
     std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
     if (DEST == ".AX") {
-        e.clc(); // Clear carry for logical shift
-        e.ror_a(); e.txa(); e.ror_a(); e.tax();
+        e.asl_a(); e.pha(); e.txa(); e.rol_a(); e.tax(); e.pla();
     } else {
-        // Load into AX, perform shift, store back
-        Symbol* sym = parser->resolveSymbol(dest, scopePrefix);
-        if (!sym) throw std::runtime_error("Undefined symbol for ASR.16: " + dest);
-        uint32_t addr = sym->value;
-        e.lda_abs(addr); e.txa(); e.ldx_abs(addr + 1);
-        e.clc(); // Clear carry for logical shift
-        e.ror_a(); e.txa(); e.ror_a(); e.tax();
-        e.sta_abs(addr); e.stx_abs(addr + 1);
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.asl_abs(addr); e.rol_abs(addr + 1);
+    }
+}
+
+void AssemblerSimulatedOps::emitLSR16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX") {
+        e.pha(); e.txa(); e.lsr_a(); e.tax(); e.pla(); e.ror_a();
+    } else {
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.lsr_abs(addr + 1); e.ror_abs(addr);
+    }
+}
+
+void AssemblerSimulatedOps::emitROL16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX") {
+        e.rol_a(); e.pha(); e.txa(); e.rol_a(); e.tax(); e.pla();
+    } else {
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.rol_abs(addr); e.rol_abs(addr + 1);
+    }
+}
+
+void AssemblerSimulatedOps::emitROR16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX") {
+        e.pha(); e.txa(); e.ror_a(); e.tax(); e.pla(); e.ror_a();
+    } else {
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.ror_abs(addr + 1); e.ror_abs(addr);
+    }
+}
+
+void AssemblerSimulatedOps::emitASR16Code(AssemblerParser* parser, M65Emitter& e, const std::string& dest, int tokenIndex, const std::string& scopePrefix) {
+    std::string DEST = dest; if (!DEST.empty() && DEST[0] != '.') DEST = "." + DEST;
+    std::transform(DEST.begin(), DEST.end(), DEST.begin(), ::toupper);
+    if (DEST == ".AX") {
+        e.pha(); e.txa(); e.cmp_imm(0x80); e.ror_a(); e.tax(); e.pla(); e.ror_a();
+    } else {
+        uint32_t addr = 0;
+        try { addr = parser->evaluateExpressionAt(tokenIndex, scopePrefix); }
+        catch(...) { Symbol* sym = parser->resolveSymbol(dest, scopePrefix); if (sym) addr = sym->value; else { try { addr = parseNumericLiteral(dest); } catch(...) { addr = 0; } } }
+        e.lda_abs(addr + 1); e.cmp_imm(0x80); e.ror_abs(addr + 1); e.ror_abs(addr);
     }
 }
 

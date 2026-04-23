@@ -50,6 +50,10 @@ public:
     void ora_abs(uint16_t addr);
     void eor_abs(uint16_t addr);
     void cmp_abs(uint16_t addr);
+    void asl_abs(uint16_t addr);
+    void rol_abs(uint16_t addr);
+    void lsr_abs(uint16_t addr);
+    void ror_abs(uint16_t addr);
     void asw_abs(uint16_t addr);
     void row_abs(uint16_t addr);
 
@@ -150,6 +154,8 @@ public:
     void beq(int8_t offset);
     void bcc(int8_t offset);
     void bcs(int8_t offset);
+    void bmi(int8_t offset);
+    void bpl(int8_t offset);
 
     // --- High-level Helpers ---
     void add_16_imm(uint16_t val);

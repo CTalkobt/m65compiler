@@ -87,10 +87,11 @@ This reference summarizes the instructions available in the `ca45` assembler for
   * *Description*: Performs a two's complement negation of the Accumulator (A = -A).
   * *Modes*: `acc`
 
-* **`ADD.16`, `SUB.16`**
-  * *Description*: 16-bit addition/subtraction on the `.AX` register pair. Automates carry propagation.
+* **`ADD.16`, `SUB.16`, `CMP.16`**
+  * *Description*: 16-bit addition, subtraction, and comparison on the `.AX` register pair.
   * *Modes*: `.AX, <src>` (src can be immediate, memory, or register)
-  * *Example*: `add.16 .ax, #1000`
+  * *Example*: `cmp.16 .ax, #1000`
+  * *Note*: `CPW` is an alias for `CMP.16`.
 
 * **`MUL.<width>`, `DIV.<width>`**
   * *Description*: Hardware-accelerated multiplication and division using the Mega65 math unit.
@@ -112,6 +113,11 @@ This reference summarizes the instructions available in the `ca45` assembler for
 * **`INC.F`, `DEC.F`**
   * *Description*: Increments or decrements an 8-bit byte in linear 28-bit memory.
   * *Modes*: `<addr28>`
+
+* **`NEG.16`, `ABS.16`**
+  * *Description*: 16-bit Negate (Two's Complement) and Absolute Value.
+  * *Modes*: `.ax`, `abs`, `stack`
+  * *Example*: `abs.16 .ax`
 
 * **`EXPR`**
   * *Description*: Evaluates a complex mathematical formula and generates the code to store the result. Handles constant folding at assembly time and dynamic hardware math at runtime.
@@ -173,9 +179,14 @@ This reference summarizes the instructions available in the `ca45` assembler for
   * *Modes*: `acc`, `bp`, `bp,X`
 
 * **`ASW`, `ROW`**
-  * *Description*: 16-bit Arithmetic Shift Word Left, Rotate Word Right directly in memory.
-  * *Modes*: `abs`
+  * *Description*: 16-bit Arithmetic Shift Word Left, Rotate Word Right.
+  * *Modes*: `abs`, `.ax`
   * *Example*: `asw $1000` (Shifts the 16-bit value at $1000-$1001 left by 1)
+
+* **`LSL.16`, `LSR.16`, `ASR.16`, `ROL.16`, `ROR.16`**
+  * *Description*: 16-bit Logical/Arithmetic Shifts and Rotates.
+  * *Modes*: `abs`, `.ax`
+  * *Example*: `lsr.16 .ax` (Logically shifts the `.AX` register pair right by 1)
 
 * **`ASLQ`, `LSRQ`, `ROLQ`, `RORQ`, `ASRQ`**
   * *Description*: 32-bit Quad register shifts and rotates.
@@ -189,10 +200,8 @@ This reference summarizes the instructions available in the `ca45` assembler for
   * *Description*: 8-bit Compare register with memory/immediate. Sets flags for branching.
   * *Modes*: `imm`, `bp`, `abs`, `bp,X/Y`, `abs,X/Y`, `(bp),Y/Z`, `[bp],Z`
 
-* **`CPW`**
-  * *Description*: 16-bit word compare against the `.AX` register pair.
-  * *Modes*: `.AX, <src>`
-  * *Example*: `cpw .ax, #1000`
+* **`CPW`, `CMP.16`**
+  * *Description*: 16-bit word compare (See Section 2).
 
 * **`CMPQ`**
   * *Description*: 32-bit Quad register compare.

@@ -132,8 +132,20 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitBitwise16Code(parser, e, stmt->instr.mnemonic, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
                 continue;
             }
-            if (stmt->type == AssemblerParser::Statement::CPW) {
-                if (!isDeadCode) AssemblerSimulatedOps::emitCPWCode(parser, e, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+            if (stmt->type == AssemblerParser::Statement::CMP16) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitCMP16Code(parser, e, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::ABS16) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitABS16Code(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::ROL16) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitROL16Code(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::ROR16) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitROR16Code(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;
             }
             if (stmt->type == AssemblerParser::Statement::LDW) {
@@ -200,6 +212,26 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitFlatMemoryCode(parser, e, stmt->instr.mnemonic, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;
             }
+            if (stmt->type == AssemblerParser::Statement::ASW) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitASWCode(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::ROW) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitROWCode(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::LSL16) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitLSL16Code(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::LSR16) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitLSR16Code(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::ASR16) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitASR16Code(parser, e, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
             if (stmt->type == AssemblerParser::Statement::PHW_STACK) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitPHWStackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;
@@ -208,6 +240,15 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitZeroCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;
             }
+            if (stmt->type == AssemblerParser::Statement::LDAX || stmt->type == AssemblerParser::Statement::LDAY || stmt->type == AssemblerParser::Statement::LDAZ) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitLDWCode(parser, e, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, false);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::STAX || stmt->type == AssemblerParser::Statement::STAY || stmt->type == AssemblerParser::Statement::STAZ) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitSTWCode(parser, e, stmt->instr.operand, stmt->exprTokenIndex, stmt->scopePrefix, false);
+                continue;
+            }
+
             if (stmt->type == AssemblerParser::Statement::PUSH || stmt->type == AssemblerParser::Statement::POP) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitPushPopCode(parser, e, stmt->type == AssemblerParser::Statement::PUSH, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;
@@ -219,16 +260,16 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
                     std::string aS = std::to_string(addr);
                     while (aS.length() < 4) aS = " " + aS;
                     if (aS.length() > 4) aS = aS.substr(aS.length() - 4);
-                    uint16_t nL = (uint16_t)(stmt->address + 12 - 2);
-                    e.emitWord(nL);
-                    e.emitByte(0x0A); e.emitByte(0x00); e.emitByte(0x9E);
-                    for (char c : aS) e.emitByte((uint8_t)c);
+                    e.emitByte(0x0b); e.emitByte(0x08); e.emitByte(0x0a); e.emitByte(0x00);
+                    e.emitByte(0x9e); // SYS
+                    for (char c : aS) e.emitByte(toPetscii(c));
                     e.emitByte(0x00); e.emitByte(0x00); e.emitByte(0x00);
                 }
                 continue;
             }
 
             if (stmt->type == AssemblerParser::Statement::INSTRUCTION) {
+                if (stmt->isSimulatedOp()) continue; // Handled above
                 if (stmt->instr.mnemonic == "proc") {
                     pass2ProcStack.push_back(currentPass2Proc);
                     currentPass2Proc = stmt->procCtx;

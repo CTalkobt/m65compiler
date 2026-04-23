@@ -44,6 +44,8 @@ AS_TEST_FILES=(
     "src/test-resources/test_res.s"
     "src/test-resources/test_pushpop.s"
     "src/test-resources/test_addr_helpers.s"
+    "src/test-resources/test_shifts_16.s"
+    "src/test-resources/test_new_16bit_ops.s"
 )
 
 for f in "${AS_TEST_FILES[@]}"; do

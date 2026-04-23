@@ -40,8 +40,8 @@ start:
     NOT.16
     
     ; 16-bit Compare
-    CPW .AX, $1D34
-    CPW .AX, $02
+    CMP.16 .AX, $1D34
+    CMP.16 .AX, $02
     
     ; Register Swaps
     SWAP A, X

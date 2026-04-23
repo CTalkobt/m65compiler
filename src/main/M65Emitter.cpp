@@ -175,6 +175,10 @@ void M65Emitter::and_abs(uint16_t addr) { emitInstruction("and", AddressingMode:
 void M65Emitter::ora_abs(uint16_t addr) { emitInstruction("ora", AddressingMode::ABSOLUTE, addr, true); }
 void M65Emitter::eor_abs(uint16_t addr) { emitInstruction("eor", AddressingMode::ABSOLUTE, addr, true); }
 void M65Emitter::cmp_abs(uint16_t addr) { emitInstruction("cmp", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::asl_abs(uint16_t addr) { emitInstruction("asl", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::rol_abs(uint16_t addr) { emitInstruction("rol", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::lsr_abs(uint16_t addr) { emitInstruction("lsr", AddressingMode::ABSOLUTE, addr, true); }
+void M65Emitter::ror_abs(uint16_t addr) { emitInstruction("ror", AddressingMode::ABSOLUTE, addr, true); }
 void M65Emitter::asw_abs(uint16_t addr) { emitInstruction("asw", AddressingMode::ABSOLUTE, addr, true); }
 void M65Emitter::row_abs(uint16_t addr) { emitInstruction("row", AddressingMode::ABSOLUTE, addr, true); }
 
@@ -323,6 +327,8 @@ void M65Emitter::bne(int8_t offset) { emitInstruction("bne", AddressingMode::REL
 void M65Emitter::beq(int8_t offset) { emitInstruction("beq", AddressingMode::RELATIVE, (uint32_t)offset, true); }
 void M65Emitter::bcc(int8_t offset) { emitInstruction("bcc", AddressingMode::RELATIVE, (uint32_t)offset, true); }
 void M65Emitter::bcs(int8_t offset) { emitInstruction("bcs", AddressingMode::RELATIVE, (uint32_t)offset, true); }
+void M65Emitter::bmi(int8_t offset) { emitInstruction("bmi", AddressingMode::RELATIVE, (uint32_t)offset, true); }
+void M65Emitter::bpl(int8_t offset) { emitInstruction("bpl", AddressingMode::RELATIVE, (uint32_t)offset, true); }
 
 void M65Emitter::add_16_imm(uint16_t val) {
     if (mode == Mode::TEXT) {
@@ -354,7 +360,7 @@ void M65Emitter::sub_16_imm(uint16_t val) {
 
 void M65Emitter::neg_16() {
     if (mode == Mode::TEXT) emitText("neg.16");
-    else { eor_imm(0xFF); pha(); txa(); eor_imm(0xFF); adc_imm(0); tax(); pla(); }
+    else { eor_imm(0xFF); sec(); adc_imm(1); pha(); txa(); eor_imm(0xFF); adc_imm(0); tax(); pla(); }
 }
 void M65Emitter::not_16() {
     if (mode == Mode::TEXT) emitText("not.16");

@@ -661,10 +661,10 @@ void CodeGenerator::visit(BinaryOperation& node) {
             else if (val > 0 && (val & (val - 1)) == 0) {
                 int shifts = 0; while (val > 1) { val >>= 1; shifts++; }
                 if (shifts == 1 && getExprType(node.left.get()).pointerLevel == 0 && (getExprType(node.left.get()).type == "int")) {
-                    emit("asw .ax");
+                    emit("lsl.16 .ax");
                 } else {
                     for (int i = 0; i < shifts; i++) {
-                        emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+                        emit("lsl.16 .ax");
                     }
                 }
             } else {
@@ -682,7 +682,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
                 if (node.op == "/") {
                     int shifts = 0; while (val > 1) { val >>= 1; shifts++; }
                     for (int i = 0; i < shifts; i++) {
-                        emitter->txa(); emitter->lsr_a(); emitter->tax(); emitter->pla(); emitter->ror_a(); emitter->pha();
+                        emit("lsr.16 .ax");
                     }
                 } else { // %
                     int mask = val - 1;
@@ -702,8 +702,8 @@ void CodeGenerator::visit(BinaryOperation& node) {
             invalidateFlags(); resultNeeded = oldNeeded; return;
         } else if (node.op == "<<" || node.op == ">>") {
             for (int i = 0; i < val; i++) {
-                if (node.op == "<<") { emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla(); }
-                else { emitter->txa(); emitter->lsr_a(); emitter->tax(); emitter->pla(); emitter->ror_a(); emitter->pha(); }
+                if (node.op == "<<") { emit("lsl.16 .ax"); }
+                else { emit("lsr.16 .ax"); }
             }
             invalidateFlags(); resultNeeded = oldNeeded; return;
         }
@@ -737,7 +737,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emit("sta $" + ssSh.str()); std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
         emit("ldax $" + ssVal.str()); out << labelStart << ":" << std::endl;
         emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
-        emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+        emit("lsl.16 .ax");
         emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
         freeZP(shiftZp, 1);
     } else if (node.op == ">>") {
@@ -746,7 +746,7 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emit("sta $" + ssSh.str()); std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
         emit("ldax $" + ssVal.str()); out << labelStart << ":" << std::endl;
         emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
-        emitter->txa(); emitter->lsr_a(); emitter->tax(); emitter->pla(); emitter->ror_a(); emitter->pha();
+        emit("lsr.16 .ax");
         emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
         freeZP(shiftZp, 1);
     } else if (node.op == "&") {
@@ -760,9 +760,8 @@ void CodeGenerator::visit(BinaryOperation& node) {
         emit("eor.16 .ax, $" + ss2.str());
     } else if (node.op == "==" || node.op == "!=") {
         std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("cpw .ax, $" + ss2.str());
-        std::string labelFalse = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
-        if (node.op == "==") emit("bne " + labelFalse); else emit("beq " + labelFalse);
+        emit("cmp.16 .ax, $" + ss2.str());
+        std::string labelFalse = newDontCareLabel(); std::string labelEnd = newDontCareLabel();        if (node.op == "==") emit("bne " + labelFalse); else emit("beq " + labelFalse);
         emitter->lda_imm(1); emitter->bra(0x02); out << labelFalse << ":" << std::endl; emitter->lda_imm(0); out << labelEnd << ":" << std::endl;
         emitter->ldx_imm(0); updateRegX(0);
     }
@@ -1152,8 +1151,9 @@ void CodeGenerator::visit(SwitchStatement& node) {
     node.body->accept(collector);
     for (auto& c : info.cases) {
         emit("ldax $" + ss.str());
-        std::stringstream ssVal; ssVal << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (uint16_t)c.value;
-        emit("cpw .ax, " + ssVal.str()); emit("beq " + c.label);
+        std::stringstream ssVal;
+        ssVal << "#$" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << c.value;
+        emit("cmp.16 .ax, " + ssVal.str()); emit("beq " + c.label);
     }
     if (info.hasDefault) emit("bra " + info.defaultLabel);
     else emit("bra " + labelBreak);

@@ -73,21 +73,7 @@ bool AssemblerOptimizer::optimize(AssemblerParser* parser) {
                    ) {
                     stackVarLastValue.clear();
                 }
-            } else if (s->type == AssemblerParser::Statement::LDW || s->type == AssemblerParser::Statement::STW || 
-                       s->type == AssemblerParser::Statement::EXPR || s->type == AssemblerParser::Statement::MUL ||
-                       s->type == AssemblerParser::Statement::DIV || s->type == AssemblerParser::Statement::STACK_INC ||
-                       s->type == AssemblerParser::Statement::STACK_DEC || s->type == AssemblerParser::Statement::CPW ||
-                       s->type == AssemblerParser::Statement::FILL || s->type == AssemblerParser::Statement::COPY ||
-                       s->type == AssemblerParser::Statement::SWAP || s->type == AssemblerParser::Statement::NEG16 ||
-                       s->type == AssemblerParser::Statement::NOT16 || s->type == AssemblerParser::Statement::CHKZERO8 ||
-                       s->type == AssemblerParser::Statement::CHKZERO16 || s->type == AssemblerParser::Statement::CHKNONZERO8 ||
-                       s->type == AssemblerParser::Statement::CHKNONZERO16 || s->type == AssemblerParser::Statement::BRANCH16 ||
-                       s->type == AssemblerParser::Statement::SELECT || s->type == AssemblerParser::Statement::PTRSTACK ||
-                       s->type == AssemblerParser::Statement::PTRDEREF || s->type == AssemblerParser::Statement::LDWF ||
-                       s->type == AssemblerParser::Statement::STWF || s->type == AssemblerParser::Statement::INCF ||
-                       s->type == AssemblerParser::Statement::DECF || s->type == AssemblerParser::Statement::PHW_STACK ||
-                       s->type == AssemblerParser::Statement::ASR16 || s->type == AssemblerParser::Statement::ZERO
-                      ) {
+            } else if (s->isSimulatedOp()) {
                 stackVarLastValue.clear();
             }
         }
@@ -186,7 +172,7 @@ bool AssemblerOptimizer::optimize(AssemblerParser* parser) {
                 if (m == "INY" || m == "DEY") { invalidate(regY); }
                 if (m == "INZ" || m == "DEZ") { invalidate(regZ); }
             }
-        } else if (s->type == AssemblerParser::Statement::EXPR || s->type == AssemblerParser::Statement::MUL || s->type == AssemblerParser::Statement::DIV || s->type == AssemblerParser::Statement::STACK_INC || s->type == AssemblerParser::Statement::STACK_DEC || s->type == AssemblerParser::Statement::ADD16 || s->type == AssemblerParser::Statement::SUB16 || s->type == AssemblerParser::Statement::AND16 || s->type == AssemblerParser::Statement::ORA16 || s->type == AssemblerParser::Statement::EOR16 || s->type == AssemblerParser::Statement::CPW || s->type == AssemblerParser::Statement::FILL || s->type == AssemblerParser::Statement::COPY || s->type == AssemblerParser::Statement::SWAP || s->type == AssemblerParser::Statement::NEG16 || s->type == AssemblerParser::Statement::NOT16 || s->type == AssemblerParser::Statement::CHKZERO8 || s->type == AssemblerParser::Statement::CHKZERO16 || s->type == AssemblerParser::Statement::CHKNONZERO8 || s->type == AssemblerParser::Statement::CHKNONZERO16 || s->type == AssemblerParser::Statement::BRANCH16 || s->type == AssemblerParser::Statement::SELECT || s->type == AssemblerParser::Statement::PTRSTACK || s->type == AssemblerParser::Statement::PTRDEREF || s->type == AssemblerParser::Statement::LDWF || s->type == AssemblerParser::Statement::STWF || s->type == AssemblerParser::Statement::INCF || s->type == AssemblerParser::Statement::DECF || s->type == AssemblerParser::Statement::PHW_STACK || s->type == AssemblerParser::Statement::ASR16 || s->type == AssemblerParser::Statement::ZERO) {
+        } else if (s->isSimulatedOp()) {
             stackVarLastValue.clear();
         }
     }

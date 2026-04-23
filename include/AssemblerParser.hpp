@@ -72,9 +72,9 @@ private:
 
     struct Statement {
         enum Type { NONE, INSTRUCTION, DIRECTIVE, EXPR, BASIC_UPSTART, MUL, DIV, STACK_INC, STACK_DEC, STACK_INC8, STACK_DEC8,
-                    ADD16, SUB16, AND16, ORA16, EOR16, CPW, LDW, STW, SWAP, ZERO,
+                    ADD16, SUB16, AND16, ORA16, EOR16, CMP16, LDW, STW, SWAP, ZERO,
                     NEG16, NOT16, CHKZERO8, CHKZERO16, CHKNONZERO8, CHKNONZERO16, BRANCH16, SELECT,
-                    PTRSTACK, PTRDEREF, LDWF, STWF, INCF, DECF, PHW_STACK, ASW, ROW, ASR16,
+                    PTRSTACK, PTRDEREF, LDWF, STWF, INCF, DECF, PHW_STACK, ASW, ROW, ASR16, LSL16, LSR16, ROL16, ROR16, ABS16,
                     LDAX, LDAY, LDAZ, STAX, STAY, STAZ, FILL, COPY, PUSH, POP } type = NONE;
         Instruction instr;
         Directive dir;
@@ -97,6 +97,38 @@ private:
         int mulWidth = 8;
 
         bool deleted = false;
+
+        bool isSimulatedOp() const {
+            switch (type) {
+                case MUL: case DIV: case STACK_INC: case STACK_DEC:
+                case STACK_INC8: case STACK_DEC8: case ADD16: case SUB16:
+                case AND16: case ORA16: case EOR16: case CMP16: case LDW:
+                case STW: case SWAP: case ZERO: case NEG16: case NOT16:
+                case ABS16: case CHKZERO8: case CHKZERO16:
+                case CHKNONZERO8: case CHKNONZERO16: case BRANCH16: case SELECT:
+                case PTRSTACK: case PTRDEREF: case LDWF: case STWF: case INCF:
+                case DECF: case PHW_STACK: case ASW: case ROW: case ASR16:
+                case LSL16: case LSR16: case ROL16: case ROR16:
+                case LDAX: case LDAY: case LDAZ: case STAX: case STAY: case STAZ:
+                case FILL: case COPY: case PUSH: case POP:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        bool is16BitOp() const {
+            switch (type) {
+                case ADD16: case SUB16: case AND16: case ORA16: case EOR16:
+                case CMP16: case NEG16: case NOT16: case ABS16:
+                case ASR16: case LSL16: case LSR16: case ROL16: case ROR16:
+                case LDW: case STW: case LDAX: case LDAY: case LDAZ:
+                case STAX: case STAY: case STAZ:
+                    return true;
+                default:
+                    return false;
+            }
+        }
     };
     std::deque<std::unique_ptr<Statement>> statements;
 
@@ -118,12 +150,13 @@ private:
     void emitStackIncDec8Code(std::vector<uint8_t>& binary, bool isInc, int tokenIndex, const std::string& scopePrefix = "");
     void emitAddSub16Code(std::vector<uint8_t>& binary, bool isAdd, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
     void emitBitwise16Code(std::vector<uint8_t>& binary, const std::string& mnemonic, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
-    void emitCPWCode(std::vector<uint8_t>& binary, const std::string& src1, int tokenIndex, const std::string& scopePrefix = "");
+    void emitCMP16Code(std::vector<uint8_t>& binary, const std::string& src1, int tokenIndex, const std::string& scopePrefix = "");
     void emitLDWCode(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "", bool forceStack = false);
     void emitSTWCode(std::vector<uint8_t>& binary, const std::string& src, int tokenIndex, const std::string& scopePrefix = "", bool forceStack = false);
     void emitSwapCode(std::vector<uint8_t>& binary, const std::string& r1, int tokenIndex, const std::string& scopePrefix = "");
     void emitZeroCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
     void emitNegNot16Code(std::vector<uint8_t>& binary, bool isNeg, const std::string& operand, int tokenIndex, const std::string& scopePrefix = "");
+    void emitABS16Code(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
     void emitChkZeroCode(std::vector<uint8_t>& binary, bool is16, bool isInverse, int tokenIndex, const std::string& scopePrefix = "");
     void emitBranch16Code(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
     void emitSelectCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
@@ -133,6 +166,13 @@ private:
     void emitMoveCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "", bool forceStack = false);
     void emitFlatMemoryCode(std::vector<uint8_t>& binary, const std::string& mnemonic, int tokenIndex, const std::string& scopePrefix = "");
     void emitPHWStackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix = "");
+    void emitASWCode(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitROWCode(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitLSL16Code(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitLSR16Code(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitROL16Code(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitROR16Code(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
+    void emitASR16Code(std::vector<uint8_t>& binary, const std::string& dest, int tokenIndex, const std::string& scopePrefix = "");
     void emitPushPopCode(std::vector<uint8_t>& binary, bool isPush, int tokenIndex, const std::string& scopePrefix = "");
     bool isStackRelativeOperand(int tokenIndex, uint32_t& offset, const std::string& scopePrefix);
 };
