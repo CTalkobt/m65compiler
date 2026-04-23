@@ -82,6 +82,25 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class ArrayAccess : public Expression {
+public:
+    std::unique_ptr<Expression> arrayExpr;
+    std::unique_ptr<Expression> indexExpr;
+    ArrayAccess(std::unique_ptr<Expression> a, std::unique_ptr<Expression> i)
+        : arrayExpr(std::move(a)), indexExpr(std::move(i)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class ConditionalExpression : public Expression {
+public:
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Expression> thenExpr;
+    std::unique_ptr<Expression> elseExpr;
+    ConditionalExpression(std::unique_ptr<Expression> c, std::unique_ptr<Expression> t, std::unique_ptr<Expression> e)
+        : condition(std::move(c)), thenExpr(std::move(t)), elseExpr(std::move(e)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class AlignofExpression : public Expression {
 public:
     std::string typeName;
@@ -100,6 +119,7 @@ public:
     int alignment = 0;
     std::unique_ptr<Expression> alignmentExpr;
     std::unique_ptr<Expression> initializer;
+    int arraySize = -1; // -1 means not an array
     VariableDeclaration(const std::string& t, const std::string& n, int p = 0) : type(t), pointerLevel(p), name(n) {}
     void accept(ASTVisitor& visitor) override;
 };
@@ -227,6 +247,7 @@ struct StructMember {
     int alignment = 0;
     std::unique_ptr<Expression> alignmentExpr;
     bool isAnonymous = false;
+    int arraySize = -1;
 };
 
 class StructDefinition : public Statement {
@@ -273,6 +294,8 @@ public:
     virtual void visit(Assignment& node) = 0;
     virtual void visit(BinaryOperation& node) = 0;
     virtual void visit(UnaryOperation& node) = 0;
+    virtual void visit(ConditionalExpression& node) = 0;
+    virtual void visit(ArrayAccess& node) = 0;
     virtual void visit(FunctionCall& node) = 0;
     virtual void visit(MemberAccess& node) = 0;
     virtual void visit(AlignofExpression& node) = 0;

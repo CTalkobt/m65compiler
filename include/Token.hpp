@@ -64,6 +64,9 @@ enum class TokenType {
     ARROW,         // ->
     PLUS_PLUS,     // ++
     MINUS_MINUS,   // --
+    QUESTION_MARK, // ?
+    OPEN_SQUARE,   // [
+    CLOSE_SQUARE,  // ]
     
     // Special
     END_OF_FILE,
@@ -107,8 +110,11 @@ struct Token {
             case TokenType::CLOSE_PAREN: return "CLOSE_PAREN";
             case TokenType::OPEN_BRACE: return "OPEN_BRACE";
             case TokenType::CLOSE_BRACE: return "CLOSE_BRACE";
+            case TokenType::OPEN_SQUARE: return "OPEN_SQUARE";
+            case TokenType::CLOSE_SQUARE: return "CLOSE_SQUARE";
             case TokenType::SEMICOLON: return "SEMICOLON";
             case TokenType::COLON: return "COLON";
+            case TokenType::QUESTION_MARK: return "QUESTION_MARK";
             case TokenType::COMMA: return "COMMA";
             case TokenType::EQUALS: return "EQUALS";
             case TokenType::PLUS: return "PLUS";

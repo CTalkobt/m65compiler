@@ -32,6 +32,7 @@ private:
     std::unique_ptr<StaticAssert> parseStaticAssert();
     std::unique_ptr<StructDefinition> parseStructDefinition(bool isUnion = false);
     std::unique_ptr<Expression> parseExpression();
+    std::unique_ptr<Expression> parseConditional();
     std::unique_ptr<Expression> parseLogicalOr();
     std::unique_ptr<Expression> parseLogicalAnd();
     std::unique_ptr<Expression> parseBitwiseOr();

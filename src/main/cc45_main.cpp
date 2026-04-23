@@ -54,6 +54,36 @@ public:
         node.structExpr->accept(*this);
         indent--;
     }
+    void visit(ConditionalExpression& node) override {
+        printIndent(); std::cout << "ConditionalExpression:" << std::endl;
+        indent++;
+        printIndent(); std::cout << "Condition:" << std::endl;
+        indent++;
+        node.condition->accept(*this);
+        indent--;
+        printIndent(); std::cout << "Then:" << std::endl;
+        indent++;
+        node.thenExpr->accept(*this);
+        indent--;
+        printIndent(); std::cout << "Else:" << std::endl;
+        indent++;
+        node.elseExpr->accept(*this);
+        indent--;
+        indent--;
+    }
+    void visit(ArrayAccess& node) override {
+        printIndent(); std::cout << "ArrayAccess:" << std::endl;
+        indent++;
+        printIndent(); std::cout << "Array:" << std::endl;
+        indent++;
+        node.arrayExpr->accept(*this);
+        indent--;
+        printIndent(); std::cout << "Index:" << std::endl;
+        indent++;
+        node.indexExpr->accept(*this);
+        indent--;
+        indent--;
+    }
     void visit(AlignofExpression& node) override {
         printIndent(); std::cout << "Alignof: " << node.typeName;
         for (int i = 0; i < node.pointerLevel; i++) std::cout << "*";

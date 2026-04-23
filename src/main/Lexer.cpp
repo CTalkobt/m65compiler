@@ -92,8 +92,11 @@ Token Lexer::nextToken() {
         case ')': return {TokenType::CLOSE_PAREN, ")", startLine, startCol};
         case '{': return {TokenType::OPEN_BRACE, "{", startLine, startCol};
         case '}': return {TokenType::CLOSE_BRACE, "}", startLine, startCol};
+        case '[': return {TokenType::OPEN_SQUARE, "[", startLine, startCol};
+        case ']': return {TokenType::CLOSE_SQUARE, "]", startLine, startCol};
         case ';': return {TokenType::SEMICOLON, ";", startLine, startCol};
         case ':': return {TokenType::COLON, ":", startLine, startCol};
+        case '?': return {TokenType::QUESTION_MARK, "?", startLine, startCol};
         case ',': return {TokenType::COMMA, ",", startLine, startCol};
         case '.': return {TokenType::DOT, ".", startLine, startCol};
         case '=': 

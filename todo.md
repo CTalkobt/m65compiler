@@ -48,13 +48,13 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Break/Continue**: Implement `break` and `continue` for loop control.
 - [X] **Switch/Case**: Implement `switch`, `case`, and `default`.
 - [ ] **`goto` Statement**: Implement `goto` and labeled statements for unconditional jumps within a function.
-- [ ] **Ternary Operator**: Implement the `? :` conditional expression operator.
+- [X] **Ternary Operator**: Implement the `? :` conditional expression operator.
 - [ ] **`sizeof` Operator**: Implement `sizeof(type)` and `sizeof expr` to return the byte size of a type or expression at compile time.
 - [ ] **Compound Assignment Operators**: Support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
-- [ ] **Bitwise Binary Operators**: Support binary `&`, `|`, `^`, `<<`, `>>` as user-level expression operators.
+- [X] **Bitwise Binary Operators**: Support binary `&`, `|`, `^`, `<<`, `>>` as user-level expression operators.
 - [ ] **Modulo Operator**: Support `%` for integer remainder in expressions.
 - [ ] **`for` Loop Declarations**: Support variable declarations in the `for` loop initializer clause (C99: `for (int i = 0; ...)`).
-- [ ] **Mixed Declarations and Code**: Allow variable declarations to appear anywhere within a block, not just at the start (C99).
+- [X] **Mixed Declarations and Code**: Allow variable declarations to appear anywhere within a block, not just at the start (C99).
 - [ ] **`__func__` Identifier**: Support the predefined `__func__` string literal containing the enclosing function name (C99).
 
 ## Roadmap - Linker & Libraries (ln45)
@@ -87,7 +87,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **`restrict` Qualifier**: Support C99 `restrict` pointer qualifier to declare non-aliasing pointer arguments.
 - [ ] **`inline` Specifier**: Support the `inline` function specifier for inlining hints (C99).
 - [ ] **Storage Classes**: Implement `static` (local persistence and file-scope linkage), `extern` (external linkage), `register` (hint), and `auto` (default local) storage class specifiers.
-- [ ] **Arrays**: Implement native array declarations (`type name[size]`), subscript indexing (`a[i]`), and pointer decay.
+- [X] **Arrays**: Implement native array declarations (`type name[size]`), subscript indexing (`a[i]`), and pointer decay.
 - [ ] **Array Initializers**: Support initialized array declarations including partial initialization and `= {0}` zero-fill.
 - [ ] **Designated Initializers**: Support C99 designated initializers for structs (`{.x=1}`) and arrays (`{[2]=3}`).
 - [ ] **Compound Literals**: Support C99 compound literals for creating unnamed temporary objects inline (e.g., `(struct Point){.x=1, .y=2}`).

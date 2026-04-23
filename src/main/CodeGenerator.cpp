@@ -72,11 +72,23 @@ CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
     if (auto* ref = dynamic_cast<VariableReference*>(expr)) {
         std::string rName = resolveVarName(ref->name);
         if (variableTypes.count(rName)) {
-            return {variableTypes.at(rName).type, variableTypes.at(rName).pointerLevel};
+            VarInfo& vi = variableTypes.at(rName);
+            if (vi.arraySize >= 0) return {vi.type, vi.pointerLevel + 1};
+            return {vi.type, vi.pointerLevel};
         }
         if (globalVariableTypes.count("_g_" + ref->name)) {
-            return {globalVariableTypes.at("_g_" + ref->name).type, globalVariableTypes.at("_g_" + ref->name).pointerLevel};
+            VarInfo& vi = globalVariableTypes.at("_g_" + ref->name);
+            if (vi.arraySize >= 0) return {vi.type, vi.pointerLevel + 1};
+            return {vi.type, vi.pointerLevel};
         }
+    }
+    if (auto* aa = dynamic_cast<ArrayAccess*>(expr)) {
+        ExpressionType base = getExprType(aa->arrayExpr.get());
+        if (base.pointerLevel > 0) return {base.type, base.pointerLevel - 1};
+        return {base.type, 0};
+    }
+    if (auto* cond = dynamic_cast<ConditionalExpression*>(expr)) {
+        return getExprType(cond->thenExpr.get());
     }
     if (auto* bin = dynamic_cast<BinaryOperation*>(expr)) { return getExprType(bin->left.get()); }
     if (auto* un = dynamic_cast<UnaryOperation*>(expr)) {
@@ -101,6 +113,7 @@ CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
                 auto& sInfo = *structs[sName];
                 if (sInfo.members.count(ma->memberName)) {
                     MemberInfo& mInfo = sInfo.members[ma->memberName];
+                    if (mInfo.arraySize >= 0) return {mInfo.type, mInfo.pointerLevel + 1};
                     return {mInfo.type, mInfo.pointerLevel};
                 }
             }
@@ -141,6 +154,43 @@ void CodeGenerator::emitAddress(Expression* expr) {
                 }
             }
         }
+    } else if (auto* aa = dynamic_cast<ArrayAccess*>(expr)) {
+        aa->arrayExpr->accept(*this); // Get base address in AX
+        int zpBase = allocateZP(2);
+        std::stringstream ss;
+        ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpBase);
+        emit("stax $" + ss.str());
+        
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
+        aa->indexExpr->accept(*this); // Get index in AX
+        resultNeeded = oldNeeded;
+        
+        ExpressionType baseType = getExprType(aa->arrayExpr.get());
+        int elementSize = 1;
+        if (baseType.pointerLevel > 1 || baseType.type == "int") {
+            elementSize = 2;
+        } else if (isStruct(baseType.type)) {
+             std::string sName = getAggregateName(baseType.type);
+             if (structs.count(sName)) elementSize = structs[sName]->totalSize;
+        }
+
+        if (elementSize == 2) {
+            emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+        } else if (elementSize > 2) {
+             int zpIdx = allocateZP(2);
+             std::stringstream ssM; ssM << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+             emit("stax $" + ssM.str());
+             std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << elementSize;
+             emit("ldax #$" + ssVal.str());
+             emit("mul.16 .ax, $" + ssM.str());
+             freeZP(zpIdx, 2);
+        }
+
+        std::stringstream ss2;
+        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpBase);
+        emit("add.16 .ax, $" + ss2.str());
+        freeZP(zpBase, 2);
     } else if (auto* un = dynamic_cast<UnaryOperation*>(expr)) {
         if (un->op == "*") {
             bool oldNeeded = resultNeeded;
@@ -211,7 +261,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
 
     if (node.isGlobal || currentFunction == nullptr) {
         std::string gName = "_g_" + node.name;
-        globalVariableTypes[gName] = {node.type, node.pointerLevel, node.isVolatile};
+        globalVariableTypes[gName] = {node.type, node.pointerLevel, node.isVolatile, node.arraySize};
         if (node.isGlobal) {
             globalVars.push_back(&node);
             return;
@@ -219,7 +269,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
     }
 
     std::string lName = "_l_" + node.name;
-    variableTypes[lName] = {node.type, node.pointerLevel, node.isVolatile};
+    variableTypes[lName] = {node.type, node.pointerLevel, node.isVolatile, node.arraySize};
     int size = 0;
     if (node.pointerLevel > 0) size = 2;
     else if (node.type == "char") size = 1;
@@ -229,6 +279,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
         if (structs.count(sName)) size = structs[sName]->totalSize;
         else throw std::runtime_error("Unknown struct/union type: " + sName);
     }
+    if (node.arraySize >= 0) size *= node.arraySize;
 
     if (node.isVolatile) {
         if (node.initializer) {
@@ -297,7 +348,6 @@ void CodeGenerator::visit(VariableDeclaration& node) {
     }
     emit(".var " + lName + " = " + std::to_string(size));
     currentVars.push_back(lName);
-    emit(".cleanup " + std::to_string(size));
     invalidateRegs();
 }
 
@@ -701,6 +751,46 @@ void CodeGenerator::visit(BinaryOperation& node) {
     invalidateRegs();
 }
 
+void CodeGenerator::visit(ConditionalExpression& node) {
+    embedSource(node);
+    std::string labelElse = newLabel();
+    std::string labelEnd = newLabel();
+    emitJumpIfFalse(node.condition.get(), labelElse);
+    node.thenExpr->accept(*this);
+    emit("bra " + labelEnd);
+    out << labelElse << ":" << std::endl;
+    invalidateRegs();
+    node.elseExpr->accept(*this);
+    out << labelEnd << ":" << std::endl;
+    invalidateRegs();
+}
+
+void CodeGenerator::visit(ArrayAccess& node) {
+    embedSource(node);
+    if (!resultNeeded) {
+        node.arrayExpr->accept(*this);
+        node.indexExpr->accept(*this);
+        return;
+    }
+    emitAddress(&node); // Get element address in AX
+    int zpAddr = allocateZP(2);
+    std::stringstream ss;
+    ss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpAddr);
+    emit("stax $" + ss.str());
+    
+    ExpressionType resType = getExprType(&node);
+    if (resType.pointerLevel > 0 || resType.type == "int") {
+        std::stringstream ss2;
+        ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpAddr);
+        emit("ptrderef $" + ss2.str());
+    } else {
+        emitter->lda_ind_z(emitter->getZP(zpAddr), false);
+        updateRegY(0); emitter->ldx_imm(0); updateRegX(0);
+    }
+    freeZP(zpAddr, 2);
+    invalidateRegs();
+}
+
 void CodeGenerator::visit(UnaryOperation& node) {
     if (node.op == "*") {
         bool oldNeeded = resultNeeded;
@@ -982,6 +1072,8 @@ void CodeGenerator::visit(SwitchStatement& node) {
         void visit(UnaryOperation& node) override { node.operand->accept(*this); }
         void visit(FunctionCall& node) override { for (auto& arg : node.arguments) arg->accept(*this); }
         void visit(MemberAccess& node) override { node.structExpr->accept(*this); }
+        void visit(ConditionalExpression& node) override { node.condition->accept(*this); node.thenExpr->accept(*this); node.elseExpr->accept(*this); }
+        void visit(ArrayAccess& node) override { node.arrayExpr->accept(*this); node.indexExpr->accept(*this); }
         void visit(AlignofExpression&) override {}
         void visit(VariableDeclaration& node) override { if (node.initializer) node.initializer->accept(*this); }
         void visit(ReturnStatement& node) override { if(node.expression) node.expression->accept(*this); }
@@ -1063,6 +1155,8 @@ void CodeGenerator::visit(StructDefinition& node) {
         if (member.alignment > mAlign) mAlign = member.alignment;
         if (mAlign > maxAlign) maxAlign = mAlign;
         
+        if (member.arraySize >= 0) mSize *= member.arraySize;
+
         if (!node.isUnion) {
             if (currentOffset % mAlign != 0) currentOffset += mAlign - (currentOffset % mAlign);
         }
@@ -1085,6 +1179,7 @@ void CodeGenerator::visit(StructDefinition& node) {
             mInfo.pointerLevel = member.pointerLevel;
             mInfo.offset = node.isUnion ? 0 : currentOffset;
             mInfo.alignment = mAlign;
+            mInfo.arraySize = member.arraySize;
             if (!member.name.empty()) info->members[member.name] = mInfo;
             if (!node.isUnion) currentOffset += mSize;
             else if (mSize > maxSize) maxSize = mSize;
@@ -1196,6 +1291,12 @@ void CodeGenerator::visit(VariableReference& node) {
     bool isGlobal = (rName.length() >= 3 && rName.substr(0, 3) == "_g_");
     std::string suffix = isGlobal ? "" : ", s";
     VarInfo vi = variableTypes.count(rName) ? variableTypes.at(rName) : globalVariableTypes.at(rName);
+
+    if (vi.arraySize >= 0) {
+        emitAddress(&node); // This will put address in AX
+        return;
+    }
+
     bool is16Bit = (vi.pointerLevel > 0 || vi.type == "int");
     if (isStruct(vi.type)) {
         std::string sName = getAggregateName(vi.type);
@@ -1476,6 +1577,8 @@ public:
     void visit(UnaryOperation& node) override { node.operand->accept(*this); }
     void visit(FunctionCall& node) override { for (auto& arg : node.arguments) arg->accept(*this); }
     void visit(MemberAccess& node) override { node.structExpr->accept(*this); }
+    void visit(ConditionalExpression& node) override { node.condition->accept(*this); node.thenExpr->accept(*this); node.elseExpr->accept(*this); }
+    void visit(ArrayAccess& node) override { node.arrayExpr->accept(*this); node.indexExpr->accept(*this); }
     void visit(AlignofExpression&) override {}
     void visit(VariableDeclaration& node) override { if (node.initializer) node.initializer->accept(*this); }
     void visit(ReturnStatement& node) override { if(node.expression) node.expression->accept(*this); }

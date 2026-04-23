@@ -408,9 +408,16 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
     while (match(TokenType::STAR)) ptrLevel++;
 
     std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
+    int arraySize = -1;
+    if (match(TokenType::OPEN_SQUARE)) {
+        const Token& sizeToken = expect(TokenType::INTEGER_LITERAL, "Expected integer literal for array size");
+        arraySize = std::stoi(sizeToken.value);
+        expect(TokenType::CLOSE_SQUARE, "Expected ']' after array size");
+    }
     auto decl = setPos(std::make_unique<VariableDeclaration>(type, name, ptrLevel), typeToken);
     decl->isVolatile = isVolatile;
     decl->alignmentExpr = std::move(alignmentExpr);
+    decl->arraySize = arraySize;
 
     if (match(TokenType::EQUALS)) {
         decl->initializer = parseExpression();
@@ -495,7 +502,13 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
         int ptrLevel = 0;
         while (match(TokenType::STAR)) ptrLevel++;
         std::string memberName = expect(TokenType::IDENTIFIER, "Expected member name").value;
-        def->members.push_back({type, ptrLevel, memberName, 0, std::move(mAlignmentExpr)});
+        int arraySize = -1;
+        if (match(TokenType::OPEN_SQUARE)) {
+            const Token& sizeToken = expect(TokenType::INTEGER_LITERAL, "Expected integer literal for array size");
+            arraySize = std::stoi(sizeToken.value);
+            expect(TokenType::CLOSE_SQUARE, "Expected ']' after array size");
+        }
+        def->members.push_back({type, ptrLevel, memberName, 0, std::move(mAlignmentExpr), false, arraySize});
         expect(TokenType::SEMICOLON, "Expected ';'");
     }
     expect(TokenType::CLOSE_BRACE, "Expected '}'");
@@ -504,10 +517,22 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
 }
 
 std::unique_ptr<Expression> Parser::parseExpression() {
-    auto expr = parseLogicalOr();
+    auto expr = parseConditional();
     if (match(TokenType::EQUALS)) {
         const Token& opToken = tokens[pos-1];
         return setPos(std::make_unique<Assignment>(std::move(expr), parseExpression()), opToken);
+    }
+    return expr;
+}
+
+std::unique_ptr<Expression> Parser::parseConditional() {
+    auto expr = parseLogicalOr();
+    if (match(TokenType::QUESTION_MARK)) {
+        const Token& opToken = tokens[pos-1];
+        auto thenExpr = parseExpression();
+        expect(TokenType::COLON, "Expected ':' in conditional expression");
+        auto elseExpr = parseConditional();
+        return setPos(std::make_unique<ConditionalExpression>(std::move(expr), std::move(thenExpr), std::move(elseExpr)), opToken);
     }
     return expr;
 }
@@ -680,10 +705,14 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected expression. Found '" + foundStr + "' (" + peek().typeToString() + ") instead.");
     }
 
-    while (match(TokenType::DOT) || match(TokenType::ARROW) || match(TokenType::PLUS_PLUS) || match(TokenType::MINUS_MINUS)) {
+    while (match(TokenType::DOT) || match(TokenType::ARROW) || match(TokenType::PLUS_PLUS) || match(TokenType::MINUS_MINUS) || match(TokenType::OPEN_SQUARE)) {
         const Token& opToken = tokens[pos-1];
         if (opToken.type == TokenType::PLUS_PLUS || opToken.type == TokenType::MINUS_MINUS) {
             expr = setPos(std::make_unique<UnaryOperation>(opToken.value + "_POST", std::move(expr)), opToken);
+        } else if (opToken.type == TokenType::OPEN_SQUARE) {
+            auto indexExpr = parseExpression();
+            expect(TokenType::CLOSE_SQUARE, "Expected ']' after array index");
+            expr = setPos(std::make_unique<ArrayAccess>(std::move(expr), std::move(indexExpr)), opToken);
         } else {
             bool isArrow = (opToken.type == TokenType::ARROW);
             std::string memberName = expect(TokenType::IDENTIFIER, "Expected member name").value;

@@ -20,6 +20,7 @@ public:
         std::string type;
         int pointerLevel;
         bool isVolatile = false; // New: volatile qualifier
+        int arraySize = -1;
     };
     struct ExpressionType {
         std::string type;
@@ -30,6 +31,7 @@ public:
         int pointerLevel;
         int offset;
         int alignment = 1;
+        int arraySize = -1;
     };
     struct StructInfo {
         std::string name;
@@ -49,6 +51,8 @@ public:
     void visit(Assignment& node) override;
     void visit(BinaryOperation& node) override;
     void visit(UnaryOperation& node) override;
+    void visit(ConditionalExpression& node) override;
+    void visit(ArrayAccess& node) override;
     void visit(FunctionCall& node) override;
     void visit(MemberAccess& node) override;
     void visit(AlignofExpression& node) override;

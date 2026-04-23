@@ -36,6 +36,8 @@ TEST_FILES=(
     "src/test-resources/test_global_vars.c"
     "src/test-resources/test_anon_struct.c"
     "src/test-resources/test_union.c"
+    "src/test-resources/test_arrays.c"
+    "src/test-resources/test_ternary.c"
 )
 
 mkdir -p build/test

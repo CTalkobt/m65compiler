@@ -136,6 +136,21 @@ public:
         lastExpr = std::move(call);
     }
 
+    void visit(ConditionalExpression& node) override {
+        auto condition = fold(std::move(node.condition));
+        auto* lit = dynamic_cast<IntegerLiteral*>(condition.get());
+        if (lit) {
+            if (lit->value) lastExpr = fold(std::move(node.thenExpr));
+            else lastExpr = fold(std::move(node.elseExpr));
+        } else {
+            lastExpr = copyPos(std::make_unique<ConditionalExpression>(std::move(condition), fold(std::move(node.thenExpr)), fold(std::move(node.elseExpr))), node);
+        }
+    }
+
+    void visit(ArrayAccess& node) override {
+        lastExpr = copyPos(std::make_unique<ArrayAccess>(fold(std::move(node.arrayExpr)), fold(std::move(node.indexExpr))), node);
+    }
+
     void visit(MemberAccess& node) override {
         lastExpr = copyPos(std::make_unique<MemberAccess>(fold(std::move(node.structExpr)), node.memberName, node.isArrow), node);
     }
@@ -163,6 +178,7 @@ public:
         decl->alignment = node.alignment;
         decl->isVolatile = node.isVolatile;
         decl->isGlobal = node.isGlobal;
+        decl->arraySize = node.arraySize;
         lastStmt = std::move(decl);
     }
 
@@ -268,7 +284,7 @@ public:
                     alignment = lit->value;
                 }
             }
-            def->members.push_back({m.type, m.pointerLevel, m.name, alignment, std::move(alignmentExpr), m.isAnonymous});
+            def->members.push_back({m.type, m.pointerLevel, m.name, alignment, std::move(alignmentExpr), m.isAnonymous, m.arraySize});
         }
         lastStmt = std::move(def);
     }
