@@ -332,6 +332,12 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
                     else if (stmt->dir.name == "float") for (const auto& a : stmt->dir.arguments) { double v = std::stod(a); std::vector<uint8_t> enc = encodeFloat(v); for (uint8_t eb : enc) e.emitByte(eb); }
                     else if (stmt->dir.name == "text") for (char c : stmt->dir.arguments[0]) e.emitByte(toPetscii(c));
                     else if (stmt->dir.name == "ascii") for (char c : stmt->dir.arguments[0]) e.emitByte((uint8_t)c);
+                    else if (stmt->dir.name == "res") {
+                        uint32_t count = parser->evaluateExpressionAt(stmt->dir.tokenIndex, stmt->scopePrefix);
+                        uint8_t fill = 0;
+                        if (stmt->dir.arguments.size() > 1) fill = (uint8_t)parseNumericLiteral(stmt->dir.arguments[1]);
+                        for (uint32_t i = 0; i < count; ++i) e.emitByte(fill);
+                    }
                     else if (stmt->dir.name == "align" || stmt->dir.name == "balign") {
                         uint8_t fill = 0;
                         if (stmt->dir.arguments.size() > 1) fill = (uint8_t)parseNumericLiteral(stmt->dir.arguments[1]);

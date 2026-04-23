@@ -1464,12 +1464,14 @@ void CodeGenerator::emitData() {
         else if (gVar->type == "int") size = 2;
         else if (isStruct(gVar->type)) { std::string sName = getAggregateName(gVar->type); if (structs.count(sName)) size = structs[sName]->totalSize; }
         
+        if (gVar->arraySize >= 0) size *= gVar->arraySize;
+        
         if (auto* lit = dynamic_cast<IntegerLiteral*>(gVar->initializer.get())) {
             if (size == 1) out << "    .byte $" << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (lit->value & 0xFF) << std::dec << std::endl;
             else if (size == 2) out << "    .word $" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << (lit->value & 0xFFFF) << std::dec << std::endl;
-            else out << "    .fill " << std::to_string(size) << ", 0" << std::endl;
+            else out << "    .res " << std::to_string(size) << ", 0" << std::endl;
         } else {
-            out << "    .fill " << std::to_string(size) << ", 0" << std::endl;
+            out << "    .res " << std::to_string(size) << ", 0" << std::endl;
         }
     }
 
@@ -1484,7 +1486,8 @@ void CodeGenerator::emitData() {
             else if (gVar->type == "char") size = 1;
             else if (gVar->type == "int") size = 2;
             else if (isStruct(gVar->type)) { std::string sName = getAggregateName(gVar->type); if (structs.count(sName)) size = structs[sName]->totalSize; }
-            out << "    .fill " << std::to_string(size) << ", 0" << std::endl;
+            if (gVar->arraySize >= 0) size *= gVar->arraySize;
+            out << "    .res " << std::to_string(size) << std::endl;
         }
     }
 

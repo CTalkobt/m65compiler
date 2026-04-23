@@ -415,7 +415,8 @@ void AssemblerParser::pass1() {
 }
 
             else {
- while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
+                stmt->dir.tokenIndex = (int)pos;
+                while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) {
  if (peek().type == AssemblerTokenType::COMMA) {
  advance();
  continue;
@@ -1001,6 +1002,11 @@ int AssemblerParser::calculateDirectiveSize(const Directive& dir, uint32_t curre
     if (dir.name == "dword" || dir.name == "long") return (int)dir.arguments.size() * 4;
     if (dir.name == "float") return (int)dir.arguments.size() * 5;
     if (dir.name == "text" || dir.name == "ascii") return (int)dir.arguments[0].size();
+    if (dir.name == "res") {
+        if (dir.arguments.empty()) return 0;
+        return (int)evaluateExpressionAt(dir.tokenIndex, ""); // Scope prefix doesn't really matter for simple counts usually, but let's be careful. 
+        // Actually dir.tokenIndex was set for var/cleanup, but not for generic directives in the previous code I saw.
+    }
     if (dir.name == "align" || dir.name == "balign") {
         if (dir.arguments.empty()) return 0;
         uint32_t align = parseNumericLiteral(dir.arguments[0]);

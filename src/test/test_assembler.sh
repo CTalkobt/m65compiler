@@ -41,6 +41,7 @@ AS_TEST_FILES=(
     "src/test-resources/test_simulated_ops.s"
     "src/test-resources/test_fill.s"
     "src/test-resources/test_segments.s"
+    "src/test-resources/test_res.s"
 )
 
 for f in "${AS_TEST_FILES[@]}"; do
