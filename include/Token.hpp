@@ -25,6 +25,7 @@ enum class TokenType {
     SWITCH,
     CASE,
     DEFAULT,
+    _GENERIC,
     
     // Literals
     IDENTIFIER,
@@ -103,6 +104,7 @@ struct Token {
             case TokenType::SWITCH: return "SWITCH";
             case TokenType::CASE: return "CASE";
             case TokenType::DEFAULT: return "DEFAULT";
+            case TokenType::_GENERIC: return "_GENERIC";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";

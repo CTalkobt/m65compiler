@@ -166,7 +166,8 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"continue", TokenType::CONTINUE},
         {"switch", TokenType::SWITCH},
         {"case", TokenType::CASE},
-        {"default", TokenType::DEFAULT}
+        {"default", TokenType::DEFAULT},
+        {"_Generic", TokenType::_GENERIC}
         };
 
     auto it = keywords.find(value);

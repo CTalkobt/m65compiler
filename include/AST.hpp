@@ -82,6 +82,21 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+struct GenericAssociation {
+    std::string typeName;
+    int pointerLevel = 0;
+    std::unique_ptr<Expression> result;
+    bool isDefault = false;
+};
+
+class GenericSelection : public Expression {
+public:
+    std::unique_ptr<Expression> control;
+    std::vector<GenericAssociation> associations;
+    GenericSelection(std::unique_ptr<Expression> c) : control(std::move(c)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class ArrayAccess : public Expression {
 public:
     std::unique_ptr<Expression> arrayExpr;
@@ -295,6 +310,7 @@ public:
     virtual void visit(BinaryOperation& node) = 0;
     virtual void visit(UnaryOperation& node) = 0;
     virtual void visit(ConditionalExpression& node) = 0;
+    virtual void visit(GenericSelection& node) = 0;
     virtual void visit(ArrayAccess& node) = 0;
     virtual void visit(FunctionCall& node) = 0;
     virtual void visit(MemberAccess& node) = 0;

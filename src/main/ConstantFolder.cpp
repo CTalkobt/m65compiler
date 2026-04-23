@@ -74,3 +74,21 @@ void ConstantFolder::visit(StaticAssert& node) {
     // If we return nullptr, it might be removed from the AST, which is fine for StaticAssert.
     lastStmt = nullptr;
 }
+
+void ConstantFolder::visit(GenericSelection& node) {
+    auto control = fold(std::move(node.control));
+    // ConstantFolder doesn't have full type info, so we usually can't resolve _Generic here
+    // unless the controlling expression was already folded to a literal with a clear type.
+    // But even then, cc45 literals don't have explicit types.
+    // So we just fold all branches and keep the _Generic node.
+    auto gs = copyPos(std::make_unique<GenericSelection>(std::move(control)), node);
+    for (auto& assoc : node.associations) {
+        GenericAssociation newAssoc;
+        newAssoc.typeName = assoc.typeName;
+        newAssoc.pointerLevel = assoc.pointerLevel;
+        newAssoc.isDefault = assoc.isDefault;
+        newAssoc.result = fold(std::move(assoc.result));
+        gs->associations.push_back(std::move(newAssoc));
+    }
+    lastExpr = std::move(gs);
+}

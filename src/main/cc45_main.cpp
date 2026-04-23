@@ -71,6 +71,31 @@ public:
         indent--;
         indent--;
     }
+    void visit(GenericSelection& node) override {
+        printIndent(); std::cout << "GenericSelection:" << std::endl;
+        indent++;
+        printIndent(); std::cout << "Control:" << std::endl;
+        indent++;
+        node.control->accept(*this);
+        indent--;
+        printIndent(); std::cout << "Associations:" << std::endl;
+        indent++;
+        for (auto& assoc : node.associations) {
+            printIndent();
+            if (assoc.isDefault) std::cout << "default:";
+            else {
+                std::cout << assoc.typeName;
+                for (int i = 0; i < assoc.pointerLevel; i++) std::cout << "*";
+                std::cout << ":";
+            }
+            std::cout << std::endl;
+            indent++;
+            assoc.result->accept(*this);
+            indent--;
+        }
+        indent--;
+        indent--;
+    }
     void visit(ArrayAccess& node) override {
         printIndent(); std::cout << "ArrayAccess:" << std::endl;
         indent++;

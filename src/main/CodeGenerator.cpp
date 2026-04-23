@@ -68,7 +68,27 @@ std::string CodeGenerator::resolveVarName(const std::string& name) {
     return name;
 }
 
+bool CodeGenerator::matchType(const ExpressionType& t1, const std::string& t2Name, int t2Ptr) {
+    if (t1.type != t2Name) return false;
+    if (t1.pointerLevel != t2Ptr) return false;
+    return true;
+}
+
 CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
+    if (!expr) return {"int", 0};
+    if (auto* gs = dynamic_cast<GenericSelection*>(expr)) {
+        // Resolve based on control type
+        ExpressionType controlType = getExprType(gs->control.get());
+        for (auto& assoc : gs->associations) {
+            if (!assoc.isDefault && CodeGenerator::matchType(controlType, assoc.typeName, assoc.pointerLevel)) {
+                return getExprType(assoc.result.get());
+            }
+        }
+        for (auto& assoc : gs->associations) {
+            if (assoc.isDefault) return getExprType(assoc.result.get());
+        }
+        throw std::runtime_error("No matching association in _Generic selection");
+    }
     if (auto* ref = dynamic_cast<VariableReference*>(expr)) {
         std::string rName = resolveVarName(ref->name);
         if (variableTypes.count(rName)) {
@@ -765,6 +785,23 @@ void CodeGenerator::visit(ConditionalExpression& node) {
     invalidateRegs();
 }
 
+void CodeGenerator::visit(GenericSelection& node) {
+    ExpressionType controlType = getExprType(node.control.get());
+    for (auto& assoc : node.associations) {
+        if (!assoc.isDefault && CodeGenerator::matchType(controlType, assoc.typeName, assoc.pointerLevel)) {
+            assoc.result->accept(*this);
+            return;
+        }
+    }
+    for (auto& assoc : node.associations) {
+        if (assoc.isDefault) {
+            assoc.result->accept(*this);
+            return;
+        }
+    }
+    throw std::runtime_error("No matching association in _Generic selection");
+}
+
 void CodeGenerator::visit(ArrayAccess& node) {
     embedSource(node);
     if (!resultNeeded) {
@@ -1073,6 +1110,17 @@ void CodeGenerator::visit(SwitchStatement& node) {
         void visit(FunctionCall& node) override { for (auto& arg : node.arguments) arg->accept(*this); }
         void visit(MemberAccess& node) override { node.structExpr->accept(*this); }
         void visit(ConditionalExpression& node) override { node.condition->accept(*this); node.thenExpr->accept(*this); node.elseExpr->accept(*this); }
+        void visit(GenericSelection& node) override {
+            CodeGenerator::ExpressionType controlType = gen.getExprType(node.control.get());
+            for (auto& assoc : node.associations) {
+                if (!assoc.isDefault && CodeGenerator::matchType(controlType, assoc.typeName, assoc.pointerLevel)) {
+                    assoc.result->accept(*this); return;
+                }
+            }
+            for (auto& assoc : node.associations) {
+                if (assoc.isDefault) { assoc.result->accept(*this); return; }
+            }
+        }
         void visit(ArrayAccess& node) override { node.arrayExpr->accept(*this); node.indexExpr->accept(*this); }
         void visit(AlignofExpression&) override {}
         void visit(VariableDeclaration& node) override { if (node.initializer) node.initializer->accept(*this); }
@@ -1571,7 +1619,8 @@ void CodeGenerator::freeZP(int index, int size) {
 class VariableUseChecker : public ASTVisitor {
 public:
     std::string targetVarName; bool used = false; std::string currentDeclVarName;
-    VariableUseChecker(const std::string& name, const std::string& currentDecl) : targetVarName(name), currentDeclVarName(currentDecl) {}
+    CodeGenerator& gen;
+    VariableUseChecker(const std::string& name, const std::string& currentDecl, CodeGenerator& g) : targetVarName(name), currentDeclVarName(currentDecl), gen(g) {}
     void visit(IntegerLiteral&) override {}
     void visit(StringLiteral&) override {}
     void visit(VariableReference& node) override { if (node.name == targetVarName) used = true; }
@@ -1581,6 +1630,17 @@ public:
     void visit(FunctionCall& node) override { for (auto& arg : node.arguments) arg->accept(*this); }
     void visit(MemberAccess& node) override { node.structExpr->accept(*this); }
     void visit(ConditionalExpression& node) override { node.condition->accept(*this); node.thenExpr->accept(*this); node.elseExpr->accept(*this); }
+    void visit(GenericSelection& node) override {
+        CodeGenerator::ExpressionType controlType = gen.getExprType(node.control.get());
+        for (auto& assoc : node.associations) {
+            if (!assoc.isDefault && CodeGenerator::matchType(controlType, assoc.typeName, assoc.pointerLevel)) {
+                assoc.result->accept(*this); return;
+            }
+        }
+        for (auto& assoc : node.associations) {
+            if (assoc.isDefault) { assoc.result->accept(*this); return; }
+        }
+    }
     void visit(ArrayAccess& node) override { node.arrayExpr->accept(*this); node.indexExpr->accept(*this); }
     void visit(AlignofExpression&) override {}
     void visit(VariableDeclaration& node) override { if (node.initializer) node.initializer->accept(*this); }
@@ -1605,7 +1665,7 @@ public:
 };
 
 bool CodeGenerator::isVariableUsed(const std::string& varName, FunctionDeclaration& func) {
-    VariableUseChecker checker(varName, varName);
+    VariableUseChecker checker(varName, varName, *this);
     bool foundDecl = false;
     for (auto& stmt : func.body->statements) {
         if (!foundDecl) {

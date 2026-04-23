@@ -147,6 +147,8 @@ public:
         }
     }
 
+    void visit(GenericSelection& node) override;
+
     void visit(ArrayAccess& node) override {
         lastExpr = copyPos(std::make_unique<ArrayAccess>(fold(std::move(node.arrayExpr)), fold(std::move(node.indexExpr))), node);
     }

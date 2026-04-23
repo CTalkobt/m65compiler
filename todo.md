@@ -33,7 +33,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Comparison Operators**: Support `==`, `!=`, `<`, `>`, `<=`, `>=`.
 - [X] **Regression Testing**: Implement automated build and test runner (`test_compiler.sh`).
 - [X] **Static Assertions**: Implement `_Static_assert(const-expr, string)` parsing and validation.
-- [ ] **Generic Selections**: Implement `_Generic` expressions for type-based dispatch.
+- [X] **Generic Selections**: Implement `_Generic` expressions for type-based dispatch.
 - [X] **Function Specifiers**: Support `_Noreturn` (enabling optimization to skip return opcodes).
 - [X] **Alignment**: Implement `_Alignas` and `_Alignof` to manage data alignment.
 - [X] **Inline Assembly**: Support `asm("...")` or `__asm__("...")` for direct assembly insertion.

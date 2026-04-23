@@ -45,6 +45,7 @@ private:
     std::unique_ptr<Expression> parseMultiplicative();
     std::unique_ptr<Expression> parseUnary();
     std::unique_ptr<Expression> parsePrimary();
+    std::unique_ptr<Expression> parseGenericSelection();
 
     int anonymousAggregateCount = 0;
     std::vector<std::unique_ptr<StructDefinition>> pendingDefinitions;

@@ -52,6 +52,7 @@ public:
     void visit(BinaryOperation& node) override;
     void visit(UnaryOperation& node) override;
     void visit(ConditionalExpression& node) override;
+    void visit(GenericSelection& node) override;
     void visit(ArrayAccess& node) override;
     void visit(FunctionCall& node) override;
     void visit(MemberAccess& node) override;
@@ -77,6 +78,11 @@ public:
     void visit(TranslationUnit& node) override;
     void emitAddress(Expression* expr);
     void embedSource(ASTNode& node);
+    ExpressionType getExprType(Expression* expr);
+    bool isStruct(const std::string& type);
+    std::string resolveVarName(const std::string& name);
+    std::string getAggregateName(const std::string& type);
+    static bool matchType(const ExpressionType& t1, const std::string& t2Name, int t2Ptr);
 
     // Register tracking
     struct RegState {
@@ -149,10 +155,6 @@ public:
     void emitJumpIfFalse(Expression* cond, const std::string& labelElse);
     std::string newLabel();
     std::string newDontCareLabel();
-    ExpressionType getExprType(Expression* expr);
-    bool isStruct(const std::string& type);
-    std::string resolveVarName(const std::string& name);
-    std::string getAggregateName(const std::string& type);
 
     int allocateZP(int size);
     void freeZP(int index, int size);

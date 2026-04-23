@@ -39,6 +39,7 @@ TEST_FILES=(
     "src/test-resources/test_arrays.c"
     "src/test-resources/test_ternary.c"
     "src/test-resources/test_global_res.c"
+    "src/test-resources/test_generic.c"
 )
 
 mkdir -p build/test

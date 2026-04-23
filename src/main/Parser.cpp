@@ -660,6 +660,9 @@ std::unique_ptr<Expression> Parser::parseUnary() {
 
 std::unique_ptr<Expression> Parser::parsePrimary() {
     std::unique_ptr<Expression> expr;
+    if (match(TokenType::_GENERIC)) {
+        return parseGenericSelection();
+    }
     if (match(TokenType::_Alignof)) {
         expect(TokenType::OPEN_PAREN, "Expected '(' after '_Alignof'");
         std::string typeName;
@@ -727,4 +730,38 @@ void Parser::flushPending(TranslationUnit& unit) {
         if (def) unit.topLevelDecls.push_back(std::move(def));
     }
     pendingDefinitions.clear();
+}
+
+std::unique_ptr<Expression> Parser::parseGenericSelection() {
+    const Token& startToken = tokens[pos-1];
+    expect(TokenType::OPEN_PAREN, "Expected '(' after '_Generic'");
+    auto control = parseExpression();
+    expect(TokenType::COMMA, "Expected ',' after controlling expression in _Generic");
+
+    auto node = setPos(std::make_unique<GenericSelection>(std::move(control)), startToken);
+
+    do {
+        GenericAssociation assoc;
+        if (match(TokenType::DEFAULT)) {
+            assoc.isDefault = true;
+        } else {
+            if (match(TokenType::INT)) assoc.typeName = "int";
+            else if (match(TokenType::CHAR)) assoc.typeName = "char";
+            else if (match(TokenType::VOID)) assoc.typeName = "void";
+            else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+                assoc.typeName = (tokens[pos-1].type == TokenType::STRUCT ? "struct " : "union ") + expect(TokenType::IDENTIFIER, "Expected aggregate name").value;
+            } else {
+                throw std::runtime_error("Expected type name in _Generic association");
+            }
+            while (match(TokenType::STAR)) assoc.pointerLevel++;
+        }
+
+        expect(TokenType::COLON, "Expected ':' in _Generic association");
+        assoc.result = parseExpression();
+        node->associations.push_back(std::move(assoc));
+
+    } while (match(TokenType::COMMA));
+
+    expect(TokenType::CLOSE_PAREN, "Expected ')' at end of _Generic");
+    return node;
 }
