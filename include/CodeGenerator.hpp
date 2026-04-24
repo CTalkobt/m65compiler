@@ -45,6 +45,7 @@ public:
     std::map<std::string, VarInfo> variableTypes;
     std::map<std::string, VarInfo> globalVariableTypes;
     std::map<std::string, std::shared_ptr<StructInfo>> structs;
+    static int getTypeSize(const std::string& type, int ptrLevel, int arraySize, const std::map<std::string, std::shared_ptr<CodeGenerator::StructInfo>>& structs);
     uint32_t zeroPageStart = 0x02;
     uint32_t zeroPageAvail = 9;
 
@@ -60,11 +61,14 @@ public:
     void visit(FunctionCall& node) override;
     void visit(MemberAccess& node) override;
     void visit(AlignofExpression& node) override;
+    void visit(SizeofExpression& node) override;
     void visit(VariableDeclaration& node) override;
     void visit(ReturnStatement& node) override;
     void visit(BreakStatement& node) override;
     void visit(ContinueStatement& node) override;
     void visit(SwitchContinueStatement& node) override;
+    void visit(GotoStatement& node) override;
+    void visit(LabelledStatement& node) override;
     void visit(ExpressionStatement& node) override;
     void visit(IfStatement& node) override;
     void visit(WhileStatement& node) override;

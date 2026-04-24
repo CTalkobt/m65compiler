@@ -1,5 +1,6 @@
 #pragma once
 #include "AST.hpp"
+#include "CodeGenerator.hpp"
 #include <memory>
 #include <map>
 #include <set>
@@ -12,6 +13,7 @@ public:
     std::unique_ptr<Statement> lastStmt;
     std::map<std::string, int> knownConstants;
     std::set<std::string> volatileVars;
+    std::map<std::string, std::shared_ptr<CodeGenerator::StructInfo>> structs;
 
     std::unique_ptr<Expression> fold(std::unique_ptr<Expression> expr) {
         if (!expr) return nullptr;
@@ -161,6 +163,7 @@ public:
     }
 
     void visit(AlignofExpression& node) override;
+    void visit(SizeofExpression& node) override;
 
     void visit(VariableDeclaration& node) override {
         auto alignmentExpr = node.alignmentExpr ? fold(std::move(node.alignmentExpr)) : nullptr;
@@ -207,6 +210,14 @@ public:
 
     void visit(SwitchContinueStatement& node) override {
         lastStmt = copyPos(std::make_unique<SwitchContinueStatement>(node.target ? fold(std::move(node.target)) : nullptr), node);
+    }
+
+    void visit(GotoStatement& node) override {
+        lastStmt = copyPos(std::make_unique<GotoStatement>(node.label), node);
+    }
+
+    void visit(LabelledStatement& node) override {
+        lastStmt = copyPos(std::make_unique<LabelledStatement>(node.label, fold(std::move(node.statement))), node);
     }
 
     void visit(ExpressionStatement& node) override {
@@ -287,16 +298,43 @@ public:
 
     void visit(StructDefinition& node) override {
         auto def = copyPos(std::make_unique<StructDefinition>(node.name, node.isUnion), node);
+        int currentOffset = 0;
+        int maxAlignment = 1;
+
+        auto sInfo = std::make_shared<CodeGenerator::StructInfo>();
+        sInfo->name = node.name;
+
         for (auto& m : node.members) {
             auto alignmentExpr = m.alignmentExpr ? fold(std::move(m.alignmentExpr)) : nullptr;
-            int alignment = m.alignment;
+            int alignment = 1;
             if (alignmentExpr) {
                 if (auto* lit = dynamic_cast<IntegerLiteral*>(alignmentExpr.get())) {
                     alignment = lit->value;
                 }
             }
+
+            int mSize = CodeGenerator::getTypeSize(m.type, m.pointerLevel, m.arraySize, structs);
+            int mAlign = alignment; // Simplification, should ideally check type alignment too
+            if (mAlign > maxAlignment) maxAlignment = mAlign;
+
+            if (!node.isUnion) {
+                if (currentOffset % mAlign != 0) currentOffset += mAlign - (currentOffset % mAlign);
+            }
+
+            CodeGenerator::MemberInfo mi = {m.type, m.pointerLevel, m.isSigned, currentOffset, mAlign, m.arraySize};
+            sInfo->members[m.name] = mi;
+
+            if (!node.isUnion) currentOffset += mSize;
+            else if (mSize > currentOffset) currentOffset = mSize;
+
             def->members.push_back({m.type, m.pointerLevel, m.isSigned, m.name, alignment, std::move(alignmentExpr), m.isAnonymous, m.arraySize});
         }
+
+        if (currentOffset % maxAlignment != 0) currentOffset += maxAlignment - (currentOffset % maxAlignment);
+        sInfo->totalSize = currentOffset;
+        sInfo->alignment = maxAlignment;
+        structs[node.name] = sInfo;
+
         lastStmt = std::move(def);
     }
 

@@ -74,6 +74,20 @@ bool CodeGenerator::matchType(const ExpressionType& t1, const std::string& t2Nam
     return true;
 }
 
+int CodeGenerator::getTypeSize(const std::string& type, int ptrLevel, int arraySize, const std::map<std::string, std::shared_ptr<CodeGenerator::StructInfo>>& structs) {
+    int size = 0;
+    if (ptrLevel > 0) size = 2;
+    else if (type == "char") size = 1;
+    else if (type == "int") size = 2;
+    else if (type.substr(0, 7) == "struct " || type.substr(0, 6) == "union ") {
+        std::string sName = type.substr(type.find(' ') + 1);
+        if (structs.count(sName)) size = structs.at(sName)->totalSize;
+        else throw std::runtime_error("Unknown struct/union type: " + sName);
+    }
+    if (arraySize >= 0) size *= arraySize;
+    return size;
+}
+
 CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
     if (!expr) return {"int", 0, false};
     if (auto* gs = dynamic_cast<GenericSelection*>(expr)) {
@@ -966,6 +980,38 @@ void CodeGenerator::visit(ReturnStatement& node) {
     invalidateRegs();
 }
 
+void CodeGenerator::visit(GotoStatement& node) {
+    embedSource(node);
+    emit("bra " + node.label);
+}
+
+void CodeGenerator::visit(LabelledStatement& node) {
+    embedSource(node);
+    out << node.label << ":" << std::endl;
+    node.statement->accept(*this);
+}
+
+void CodeGenerator::visit(SizeofExpression& node) {
+    embedSource(node);
+    int size = 0;
+    if (node.isType) {
+        size = getTypeSize(node.typeName, node.pointerLevel, -1, structs);
+    } else {
+        ExpressionType et = getExprType(node.expression.get());
+        // We need the array size if it's a variable
+        int arraySize = -1;
+        if (auto* ref = dynamic_cast<VariableReference*>(node.expression.get())) {
+            std::string rName = resolveVarName(ref->name);
+            if (variableTypes.count(rName)) arraySize = variableTypes.at(rName).arraySize;
+            else if (globalVariableTypes.count("_g_" + ref->name)) arraySize = globalVariableTypes.at("_g_" + ref->name).arraySize;
+        }
+        size = getTypeSize(et.type, et.pointerLevel, arraySize, structs);
+    }
+    std::stringstream ss; ss << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << size;
+    emit("ldax #$" + ss.str());
+    updateRegA(size & 0xFF); updateRegX(size >> 8);
+}
+
 void CodeGenerator::visit(BreakStatement& node) {
     embedSource(node);
     if (!loopStack.empty()) emit("bra " + loopStack.back().breakLabel);
@@ -1151,11 +1197,14 @@ void CodeGenerator::visit(SwitchStatement& node) {
         }
         void visit(ArrayAccess& node) override { node.arrayExpr->accept(*this); node.indexExpr->accept(*this); }
         void visit(AlignofExpression&) override {}
+        void visit(SizeofExpression& node) override { if (!node.isType) node.expression->accept(*this); }
         void visit(VariableDeclaration& node) override { if (node.initializer) node.initializer->accept(*this); }
         void visit(ReturnStatement& node) override { if(node.expression) node.expression->accept(*this); }
         void visit(BreakStatement&) override {}
         void visit(ContinueStatement&) override {}
         void visit(SwitchContinueStatement&) override {}
+        void visit(GotoStatement&) override {}
+        void visit(LabelledStatement& node) override { node.statement->accept(*this); }
         void visit(ExpressionStatement& node) override { node.expression->accept(*this); }
         void visit(IfStatement& node) override { node.condition->accept(*this); node.thenBranch->accept(*this); if(node.elseBranch) node.elseBranch->accept(*this); }
         void visit(WhileStatement& node) override { node.condition->accept(*this); node.body->accept(*this); }
@@ -1672,11 +1721,14 @@ public:
     }
     void visit(ArrayAccess& node) override { node.arrayExpr->accept(*this); node.indexExpr->accept(*this); }
     void visit(AlignofExpression&) override {}
+    void visit(SizeofExpression& node) override { if (!node.isType) node.expression->accept(*this); }
     void visit(VariableDeclaration& node) override { if (node.initializer) node.initializer->accept(*this); }
     void visit(ReturnStatement& node) override { if(node.expression) node.expression->accept(*this); }
     void visit(BreakStatement&) override {}
     void visit(ContinueStatement&) override {}
     void visit(SwitchContinueStatement& node) override { if (node.target) node.target->accept(*this); }
+    void visit(GotoStatement&) override {}
+    void visit(LabelledStatement& node) override { node.statement->accept(*this); }
     void visit(ExpressionStatement& node) override { if (node.expression) node.expression->accept(*this); }
     void visit(IfStatement& node) override { node.condition->accept(*this); node.thenBranch->accept(*this); if(node.elseBranch) node.elseBranch->accept(*this); }
     void visit(WhileStatement& node) override { node.condition->accept(*this); node.body->accept(*this); }

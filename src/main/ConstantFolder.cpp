@@ -92,3 +92,23 @@ void ConstantFolder::visit(GenericSelection& node) {
     }
     lastExpr = std::move(gs);
 }
+
+void ConstantFolder::visit(SizeofExpression& node) {
+    if (node.isType) {
+        int size = CodeGenerator::getTypeSize(node.typeName, node.pointerLevel, -1, structs);
+        lastExpr = copyPos(std::make_unique<IntegerLiteral>(size), node);
+    } else {
+        // We need to resolve the type of the expression to get its size.
+        // ConstantFolder doesn't have a full type-checking pass yet, 
+        // so we might need to defer this to CodeGenerator or implement minimal lookup.
+        // For now, if it's a VariableReference we might know it.
+        if (auto* ref = dynamic_cast<VariableReference*>(node.expression.get())) {
+             // We'd need a map of variable types in ConstantFolder too.
+             // Given the current architecture, deferring 'sizeof expr' to CodeGenerator is safer
+             // unless we add variableType tracking to ConstantFolder.
+             lastExpr = copyPos(std::make_unique<SizeofExpression>(fold(std::move(node.expression))), node);
+        } else {
+             lastExpr = copyPos(std::make_unique<SizeofExpression>(fold(std::move(node.expression))), node);
+        }
+    }
+}

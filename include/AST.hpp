@@ -148,6 +148,16 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class IfStatement : public Statement {
+public:
+    std::unique_ptr<Expression> condition;
+    std::unique_ptr<Statement> thenBranch;
+    std::unique_ptr<Statement> elseBranch;
+    IfStatement(std::unique_ptr<Expression> c, std::unique_ptr<Statement> t, std::unique_ptr<Statement> e = nullptr)
+        : condition(std::move(c)), thenBranch(std::move(t)), elseBranch(std::move(e)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class BreakStatement : public Statement {
 public:
     void accept(ASTVisitor& visitor) override;
@@ -165,20 +175,37 @@ public:
     void accept(ASTVisitor& visitor) override;
 };
 
+class GotoStatement : public Statement {
+public:
+    std::string label;
+    GotoStatement(const std::string& l) : label(l) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+class LabelledStatement : public Statement {
+public:
+    std::string label;
+    std::unique_ptr<Statement> statement;
+    LabelledStatement(const std::string& l, std::unique_ptr<Statement> s) : label(l), statement(std::move(s)) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+
+class SizeofExpression : public Expression {
+public:
+    std::unique_ptr<Expression> expression; // For sizeof expr
+    std::string typeName;                   // For sizeof(type)
+    int pointerLevel = 0;
+    bool isType = false;
+    SizeofExpression(std::unique_ptr<Expression> e) : expression(std::move(e)), isType(false) {}
+    SizeofExpression(const std::string& t, int p = 0) : typeName(t), pointerLevel(p), isType(true) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class ExpressionStatement : public Statement {
 public:
     std::unique_ptr<Expression> expression;
     ExpressionStatement(std::unique_ptr<Expression> e) : expression(std::move(e)) {}
-    void accept(ASTVisitor& visitor) override;
-};
-
-class IfStatement : public Statement {
-public:
-    std::unique_ptr<Expression> condition;
-    std::unique_ptr<Statement> thenBranch;
-    std::unique_ptr<Statement> elseBranch;
-    IfStatement(std::unique_ptr<Expression> c, std::unique_ptr<Statement> t, std::unique_ptr<Statement> e = nullptr)
-        : condition(std::move(c)), thenBranch(std::move(t)), elseBranch(std::move(e)) {}
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -320,11 +347,14 @@ public:
     virtual void visit(FunctionCall& node) = 0;
     virtual void visit(MemberAccess& node) = 0;
     virtual void visit(AlignofExpression& node) = 0;
+    virtual void visit(SizeofExpression& node) = 0;
     virtual void visit(VariableDeclaration& node) = 0;
     virtual void visit(ReturnStatement& node) = 0;
     virtual void visit(BreakStatement& node) = 0;
     virtual void visit(ContinueStatement& node) = 0;
     virtual void visit(SwitchContinueStatement& node) = 0;
+    virtual void visit(GotoStatement& node) = 0;
+    virtual void visit(LabelledStatement& node) = 0;
     virtual void visit(ExpressionStatement& node) = 0;
     virtual void visit(IfStatement& node) = 0;
     virtual void visit(WhileStatement& node) = 0;

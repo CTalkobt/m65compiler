@@ -264,6 +264,19 @@ std::unique_ptr<CompoundStatement> Parser::parseCompoundStatement() {
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
+    if (peek().type == TokenType::IDENTIFIER && pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::COLON) {
+        std::string label = advance().value;
+        advance(); // :
+        return setPos(std::make_unique<LabelledStatement>(label, parseStatement()), tokens[pos-2]);
+    }
+
+    if (match(TokenType::GOTO)) {
+        const Token& startToken = tokens[pos-1];
+        std::string label = expect(TokenType::IDENTIFIER, "Expected label name after 'goto'").value;
+        expect(TokenType::SEMICOLON, "Expected ';' after goto label");
+        return setPos(std::make_unique<GotoStatement>(label), startToken);
+    }
+
     bool isVolatile = false;
     bool isAuto = false;
     while (true) {
@@ -723,6 +736,41 @@ std::unique_ptr<Expression> Parser::parseMultiplicative() {
 }
 
 std::unique_ptr<Expression> Parser::parseUnary() {
+    if (match(TokenType::SIZEOF)) {
+        const Token& startToken = tokens[pos-1];
+        if (match(TokenType::OPEN_PAREN)) {
+            // Check if it's a type or an expression
+            if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || 
+                peek().type == TokenType::STRUCT || peek().type == TokenType::UNION ||
+                peek().type == TokenType::SIGNED || peek().type == TokenType::UNSIGNED) {
+                
+                std::string type;
+                if (match(TokenType::SIGNED) || match(TokenType::UNSIGNED)) {
+                    if (match(TokenType::INT)) type = "int";
+                    else if (match(TokenType::CHAR)) type = "char";
+                    else type = "int";
+                }
+                else if (match(TokenType::INT)) type = "int";
+                else if (match(TokenType::CHAR)) type = "char";
+                else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+                    bool isU = tokens[pos-1].type == TokenType::UNION;
+                    type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+                }
+                
+                int ptrLevel = 0;
+                while (match(TokenType::STAR)) ptrLevel++;
+                expect(TokenType::CLOSE_PAREN, "Expected ')' after type in sizeof");
+                return setPos(std::make_unique<SizeofExpression>(type, ptrLevel), startToken);
+            } else {
+                auto expr = parseExpression();
+                expect(TokenType::CLOSE_PAREN, "Expected ')' after expression in sizeof");
+                return setPos(std::make_unique<SizeofExpression>(std::move(expr)), startToken);
+            }
+        } else {
+            return setPos(std::make_unique<SizeofExpression>(parseUnary()), startToken);
+        }
+    }
+
     if (match(TokenType::BANG) || match(TokenType::TILDE) || match(TokenType::MINUS) || match(TokenType::STAR) || match(TokenType::AMPERSAND) ||
         match(TokenType::PLUS_PLUS) || match(TokenType::MINUS_MINUS)) {
         const Token& opToken = tokens[pos-1];

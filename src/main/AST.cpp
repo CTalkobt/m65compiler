@@ -11,12 +11,15 @@ void GenericSelection::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ArrayAccess::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ConditionalExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AlignofExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void SizeofExpression::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionCall::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void VariableDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ReturnStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void BreakStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ContinueStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void SwitchContinueStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void GotoStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void LabelledStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void ExpressionStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void IfStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void WhileStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }

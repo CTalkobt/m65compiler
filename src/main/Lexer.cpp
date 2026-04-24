@@ -170,7 +170,9 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"switch", TokenType::SWITCH},
         {"case", TokenType::CASE},
         {"default", TokenType::DEFAULT},
-        {"_Generic", TokenType::_GENERIC}
+        {"goto", TokenType::GOTO},
+        {"sizeof", TokenType::SIZEOF},
+        {"_Generic", TokenType::_GENERIC},
         };
 
     auto it = keywords.find(value);

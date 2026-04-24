@@ -47,9 +47,9 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Predefined Macros**: Support `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`.
 - [X] **Break/Continue**: Implement `break` and `continue` for loop control.
 - [X] **Switch/Case**: Implement `switch`, `case`, and `default`.
-- [ ] **`goto` Statement**: Implement `goto` and labeled statements for unconditional jumps within a function.
+- [X] **`goto` Statement**: Implement `goto` and labeled statements for unconditional jumps within a function.
 - [X] **Ternary Operator**: Implement the `? :` conditional expression operator.
-- [ ] **`sizeof` Operator**: Implement `sizeof(type)` and `sizeof expr` to return the byte size of a type or expression at compile time.
+- [X] **`sizeof` Operator**: Implement `sizeof(type)` and `sizeof expr` to return the byte size of a type or expression at compile time.
 - [ ] **Compound Assignment Operators**: Support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
 - [X] **Bitwise Binary Operators**: Support binary `&`, `|`, `^`, `<<`, `>>` as user-level expression operators.
 - [ ] **Modulo Operator**: Support `%` for integer remainder in expressions.

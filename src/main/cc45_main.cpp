@@ -147,6 +147,28 @@ public:
             std::cout << " (default)" << std::endl;
         }
     }
+    void visit(GotoStatement& node) override {
+        printIndent(); std::cout << "GotoStatement: " << node.label << std::endl;
+    }
+    void visit(LabelledStatement& node) override {
+        printIndent(); std::cout << "Label: " << node.label << ":" << std::endl;
+        indent++;
+        node.statement->accept(*this);
+        indent--;
+    }
+    void visit(SizeofExpression& node) override {
+        printIndent(); std::cout << "Sizeof: ";
+        if (node.isType) {
+            std::cout << node.typeName;
+            for (int i = 0; i < node.pointerLevel; i++) std::cout << "*";
+        } else {
+            std::cout << "expr" << std::endl;
+            indent++;
+            node.expression->accept(*this);
+            indent--;
+        }
+        std::cout << std::endl;
+    }
     void visit(ExpressionStatement& node) override {
         printIndent(); std::cout << "ExpressionStatement" << std::endl;
         indent++;
