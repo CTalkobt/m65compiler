@@ -281,6 +281,7 @@ void AssemblerParser::pass1() {
     nextScopeId = 0;
     procedures.clear();
     currentProc = nullptr;
+    firstOrgAddress = 0xFFFFFFFF;
     std::vector<std::shared_ptr<ProcContext>> pass1ProcStack;
 
     auto currentScopePrefix = [&]() {
@@ -397,10 +398,27 @@ void AssemblerParser::pass1() {
                 stmt->size = 0;
             }
             else if (stmt->dir.name == "basicUpstart") {
+                if (firstOrgAddress == 0xFFFFFFFF) {
+                    firstOrgAddress = 0x2001;
+                    pc = 0x2001;
+                    currentSegment->pc = pc;
+                    
+                    // Synthesize an org statement so pass2 knows the start address
+                    auto orgStmt = std::make_unique<Statement>();
+                    orgStmt->type = Statement::DIRECTIVE;
+                    orgStmt->dir.name = "org";
+                    orgStmt->dir.arguments.push_back("$2001");
+                    orgStmt->address = pc;
+                    orgStmt->segmentName = currentSegment->name;
+                    orgStmt->scopePrefix = stmt->scopePrefix;
+                    statements.push_back(std::move(orgStmt));
+                    
+                    stmt->address = pc;
+                }
                 stmt->type = Statement::BASIC_UPSTART;
                 stmt->basicUpstartTokenIndex = (int)pos;
                 while (peek().type != AssemblerTokenType::NEWLINE && peek().type != AssemblerTokenType::END_OF_FILE) advance();
-                stmt->size = 13;
+                stmt->size = 12;
             }
             else {
                 stmt->dir.tokenIndex = (int)pos;
@@ -410,6 +428,7 @@ void AssemblerParser::pass1() {
                 }
                 if (stmt->dir.name == "org") {
                     if (!stmt->dir.arguments.empty()) pc = parseNumericLiteral(stmt->dir.arguments[0]);
+                    if (firstOrgAddress == 0xFFFFFFFF) firstOrgAddress = pc;
                     stmt->address = pc;
                     stmt->size = 0;
                 }
@@ -423,6 +442,7 @@ void AssemblerParser::pass1() {
             stmt->dir.name = "org";
             stmt->dir.arguments.push_back(advance().value);
             if (!stmt->dir.arguments.empty()) pc = parseNumericLiteral(stmt->dir.arguments[0]);
+            if (firstOrgAddress == 0xFFFFFFFF) firstOrgAddress = pc;
             stmt->address = pc;
             stmt->size = 0;
         }
@@ -937,7 +957,7 @@ int AssemblerParser::calculateDirectiveSize(const Directive& dir, uint32_t curre
     return 0;
 }
 
-std::vector<uint8_t> AssemblerParser::pass2() {
+std::vector<uint8_t> AssemblerParser::pass2(bool isPrg) {
     bool overallChanged;
     do {
         overallChanged = false;
@@ -1038,7 +1058,7 @@ std::vector<uint8_t> AssemblerParser::pass2() {
         }
         if (addressRecalculationMadeChanges) overallChanged = true;
     } while (overallChanged);
-    return AssemblerGenerator::generate(this);
+    return AssemblerGenerator::generate(this, isPrg);
 }
 
 

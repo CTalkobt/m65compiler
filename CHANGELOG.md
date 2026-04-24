@@ -1,6 +1,29 @@
 # Changelog
 
 All notable changes to the cc45 / ca45 suite will be documented in this file.
+
+## [Unreleased] - 2026-04-23
+
+### Added
+- **Compiler (cc45)**:
+    - Added support for **Compound Assignment Operators**: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
+    - Added support for the **Modulo Operator** (`%`) for integer remainder.
+    - Added support for **`for` loop declarations**: variables can now be declared in the initializer clause (e.g., `for (int i = 0; ...)`).
+    - Implemented the **`typedef` keyword** for creating type aliases, including support for pointer and struct/union typedefs.
+    - Added support for **`enum` types** and enumerator constants.
+- **Assembler (ca45)**:
+    - Added support for generating **`.prg` files**: If the output filename ends in `.prg`, a 2-byte load address header (inferred from the first `.org`) is prepended to the binary.
+    - Improved **`.basicUpstart` directive**:
+        - Automatically defaults to `.org $2001` if no start address is specified.
+        - Fixed size at 12 bytes across all passes for more reliable label resolution.
+
+### Fixed
+- **Compiler (cc45)**:
+    - Fixed a critical bug in `BinaryOperation` where operands were being reversed for non-commutative operators (subtraction, division, shifts).
+    - Improved constant folding to be more robust across control flow (clearing constants when entering loops).
+- **Assembler (ca45)**:
+    - Standardized `.basicUpstart` size to 12 bytes to match the emitted code.
+
 ## [Unreleased] - 2026-04-18
 
 ### Added

@@ -42,9 +42,17 @@ static std::vector<uint8_t> encodeFloat(double val) {
     return result;
 }
 
-std::vector<uint8_t> AssemblerGenerator::generate(AssemblerParser* parser) {
+std::vector<uint8_t> AssemblerGenerator::generate(AssemblerParser* parser, bool isPrg) {
     std::vector<uint8_t> binary;
+    uint32_t start = parser->getFirstOrgAddress();
+    if (isPrg && start != 0xFFFFFFFF) {
+        binary.push_back((uint8_t)(start & 0xFF));
+        binary.push_back((uint8_t)(start >> 8));
+    }
     M65Emitter e(binary, parser->getZPStart());
+    if (start != 0xFFFFFFFF) {
+        e.setAddress(start);
+    }
     generate(parser, e);
     return binary;
 }

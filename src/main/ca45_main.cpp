@@ -23,7 +23,8 @@ int main(int argc, char** argv) {
         if (arg == "-?" || arg == "--help") {
             std::cout << "Usage: ca45 [options] <input_file.s>" << std::endl;
             std::cout << "Options:" << std::endl;
-            std::cout << "  -o <filename>  Specify output binary filename (default: out.bin)" << std::endl;
+            std::cout << "  -o <filename>  Specify output filename (default: out.bin)" << std::endl;
+            std::cout << "                 If filename ends in .prg, a 2-byte load address header is added." << std::endl;
             std::cout << "  -l <level>     Listing level: 1=Binary (default), 2=Expanded Assembly" << std::endl;
             std::cout << "  -v             Enable verbose output" << std::endl;
             std::cout << "  -Dname=val     Define a symbol (e.g., -Dcc45.zeroPageStart=$10)" << std::endl;
@@ -110,13 +111,17 @@ int main(int argc, char** argv) {
         parser.pass1();
 
         if (listingLevel == 2) {
-            parser.pass2(); // Run optimizer and resolve addresses
+            parser.pass2(false); // Run optimizer and resolve addresses
             std::ofstream out(output_file);
             M65Emitter e(out, predefinedSymbols["cc45.zeroPageStart"]);
             AssemblerGenerator::generate(&parser, e);
             std::cout << "Expanded listing generated to " << output_file << std::endl;
         } else {
-            auto binary = parser.pass2();
+            bool isPrg = false;
+            if (output_file.length() >= 4 && output_file.substr(output_file.length() - 4) == ".prg") {
+                isPrg = true;
+            }
+            auto binary = parser.pass2(isPrg);
             if (!binary.empty()) {
                 std::ofstream out(output_file, std::ios::binary);
                 out.write(reinterpret_cast<const char*>(binary.data()), binary.size());

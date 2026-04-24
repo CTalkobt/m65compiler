@@ -37,15 +37,17 @@ public:
     AssemblerParser(const std::vector<AssemblerToken>& tokens, const std::map<std::string, uint32_t>& predefinedSymbols);
     void pass1();
     bool optimize();
-    std::vector<uint8_t> pass2();
+    std::vector<uint8_t> pass2(bool isPrg = false);
     uint32_t getZPStart() const;
     uint32_t getPC() const { return pc; }
+    uint32_t getFirstOrgAddress() const { return firstOrgAddress; }
     Symbol* resolveSymbol(const std::string& name, const std::string& scopePrefix = "");
 
 private:
     std::vector<AssemblerToken> tokens;
     size_t pos;
     uint32_t pc;
+    uint32_t firstOrgAddress = 0xFFFFFFFF;
     std::map<std::string, Symbol> symbolTable;
     std::vector<std::string> scopeStack;
     int nextScopeId = 0;
