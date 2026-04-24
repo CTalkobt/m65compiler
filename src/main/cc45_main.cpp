@@ -276,6 +276,15 @@ public:
     void visit(StaticAssert& node) override {
         printIndent(); std::cout << "StaticAssert: " << node.message << std::endl;
     }
+    void visit(EnumDefinition& node) override {
+        printIndent(); std::cout << "EnumDefinition: " << node.name << std::endl;
+        indent++;
+        for (const auto& enumerator : node.enumerators) {
+            printIndent();
+            std::cout << enumerator.first << " = " << enumerator.second << std::endl;
+        }
+        indent--;
+    }
     void visit(StructDefinition& node) override {
         printIndent(); std::cout << (node.isUnion ? "UnionDefinition: " : "StructDefinition: ") << node.name << std::endl;
         indent++;

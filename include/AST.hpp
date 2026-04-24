@@ -297,6 +297,14 @@ struct StructMember {
     int arraySize = -1;
 };
 
+class EnumDefinition : public Statement {
+public:
+    std::string name;
+    std::vector<std::pair<std::string, int>> enumerators;
+    EnumDefinition(const std::string& n) : name(n) {}
+    void accept(ASTVisitor& visitor) override;
+};
+
 class StructDefinition : public Statement {
 public:
     std::string name;
@@ -367,6 +375,7 @@ public:
     virtual void visit(DefaultStatement& node) = 0;
     virtual void visit(AsmStatement& node) = 0;
     virtual void visit(StaticAssert& node) = 0;
+    virtual void visit(EnumDefinition& node) = 0;
     virtual void visit(StructDefinition& node) = 0;
     virtual void visit(CompoundStatement& node) = 0;
     virtual void visit(FunctionDeclaration& node) = 0;

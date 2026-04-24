@@ -32,6 +32,7 @@ enum class TokenType {
     SIZEOF,
     _GENERIC,
     TYPEDEF,
+    ENUM,
     
     // Literals
     IDENTIFIER,
@@ -127,6 +128,7 @@ struct Token {
             case TokenType::SIZEOF: return "SIZEOF";
             case TokenType::_GENERIC: return "_GENERIC";
             case TokenType::TYPEDEF: return "TYPEDEF";
+            case TokenType::ENUM: return "ENUM";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::INTEGER_LITERAL: return "INTEGER_LITERAL";
             case TokenType::STRING_LITERAL: return "STRING_LITERAL";

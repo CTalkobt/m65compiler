@@ -54,9 +54,17 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             continue;
         }
 
-        if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION) {
+        if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION || peek().type == TokenType::ENUM) {
             bool isUnion = peek().type == TokenType::UNION;
-            // Check if it's a definition: struct/union name { ... };
+            bool isEnum = peek().type == TokenType::ENUM;
+            // Check if it's a definition: struct/union/enum name { ... };
+            if (isEnum) {
+                advance(); // enum
+                auto def = parseEnumDefinition();
+                expect(TokenType::SEMICOLON, "Expected ';' after enum definition");
+                unit->topLevelDecls.push_back(std::move(def));
+                continue;
+            }
             if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER &&
                 pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
                 advance(); // struct/union
@@ -107,14 +115,15 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                                      tokens[look].type == TokenType::VOID ||
                                      tokens[look].type == TokenType::STRUCT ||
                                      tokens[look].type == TokenType::UNION ||
+                                     tokens[look].type == TokenType::ENUM ||
                                      (tokens[look].type == TokenType::IDENTIFIER && isTypedef(tokens[look].value)))) {
             if (tokens[look].type == TokenType::UNSIGNED || tokens[look].type == TokenType::SIGNED) {
                 look++;
                 if (look < tokens.size() && (tokens[look].type == TokenType::INT || tokens[look].type == TokenType::CHAR)) {
                     look++;
                 }
-            } else if (tokens[look].type == TokenType::STRUCT || tokens[look].type == TokenType::UNION) {
-                look++; // skip struct/union
+            } else if (tokens[look].type == TokenType::STRUCT || tokens[look].type == TokenType::UNION || tokens[look].type == TokenType::ENUM) {
+                look++; // skip struct/union/enum
                 if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
                     look++; // skip struct/union name
                 } else if (look < tokens.size() && tokens[look].type == TokenType::OPEN_BRACE) {
@@ -198,9 +207,11 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     else if (match(TokenType::INT)) returnType = "int";
     else if (match(TokenType::CHAR)) returnType = "char";
     else if (match(TokenType::VOID)) returnType = "void";
-    else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+    else if (match(TokenType::STRUCT) || match(TokenType::UNION) || match(TokenType::ENUM)) {
         bool isU = tokens[pos-1].type == TokenType::UNION;
-        returnType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+        bool isE = tokens[pos-1].type == TokenType::ENUM;
+        if (isE) returnType = "enum " + expect(TokenType::IDENTIFIER, "Expected enum name").value;
+        else returnType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
     }
     else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
         std::string alias = advance().value;
@@ -243,9 +254,11 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
             }
             else if (match(TokenType::INT)) pType = "int";
             else if (match(TokenType::CHAR)) pType = "char";
-            else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+            else if (match(TokenType::STRUCT) || match(TokenType::UNION) || match(TokenType::ENUM)) {
                 bool isU = tokens[pos-1].type == TokenType::UNION;
-                pType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+                bool isE = tokens[pos-1].type == TokenType::ENUM;
+                if (isE) pType = "enum " + expect(TokenType::IDENTIFIER, "Expected enum name").value;
+                else pType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
             }
             else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
                 std::string pAlias = advance().value;
@@ -319,9 +332,42 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         }
     }
 
-    if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION) {
+    if (peek().type == TokenType::STRUCT || peek().type == TokenType::UNION || peek().type == TokenType::ENUM) {
         bool isUnion = peek().type == TokenType::UNION;
-        if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER && pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
+        bool isEnum = peek().type == TokenType::ENUM;
+        
+        if (isEnum) {
+            // Check if it's a bare definition: enum [name] { ... };
+            // vs a variable declaration: enum [name] [{...}] var;
+            bool isDef = false;
+            int look = pos + 1;
+            if (look < tokens.size() && tokens[look].type == TokenType::OPEN_BRACE) isDef = true;
+            else if (look < tokens.size() && tokens[look].type == TokenType::IDENTIFIER) {
+                look++;
+                if (look < tokens.size() && tokens[look].type == TokenType::OPEN_BRACE) isDef = true;
+            }
+            
+            if (isDef) {
+                // Peek ahead for a semicolon after the closing brace
+                int braceLevel = 0;
+                bool foundBrace = false;
+                for (size_t i = pos; i < tokens.size(); ++i) {
+                    if (tokens[i].type == TokenType::OPEN_BRACE) { braceLevel++; foundBrace = true; }
+                    else if (tokens[i].type == TokenType::CLOSE_BRACE) {
+                        braceLevel--;
+                        if (foundBrace && braceLevel == 0) {
+                            if (i + 1 < tokens.size() && tokens[i+1].type == TokenType::SEMICOLON) {
+                                advance(); // enum
+                                auto def = parseEnumDefinition();
+                                expect(TokenType::SEMICOLON, "Expected ';' after enum definition");
+                                return def;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER && pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
             advance(); // struct/union
             auto def = parseStructDefinition(isUnion);
             expect(TokenType::SEMICOLON, "Expected ';' after struct/union definition");
@@ -522,9 +568,19 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
     }
     else if (match(TokenType::INT)) type = "int";
     else if (match(TokenType::CHAR)) type = "char";
-    else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+    else if (match(TokenType::STRUCT) || match(TokenType::UNION) || match(TokenType::ENUM)) {
         bool isU = tokens[pos-1].type == TokenType::UNION;
-        type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+        bool isE = tokens[pos-1].type == TokenType::ENUM;
+        if (isE) {
+            if (peek().type == TokenType::IDENTIFIER) {
+                type = "enum " + advance().value;
+            } else {
+                auto def = parseEnumDefinition();
+                type = "enum " + def->name;
+            }
+        } else {
+            type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+        }
     }
     else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
         std::string alias = advance().value;
@@ -802,7 +858,7 @@ std::unique_ptr<Expression> Parser::parseUnary() {
         if (match(TokenType::OPEN_PAREN)) {
             // Check if it's a type or an expression
             if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || 
-                peek().type == TokenType::STRUCT || peek().type == TokenType::UNION ||
+                peek().type == TokenType::STRUCT || peek().type == TokenType::UNION || peek().type == TokenType::ENUM ||
                 peek().type == TokenType::SIGNED || peek().type == TokenType::UNSIGNED ||
                 (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value))) {
 
@@ -817,10 +873,16 @@ std::unique_ptr<Expression> Parser::parseUnary() {
                 }
                 else if (match(TokenType::INT)) type = "int";
                 else if (match(TokenType::CHAR)) type = "char";
-                else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+                else if (match(TokenType::STRUCT) || match(TokenType::UNION) || match(TokenType::ENUM)) {
                     bool isU = tokens[pos-1].type == TokenType::UNION;
-                    type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+                    bool isE = tokens[pos-1].type == TokenType::ENUM;
+                    if (isE) {
+                        type = "enum " + expect(TokenType::IDENTIFIER, "Expected enum name").value;
+                    } else {
+                        type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+                    }
                 }
+
                 else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
                     std::string sAlias = advance().value;
                     type = typedefs[sAlias].baseType;
@@ -878,6 +940,12 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     if (peek().type == TokenType::IDENTIFIER) {
         const Token& nameToken = advance();
         std::string name = nameToken.value;
+        
+        auto enumIt = enumConstants.find(name);
+        if (enumIt != enumConstants.end()) {
+            return setPos(std::make_unique<IntegerLiteral>(enumIt->second), nameToken);
+        }
+
         if (match(TokenType::OPEN_PAREN)) {
             auto call = setPos(std::make_unique<FunctionCall>(name), nameToken);
             if (peek().type != TokenType::CLOSE_PAREN) {
@@ -1016,4 +1084,33 @@ void Parser::parseTypedef() {
 
 bool Parser::isTypedef(const std::string& name) const {
     return typedefs.find(name) != typedefs.end();
+}
+
+std::unique_ptr<EnumDefinition> Parser::parseEnumDefinition() {
+    const Token& startToken = tokens[pos-1]; // 'enum'
+    std::string name;
+    if (peek().type == TokenType::IDENTIFIER) {
+        name = advance().value;
+        enumNames.insert(name);
+    }
+
+    if (match(TokenType::OPEN_BRACE)) {
+        auto def = setPos(std::make_unique<EnumDefinition>(name), startToken);
+        int currentValue = 0;
+        while (peek().type != TokenType::CLOSE_BRACE && peek().type != TokenType::END_OF_FILE) {
+            std::string enumName = expect(TokenType::IDENTIFIER, "Expected enumerator name").value;
+            if (match(TokenType::EQUALS)) {
+                // For simplicity, only integer literals for now. 
+                // Full expression evaluation would be better but this covers most cases.
+                currentValue = std::stoi(expect(TokenType::INTEGER_LITERAL, "Expected integer literal for enum value").value);
+            }
+            enumConstants[enumName] = currentValue;
+            def->enumerators.push_back({enumName, currentValue});
+            currentValue++;
+            if (!match(TokenType::COMMA)) break;
+        }
+        expect(TokenType::CLOSE_BRACE, "Expected '}' after enum members");
+        return def;
+    }
+    return setPos(std::make_unique<EnumDefinition>(name), startToken);
 }

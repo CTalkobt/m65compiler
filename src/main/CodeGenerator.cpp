@@ -46,6 +46,11 @@ bool CodeGenerator::isStruct(const std::string& type) {
     return false;
 }
 
+bool CodeGenerator::isEnum(const std::string& type) {
+    if (type.length() >= 5 && type.substr(0, 5) == "enum ") return true;
+    return false;
+}
+
 std::string CodeGenerator::getAggregateName(const std::string& type) {
     if (type.length() >= 7 && type.substr(0, 7) == "struct ") return type.substr(7);
     if (type.length() >= 6 && type.substr(0, 6) == "union ") return type.substr(6);
@@ -79,6 +84,7 @@ int CodeGenerator::getTypeSize(const std::string& type, int ptrLevel, int arrayS
     if (ptrLevel > 0) size = 2;
     else if (type == "char") size = 1;
     else if (type == "int") size = 2;
+    else if (type.length() >= 5 && type.substr(0, 5) == "enum ") size = 2;
     else if (type.substr(0, 7) == "struct " || type.substr(0, 6) == "union ") {
         std::string sName = type.substr(type.find(' ') + 1);
         if (structs.count(sName)) size = structs.at(sName)->totalSize;
@@ -1346,6 +1352,7 @@ void CodeGenerator::visit(SwitchStatement& node) {
         }
         void visit(AsmStatement&) override {}
         void visit(StaticAssert&) override {}
+        void visit(EnumDefinition&) override {}
         void visit(StructDefinition&) override {}
         void visit(CompoundStatement& node) override { for(auto& s : node.statements) s->accept(*this); }
         void visit(FunctionDeclaration&) override {}
@@ -1376,6 +1383,8 @@ void CodeGenerator::visit(CaseStatement& node) {
 void CodeGenerator::visit(DefaultStatement& node) {
     if (!node.label.empty()) { out << node.label << ":" << std::endl; invalidateRegs(); }
 }
+
+void CodeGenerator::visit(EnumDefinition& node) {}
 
 void CodeGenerator::visit(StructDefinition& node) {
     auto info = std::make_shared<StructInfo>();
@@ -1870,6 +1879,7 @@ public:
     void visit(DefaultStatement&) override {}
     void visit(AsmStatement&) override {}
     void visit(StaticAssert&) override {}
+    void visit(EnumDefinition&) override {}
     void visit(StructDefinition&) override {}
     void visit(CompoundStatement& node) override { for(auto& s : node.statements) s->accept(*this); }
     void visit(FunctionDeclaration& node) override { node.body->accept(*this); }

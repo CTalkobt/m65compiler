@@ -79,6 +79,7 @@ public:
     void visit(DefaultStatement& node) override;
     void visit(AsmStatement& node) override;
     void visit(StaticAssert& node) override;
+    void visit(EnumDefinition& node) override;
     void visit(StructDefinition& node) override;
     void visit(CompoundStatement& node) override;
     void visit(FunctionDeclaration& node) override;
@@ -88,6 +89,7 @@ public:
     void embedSource(ASTNode& node);
     ExpressionType getExprType(Expression* expr);
     bool isStruct(const std::string& type);
+    bool isEnum(const std::string& type);
     std::string resolveVarName(const std::string& name);
     std::string getAggregateName(const std::string& type);
     static bool matchType(const ExpressionType& t1, const std::string& t2Name, int t2Ptr);

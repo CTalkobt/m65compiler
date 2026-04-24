@@ -83,7 +83,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **`long long` Type**: Support 64-bit `long long` integer type (C99).
 - [ ] **`_Bool` Type**: Support C99 `_Bool` boolean type and `<stdbool.h>` header.
 - [ ] **`float` / `double` Types**: Support floating-point types (may leverage Commodore 40-bit float format via assembler).
-- [ ] **`enum` Types**: Implement `enum` for defining named integer constant sets.
+- [X] **`enum` Types**: Implement `enum` for defining named integer constant sets.
 - [ ] **`const` Qualifier**: Support `const` type qualifier and associated read-only variable semantics.
 - [ ] **`restrict` Qualifier**: Support C99 `restrict` pointer qualifier to declare non-aliasing pointer arguments.
 - [ ] **`inline` Specifier**: Support the `inline` function specifier for inlining hints (C99).

@@ -2,6 +2,7 @@
 #include <vector>
 #include <memory>
 #include <map>
+#include <set>
 #include "Token.hpp"
 #include "AST.hpp"
 
@@ -31,6 +32,7 @@ private:
     std::unique_ptr<Statement> parseStatement();
     std::unique_ptr<Statement> parseVariableDeclaration(bool isVolatile);
     std::unique_ptr<StaticAssert> parseStaticAssert();
+    std::unique_ptr<EnumDefinition> parseEnumDefinition();
     std::unique_ptr<StructDefinition> parseStructDefinition(bool isUnion = false);
     std::unique_ptr<Expression> parseExpression();
     std::unique_ptr<Expression> parseConditional();
@@ -55,6 +57,8 @@ private:
         bool isSigned;
     };
     std::map<std::string, TypeAlias> typedefs;
+    std::map<std::string, int> enumConstants;
+    std::set<std::string> enumNames;
     bool isTypedef(const std::string& name) const;
 
     int anonymousAggregateCount = 0;

@@ -279,6 +279,12 @@ public:
 
     void visit(StaticAssert& node) override;
 
+    void visit(EnumDefinition& node) override {
+        auto def = copyPos(std::make_unique<EnumDefinition>(node.name), node);
+        def->enumerators = node.enumerators;
+        lastStmt = std::move(def);
+    }
+
     void visit(StructDefinition& node) override {
         auto def = copyPos(std::make_unique<StructDefinition>(node.name, node.isUnion), node);
         int currentOffset = 0;

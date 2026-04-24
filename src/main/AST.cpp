@@ -30,6 +30,7 @@ void CaseStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void DefaultStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void AsmStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void StaticAssert::accept(ASTVisitor& visitor) { visitor.visit(*this); }
+void EnumDefinition::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void StructDefinition::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void CompoundStatement::accept(ASTVisitor& visitor) { visitor.visit(*this); }
 void FunctionDeclaration::accept(ASTVisitor& visitor) { visitor.visit(*this); }

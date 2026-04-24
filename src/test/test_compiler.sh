@@ -45,6 +45,7 @@ TEST_FILES=(
     "src/test-resources/test_for_decl.c"
     "src/test-resources/test_modulo.c"
     "src/test-resources/test_typedef.c"
+    "src/test-resources/test_enum.c"
 )
 
 mkdir -p build/test

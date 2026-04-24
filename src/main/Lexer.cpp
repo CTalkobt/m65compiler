@@ -194,6 +194,7 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"sizeof", TokenType::SIZEOF},
         {"_Generic", TokenType::_GENERIC},
         {"typedef", TokenType::TYPEDEF},
+        {"enum", TokenType::ENUM},
         };
 
     auto it = keywords.find(value);
