@@ -248,6 +248,30 @@ void AssemblerGenerator::generate(AssemblerParser* parser, M65Emitter& e) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitPHWStackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;
             }
+            if (stmt->type == AssemblerParser::Statement::LDX_STACK) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitLDX_StackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::LDY_STACK) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitLDY_StackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::LDZ_STACK) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitLDZ_StackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::STX_STACK) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitSTX_StackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::STY_STACK) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitSTY_StackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
+            if (stmt->type == AssemblerParser::Statement::STZ_STACK) {
+                if (!isDeadCode) AssemblerSimulatedOps::emitSTZ_StackCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                continue;
+            }
             if (stmt->type == AssemblerParser::Statement::ZERO) {
                 if (!isDeadCode) AssemblerSimulatedOps::emitZeroCode(parser, e, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 continue;

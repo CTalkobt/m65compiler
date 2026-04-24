@@ -384,6 +384,36 @@ void AssemblerSimulatedOps::emitSTWCode(AssemblerParser* parser, M65Emitter& e, 
     } else throw std::runtime_error("Simulated STW only supports .AX, .AY, .AZ");
 }
 
+void AssemblerSimulatedOps::emitLDX_StackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
+    uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
+    e.lda_stack(offset); e.tax();
+}
+
+void AssemblerSimulatedOps::emitLDY_StackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
+    uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
+    e.lda_stack(offset); e.tay();
+}
+
+void AssemblerSimulatedOps::emitLDZ_StackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
+    uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
+    e.lda_stack(offset); e.taz();
+}
+
+void AssemblerSimulatedOps::emitSTX_StackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
+    uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
+    e.pha(); e.txa(); e.sta_stack(offset); e.pla();
+}
+
+void AssemblerSimulatedOps::emitSTY_StackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
+    uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
+    e.pha(); e.tya(); e.sta_stack(offset); e.pla();
+}
+
+void AssemblerSimulatedOps::emitSTZ_StackCode(AssemblerParser* parser, M65Emitter& e, int tokenIndex, const std::string& scopePrefix) {
+    uint32_t offset = parser->evaluateExpressionAt(tokenIndex, scopePrefix);
+    e.pha(); e.tza(); e.sta_stack(offset); e.pla();
+}
+
 void AssemblerSimulatedOps::emitSwapCode(AssemblerParser* parser, M65Emitter& e, const std::string& r1, int tokenIndex, const std::string&) {
     std::string r2 = parser->tokens[tokenIndex].value; if (!r2.empty() && r2[0] != '.') r2 = "." + r2;
     std::transform(r2.begin(), r2.end(), r2.begin(), ::toupper);

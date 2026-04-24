@@ -175,6 +175,36 @@ void AssemblerParser::emitSTWCode(std::vector<uint8_t>& binary, const std::strin
     AssemblerSimulatedOps::emitSTWCode(this, e, src, tokenIndex, scopePrefix, forceStack);
 }
 
+void AssemblerParser::emitLDX_StackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitLDX_StackCode(this, e, tokenIndex, scopePrefix);
+}
+
+void AssemblerParser::emitLDY_StackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitLDY_StackCode(this, e, tokenIndex, scopePrefix);
+}
+
+void AssemblerParser::emitLDZ_StackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitLDZ_StackCode(this, e, tokenIndex, scopePrefix);
+}
+
+void AssemblerParser::emitSTX_StackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitSTX_StackCode(this, e, tokenIndex, scopePrefix);
+}
+
+void AssemblerParser::emitSTY_StackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitSTY_StackCode(this, e, tokenIndex, scopePrefix);
+}
+
+void AssemblerParser::emitSTZ_StackCode(std::vector<uint8_t>& binary, int tokenIndex, const std::string& scopePrefix) {
+    M65Emitter e(binary, getZPStart());
+    AssemblerSimulatedOps::emitSTZ_StackCode(this, e, tokenIndex, scopePrefix);
+}
+
 void AssemblerParser::emitSwapCode(std::vector<uint8_t>& binary, const std::string& r1, int tokenIndex, const std::string& scopePrefix) {
     M65Emitter e(binary, getZPStart());
     AssemblerSimulatedOps::emitSwapCode(this, e, r1, tokenIndex, scopePrefix);
@@ -550,7 +580,13 @@ void AssemblerParser::pass1() {
                 else if (stmt->type == Statement::CHKNONZERO16) emitChkZeroCode(d, true, true, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::BRANCH16) emitBranch16Code(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::SELECT) emitSelectCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
-                else if (stmt->type == Statement::PTRSTACK) emitPtrStackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::PHW_STACK) emitPHWStackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::LDX_STACK) emitLDX_StackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::LDY_STACK) emitLDY_StackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::LDZ_STACK) emitLDZ_StackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::STX_STACK) emitSTX_StackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::STY_STACK) emitSTY_StackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
+                else if (stmt->type == Statement::STZ_STACK) emitSTZ_StackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::PTRDEREF) emitPtrDerefCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::LDWF || stmt->type == Statement::STWF || stmt->type == Statement::INCF || stmt->type == Statement::DECF) emitFlatMemoryCode(d, stmt->instr.mnemonic, stmt->instr.operandTokenIndex, stmt->scopePrefix);
                 else if (stmt->type == Statement::ASW) emitASWCode(d, stmt->instr.operand, stmt->instr.operandTokenIndex, stmt->scopePrefix);
@@ -725,6 +761,17 @@ void AssemblerParser::pass1() {
                     } else if ((stmt->instr.mnemonic == "inc" || stmt->instr.mnemonic == "dec") && stmt->instr.mode == AddressingMode::STACK_RELATIVE) {
                         stmt->type = (stmt->instr.mnemonic == "inc") ? Statement::STACK_INC8 : Statement::STACK_DEC8;
                         stmt->size = 5;
+                    } else if (stmt->instr.mode == AddressingMode::STACK_RELATIVE) {
+                        if (stmt->instr.mnemonic == "ldx") stmt->type = Statement::LDX_STACK;
+                        else if (stmt->instr.mnemonic == "ldy") stmt->type = Statement::LDY_STACK;
+                        else if (stmt->instr.mnemonic == "ldz") stmt->type = Statement::LDZ_STACK;
+                        else if (stmt->instr.mnemonic == "stx") stmt->type = Statement::STX_STACK;
+                        else if (stmt->instr.mnemonic == "sty") stmt->type = Statement::STY_STACK;
+                        else if (stmt->instr.mnemonic == "stz") stmt->type = Statement::STZ_STACK;
+                    }
+
+                    if (stmt->type != Statement::INSTRUCTION) {
+                        // Already handled
                     } else if (stmt->instr.mnemonic == "phw" && stmt->instr.mode == AddressingMode::STACK_RELATIVE) {
                         stmt->type = Statement::PHW_STACK;
                         std::vector<uint8_t> d; emitPHWStackCode(d, stmt->instr.operandTokenIndex, stmt->scopePrefix);
@@ -952,7 +999,13 @@ std::vector<uint8_t> AssemblerParser::pass2() {
                     else if (s->type == Statement::CHKNONZERO16) emitChkZeroCode(d, true, true, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::BRANCH16) emitBranch16Code(d, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::SELECT) emitSelectCode(d, s->instr.operandTokenIndex, s->scopePrefix);
-                    else if (s->type == Statement::PTRSTACK) emitPtrStackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::PHW_STACK) emitPHWStackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::LDX_STACK) emitLDX_StackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::LDY_STACK) emitLDY_StackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::LDZ_STACK) emitLDZ_StackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::STX_STACK) emitSTX_StackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::STY_STACK) emitSTY_StackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
+                    else if (s->type == Statement::STZ_STACK) emitSTZ_StackCode(d, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::PTRDEREF) emitPtrDerefCode(d, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::LDWF || s->type == Statement::STWF || s->type == Statement::INCF || s->type == Statement::DECF) emitFlatMemoryCode(d, s->instr.mnemonic, s->instr.operandTokenIndex, s->scopePrefix);
                     else if (s->type == Statement::ASW) emitASWCode(d, s->instr.operand, s->instr.operandTokenIndex, s->scopePrefix);
