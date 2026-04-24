@@ -375,7 +375,26 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         expect(TokenType::OPEN_PAREN, "Expected '(' after 'for'");
         std::unique_ptr<Statement> initializer = nullptr;
         if (!match(TokenType::SEMICOLON)) {
-            initializer = parseStatement();
+            // Check if it's a declaration
+            bool isDecl = false;
+            if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || 
+                peek().type == TokenType::UNSIGNED || peek().type == TokenType::SIGNED ||
+                peek().type == TokenType::STRUCT || peek().type == TokenType::UNION ||
+                peek().type == TokenType::VOLATILE || peek().type == TokenType::AUTO) {
+                isDecl = true;
+            }
+
+            if (isDecl) {
+                bool isVolatile = false;
+                while (match(TokenType::VOLATILE)) isVolatile = true;
+                match(TokenType::AUTO); // consume auto if present
+                initializer = parseVariableDeclaration(isVolatile);
+                // parseVariableDeclaration expects and consumes a semicolon
+            } else {
+                auto expr = parseExpression();
+                expect(TokenType::SEMICOLON, "Expected ';' after for initializer expression");
+                initializer = setPos(std::make_unique<ExpressionStatement>(std::move(expr)), startToken);
+            }
         }
         std::unique_ptr<Expression> condition = nullptr;
         if (!match(TokenType::SEMICOLON)) {

@@ -37,6 +37,37 @@ std::unique_ptr<TranslationUnit> ConstantFolder::foldTranslationUnit(std::unique
     return newUnit;
 }
 
+void ConstantFolder::visit(WhileStatement& node) {
+    knownConstants.clear(); // Disable constant propagation inside/across loops
+    auto condition = fold(std::move(node.condition));
+    auto* lit = dynamic_cast<IntegerLiteral*>(condition.get());
+    if (lit && lit->value == 0) {
+        lastStmt = nullptr;
+    } else {
+        lastStmt = copyPos(std::make_unique<WhileStatement>(std::move(condition), fold(std::move(node.body))), node);
+    }
+}
+
+void ConstantFolder::visit(DoWhileStatement& node) {
+    knownConstants.clear();
+    lastStmt = copyPos(std::make_unique<DoWhileStatement>(fold(std::move(node.body)), fold(std::move(node.condition))), node);
+}
+
+void ConstantFolder::visit(ForStatement& node) {
+    auto initializer = fold(std::move(node.initializer));
+    knownConstants.clear(); // Clear before condition/body/increment
+    auto condition = fold(std::move(node.condition));
+    auto increment = fold(std::move(node.increment));
+    auto body = fold(std::move(node.body));
+    
+    auto* lit = dynamic_cast<IntegerLiteral*>(condition.get());
+    if (lit && lit->value == 0) {
+        lastStmt = std::move(initializer);
+    } else {
+        lastStmt = copyPos(std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body)), node);
+    }
+}
+
 void ConstantFolder::visit(TranslationUnit& node) {
     for (auto& decl : node.topLevelDecls) {
         decl->accept(*this);

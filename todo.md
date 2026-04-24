@@ -1,6 +1,7 @@
 # TODO: cc45 Suite Roadmap
 Legend:
 [ ] - Todo
+[d] - Deferred long term, possible future
 [W] - Won't do
 [I] - In progress
 [X] - Done.
@@ -52,8 +53,8 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **`sizeof` Operator**: Implement `sizeof(type)` and `sizeof expr` to return the byte size of a type or expression at compile time.
 - [X] **Compound Assignment Operators**: Support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
 - [X] **Bitwise Binary Operators**: Support binary `&`, `|`, `^`, `<<`, `>>` as user-level expression operators.
-- [ ] **Modulo Operator**: Support `%` for integer remainder in expressions.
-- [ ] **`for` Loop Declarations**: Support variable declarations in the `for` loop initializer clause (C99: `for (int i = 0; ...)`).
+- [X] **Modulo Operator**: Support `%` for integer remainder in expressions.
+- [X] **`for` Loop Declarations**: Support variable declarations in the `for` loop initializer clause (C99: `for (int i = 0; ...)`).
 - [X] **Mixed Declarations and Code**: Allow variable declarations to appear anywhere within a block, not just at the start (C99).
 - [ ] **`__func__` Identifier**: Support the predefined `__func__` string literal containing the enclosing function name (C99).
 
@@ -71,14 +72,14 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **Structures**: Support `struct` definitions, members, and dot/arrow operators.
 - [X] **Pointers**: Multi-level indirection, dereferencing (`*`), and address-of (`&`).
 - [X] **Anonymous Structures & Unions**: Support nested structs/unions without names.
-- [ ] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
-- [ ] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
+- [d] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
+- [d] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
 - [X] **Global Variables**: Support top-level variable declarations.
 - [ ] **Type Definitions**: Implement `typedef`.
 - [X] **Signed Integers**: Support `signed` types and signed comparisons.
 - [X] **`unsigned` Keyword**: Support the explicit `unsigned` type specifier for variables and return types.
-- [ ] **`short` Type**: Support 16-bit `short` integer type.
-- [ ] **`long` Type**: Support 32-bit `long` integer type.
+- [d] **`short` Type**: Support 16-bit `short` integer type.
+- [d] **`long` Type**: Support 32-bit `long` integer type.
 - [ ] **`long long` Type**: Support 64-bit `long long` integer type (C99).
 - [ ] **`_Bool` Type**: Support C99 `_Bool` boolean type and `<stdbool.h>` header.
 - [ ] **`float` / `double` Types**: Support floating-point types (may leverage Commodore 40-bit float format via assembler).
@@ -87,7 +88,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **`restrict` Qualifier**: Support C99 `restrict` pointer qualifier to declare non-aliasing pointer arguments.
 - [ ] **`inline` Specifier**: Support the `inline` function specifier for inlining hints (C99).
 - [X] **Storage Classes**: Implement `auto` (default local) and `volatile` (qualifier).
-- [ ] **Modern Type Inference**: Implement `auto` as C23/C++ style type inference for declarations with initializers.
+- [d] **Modern Type Inference**: Implement `auto` as C23/C++ style type inference for declarations with initializers.
 - [ ] **Storage Classes (remaining)**: Implement `static` (local persistence and file-scope linkage), `extern` (external linkage), `register` (hint).
 - [X] **Arrays**: Implement native array declarations (`type name[size]`), subscript indexing (`a[i]`), and pointer decay.
 - [ ] **Array Initializers**: Support initialized array declarations including partial initialization and `= {0}` zero-fill.

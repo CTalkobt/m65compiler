@@ -57,8 +57,8 @@ public:
         if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
             auto* lit = dynamic_cast<IntegerLiteral*>(expression.get());
             if (lit && volatileVars.find(ref->name) == volatileVars.end()) {
-                // For compound assignment, we can't easily fold into a known constant 
-                // unless we know the previous value. For now, only fold simple assignment.
+                // Only propagate simple assignments that aren't inside potentially complex control flow.
+                // For now, we clear constants in loops anyway, but this is a safeguard.
                 if (node.op == "=") {
                     knownConstants[ref->name] = lit->value;
                 } else {
@@ -114,7 +114,9 @@ public:
                 lastExpr = copyPos(std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right)), node);
                 return;
             }
+
             lastExpr = copyPos(std::make_unique<IntegerLiteral>(result), node);
+            return;
         } else {
             lastExpr = copyPos(std::make_unique<BinaryOperation>(node.op, std::move(left), std::move(right)), node);
         }
@@ -248,34 +250,9 @@ public:
         }
     }
 
-    void visit(WhileStatement& node) override {
-        auto condition = fold(std::move(node.condition));
-        auto* lit = dynamic_cast<IntegerLiteral*>(condition.get());
-        if (lit && lit->value == 0) {
-            lastStmt = nullptr;
-        } else {
-            lastStmt = copyPos(std::make_unique<WhileStatement>(std::move(condition), fold(std::move(node.body))), node);
-        }
-    }
-
-    void visit(DoWhileStatement& node) override {
-        lastStmt = copyPos(std::make_unique<DoWhileStatement>(fold(std::move(node.body)), fold(std::move(node.condition))), node);
-    }
-
-    void visit(ForStatement& node) override {
-        auto initializer = fold(std::move(node.initializer));
-        auto condition = fold(std::move(node.condition));
-        auto increment = fold(std::move(node.increment));
-        auto body = fold(std::move(node.body));
-        
-        auto* lit = dynamic_cast<IntegerLiteral*>(condition.get());
-        if (lit && lit->value == 0) {
-            // If condition is constantly false, only initializer executes once (if it exists)
-            lastStmt = std::move(initializer);
-        } else {
-            lastStmt = copyPos(std::make_unique<ForStatement>(std::move(initializer), std::move(condition), std::move(increment), std::move(body)), node);
-        }
-    }
+    void visit(WhileStatement& node) override;
+    void visit(DoWhileStatement& node) override;
+    void visit(ForStatement& node) override;
 
     void visit(SwitchStatement& node) override {
         auto expression = fold(std::move(node.expression));

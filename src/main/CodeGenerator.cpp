@@ -1224,21 +1224,33 @@ void CodeGenerator::visit(DoWhileStatement& node) {
 
 void CodeGenerator::visit(ForStatement& node) {
     embedSource(node);
+    
+    // Scoping for for-loop initializer variables
+    auto oldVars = currentVars;
+    auto oldVarTypes = variableTypes;
+    auto oldZpRegs = zpRegs;
+
     if (node.initializer) {
         bool oldNeeded = resultNeeded;
         resultNeeded = false;
         node.initializer->accept(*this);
         resultNeeded = oldNeeded;
     }
+
     std::string labelStart = newLabel();
     std::string labelIncrement = newLabel();
     std::string labelEnd = newLabel();
+
     out << labelStart << ":" << std::endl;
+    invalidateRegs();
     if (node.condition) emitJumpIfFalse(node.condition.get(), labelEnd);
+
     loopStack.push_back({labelIncrement, labelEnd});
     node.body->accept(*this);
     loopStack.pop_back();
+
     out << labelIncrement << ":" << std::endl;
+    invalidateRegs();
     if (node.increment) {
         bool oldNeeded = resultNeeded;
         resultNeeded = false;
@@ -1246,8 +1258,17 @@ void CodeGenerator::visit(ForStatement& node) {
         resultNeeded = oldNeeded;
     }
     emit("bra " + labelStart);
+
     out << labelEnd << ":" << std::endl;
     invalidateRegs();
+
+    // Cleanup scope
+    if (currentVars.size() > oldVars.size()) {
+        emit(".cleanup " + std::to_string(currentVars.size() - oldVars.size()));
+    }
+    currentVars = std::move(oldVars);
+    variableTypes = std::move(oldVarTypes);
+    zpRegs = std::move(oldZpRegs);
 }
 
 void CodeGenerator::visit(SwitchStatement& node) {
@@ -1309,7 +1330,12 @@ void CodeGenerator::visit(SwitchStatement& node) {
         void visit(IfStatement& node) override { node.condition->accept(*this); node.thenBranch->accept(*this); if(node.elseBranch) node.elseBranch->accept(*this); }
         void visit(WhileStatement& node) override { node.condition->accept(*this); node.body->accept(*this); }
         void visit(DoWhileStatement& node) override { node.body->accept(*this); node.condition->accept(*this); }
-        void visit(ForStatement& node) override { if(node.initializer) node.initializer->accept(*this); if(node.condition) node.condition->accept(*this); if(node.increment) node.increment->accept(*this); node.body->accept(*this); }
+        void visit(ForStatement& node) override { 
+        if (node.initializer) node.initializer->accept(*this); 
+        if (node.condition) node.condition->accept(*this); 
+        if (node.increment) node.increment->accept(*this); 
+        node.body->accept(*this); 
+    }
         void visit(SwitchStatement&) override {}
         void visit(CaseStatement& node) override {
             uint32_t val = 0; if (auto* lit = dynamic_cast<IntegerLiteral*>(node.value.get())) val = lit->value;
@@ -1833,7 +1859,12 @@ public:
     void visit(IfStatement& node) override { node.condition->accept(*this); node.thenBranch->accept(*this); if(node.elseBranch) node.elseBranch->accept(*this); }
     void visit(WhileStatement& node) override { node.condition->accept(*this); node.body->accept(*this); }
     void visit(DoWhileStatement& node) override { node.body->accept(*this); node.condition->accept(*this); }
-    void visit(ForStatement& node) override { if(node.initializer) node.initializer->accept(*this); if(node.condition) node.condition->accept(*this); if(node.increment) node.increment->accept(*this); node.body->accept(*this); }
+    void visit(ForStatement& node) override { 
+        if (node.initializer) node.initializer->accept(*this); 
+        if (node.condition) node.condition->accept(*this); 
+        if (node.increment) node.increment->accept(*this); 
+        node.body->accept(*this); 
+    }
     void visit(SwitchStatement& node) override { node.expression->accept(*this); node.body->accept(*this); }
     void visit(CaseStatement& node) override { node.value->accept(*this); }
     void visit(DefaultStatement&) override {}
@@ -1847,15 +1878,6 @@ public:
 
 bool CodeGenerator::isVariableUsed(const std::string& varName, FunctionDeclaration& func) {
     VariableUseChecker checker(varName, varName, *this);
-    bool foundDecl = false;
-    for (auto& stmt : func.body->statements) {
-        if (!foundDecl) {
-            if (auto* varDecl = dynamic_cast<VariableDeclaration*>(stmt.get())) {
-                if (varDecl->name == varName) { foundDecl = true; if (varDecl->initializer) varDecl->initializer->accept(checker); continue; }
-            }
-        }
-        if (foundDecl) stmt->accept(checker);
-        if (checker.used) return true;
-    }
+    func.body->accept(checker);
     return checker.used;
 }
