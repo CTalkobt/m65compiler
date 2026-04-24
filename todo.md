@@ -75,7 +75,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [d] **Atomic Types**: Support `_Atomic` type qualifier (requires assembler primitives for locking/atomic ops).
 - [d] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
 - [X] **Global Variables**: Support top-level variable declarations.
-- [ ] **Type Definitions**: Implement `typedef`.
+- [X] **Type Definitions**: Implement `typedef`.
 - [X] **Signed Integers**: Support `signed` types and signed comparisons.
 - [X] **`unsigned` Keyword**: Support the explicit `unsigned` type specifier for variables and return types.
 - [d] **`short` Type**: Support 16-bit `short` integer type.

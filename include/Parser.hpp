@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <memory>
+#include <map>
 #include "Token.hpp"
 #include "AST.hpp"
 
@@ -46,6 +47,15 @@ private:
     std::unique_ptr<Expression> parseUnary();
     std::unique_ptr<Expression> parsePrimary();
     std::unique_ptr<Expression> parseGenericSelection();
+    void parseTypedef();
+
+    struct TypeAlias {
+        std::string baseType;
+        int pointerLevel;
+        bool isSigned;
+    };
+    std::map<std::string, TypeAlias> typedefs;
+    bool isTypedef(const std::string& name) const;
 
     int anonymousAggregateCount = 0;
     std::vector<std::unique_ptr<StructDefinition>> pendingDefinitions;

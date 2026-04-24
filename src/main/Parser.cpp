@@ -33,6 +33,10 @@ const Token& Parser::expect(TokenType type, const std::string& message) {
 std::unique_ptr<TranslationUnit> Parser::parse() {
     auto unit = setPos(std::make_unique<TranslationUnit>(), tokens[0]);
     while (peek().type != TokenType::END_OF_FILE) {
+        if (match(TokenType::TYPEDEF)) {
+            parseTypedef();
+            continue;
+        }
         if (peek().type == TokenType::ASM) {
             advance();
             expect(TokenType::OPEN_PAREN, "Expected '(' after asm");
@@ -57,6 +61,7 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                 pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
                 advance(); // struct/union
                 auto def = parseStructDefinition(isUnion);
+                expect(TokenType::SEMICOLON, "Expected ';' after struct/union definition");
                 flushPending(*unit);
                 unit->topLevelDecls.push_back(std::move(def));
                 continue;
@@ -101,7 +106,8 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                                      tokens[look].type == TokenType::SIGNED ||
                                      tokens[look].type == TokenType::VOID ||
                                      tokens[look].type == TokenType::STRUCT ||
-                                     tokens[look].type == TokenType::UNION)) {
+                                     tokens[look].type == TokenType::UNION ||
+                                     (tokens[look].type == TokenType::IDENTIFIER && isTypedef(tokens[look].value)))) {
             if (tokens[look].type == TokenType::UNSIGNED || tokens[look].type == TokenType::SIGNED) {
                 look++;
                 if (look < tokens.size() && (tokens[look].type == TokenType::INT || tokens[look].type == TokenType::CHAR)) {
@@ -176,6 +182,8 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     bool isNR = match(TokenType::_Noreturn);
     std::string returnType;
     bool isSigned = false;
+    int basePtrLevel = 0;
+
     if (match(TokenType::SIGNED)) {
         isSigned = true;
         if (match(TokenType::INT)) returnType = "int";
@@ -194,12 +202,19 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
         bool isU = tokens[pos-1].type == TokenType::UNION;
         returnType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
     }
+    else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
+        std::string alias = advance().value;
+        returnType = typedefs[alias].baseType;
+        isSigned = typedefs[alias].isSigned;
+        basePtrLevel = typedefs[alias].pointerLevel;
+    }
     else {
         std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
         throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected return type (int, char, void, struct, union) for function declaration. Found '" + foundStr + "' instead.");
     }
 
-    match(TokenType::STAR); // return pointer (optional)
+    int returnPtrLevel = basePtrLevel;
+    while (match(TokenType::STAR)) returnPtrLevel++;
 
     std::string name = expect(TokenType::IDENTIFIER, "Expected function name").value;
     
@@ -213,6 +228,8 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
             }
             std::string pType;
             bool pIsSigned = false;
+            int pBasePtrLevel = 0;
+
             if (match(TokenType::SIGNED)) {
                 pIsSigned = true;
                 if (match(TokenType::INT)) pType = "int";
@@ -230,12 +247,18 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
                 bool isU = tokens[pos-1].type == TokenType::UNION;
                 pType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
             }
+            else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
+                std::string pAlias = advance().value;
+                pType = typedefs[pAlias].baseType;
+                pIsSigned = typedefs[pAlias].isSigned;
+                pBasePtrLevel = typedefs[pAlias].pointerLevel;
+            }
             else {
                 std::string foundStr = peek().value.empty() ? peek().typeToString() : peek().value;
                 throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected parameter type (int, char, struct, union). Found '" + foundStr + "' instead.");
             }
 
-            int pPtrLevel = 0;
+            int pPtrLevel = pBasePtrLevel;
             while (match(TokenType::STAR)) pPtrLevel++;
 
             std::string pName = expect(TokenType::IDENTIFIER, "Expected parameter name").value;
@@ -270,6 +293,11 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return setPos(std::make_unique<LabelledStatement>(label, parseStatement()), tokens[pos-2]);
     }
 
+    if (match(TokenType::TYPEDEF)) {
+        parseTypedef();
+        return setPos(std::make_unique<CompoundStatement>(), tokens[pos-1]); // Dummy empty statement
+    }
+
     if (match(TokenType::GOTO)) {
         const Token& startToken = tokens[pos-1];
         std::string label = expect(TokenType::IDENTIFIER, "Expected label name after 'goto'").value;
@@ -295,12 +323,15 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         bool isUnion = peek().type == TokenType::UNION;
         if (pos + 1 < tokens.size() && tokens[pos+1].type == TokenType::IDENTIFIER && pos + 2 < tokens.size() && tokens[pos+2].type == TokenType::OPEN_BRACE) {
             advance(); // struct/union
-            return parseStructDefinition(isUnion);
+            auto def = parseStructDefinition(isUnion);
+            expect(TokenType::SEMICOLON, "Expected ';' after struct/union definition");
+            return def;
         }
         return parseVariableDeclaration(isVolatile);
     }
 
-    if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::UNSIGNED || peek().type == TokenType::SIGNED) {
+    if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::UNSIGNED || peek().type == TokenType::SIGNED ||
+        (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value))) {
         return parseVariableDeclaration(isVolatile);
     }
 
@@ -477,6 +508,7 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
     const Token& typeToken = peek();
     std::string type;
     bool isSigned = false;
+    int basePtrLevel = 0;
     if (match(TokenType::SIGNED)) {
         isSigned = true;
         if (match(TokenType::INT)) type = "int";
@@ -493,11 +525,17 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
     else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
         bool isU = tokens[pos-1].type == TokenType::UNION;
         type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+    }
+    else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
+        std::string alias = advance().value;
+        type = typedefs[alias].baseType;
+        isSigned = typedefs[alias].isSigned;
+        basePtrLevel = typedefs[alias].pointerLevel;
     } else {
         throw std::runtime_error("Syntax Error at " + std::to_string(peek().line) + ":" + std::to_string(peek().column) + ": Expected type for variable declaration. Found '" + peek().typeToString() + "' instead.");
     }
 
-    int ptrLevel = 0;
+    int ptrLevel = basePtrLevel;
     while (match(TokenType::STAR)) ptrLevel++;
 
     std::string name = expect(TokenType::IDENTIFIER, "Expected variable name").value;
@@ -573,6 +611,7 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
                 std::string nestedTypeName = (isNestedUnion ? "union " : "struct ") + nestedDef->name;
                 def->members.push_back({nestedTypeName, 0, false, "", 0, nullptr, true, -1});
                 pendingDefinitions.push_back(std::move(nestedDef));
+                match(TokenType::SEMICOLON); // consume optional semicolon
                 continue; 
             }
         }
@@ -618,7 +657,6 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
         expect(TokenType::SEMICOLON, "Expected ';'");
     }
     expect(TokenType::CLOSE_BRACE, "Expected '}'");
-    expect(TokenType::SEMICOLON, "Expected ';'");
     return def;
 }
 
@@ -765,10 +803,14 @@ std::unique_ptr<Expression> Parser::parseUnary() {
             // Check if it's a type or an expression
             if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || 
                 peek().type == TokenType::STRUCT || peek().type == TokenType::UNION ||
-                peek().type == TokenType::SIGNED || peek().type == TokenType::UNSIGNED) {
-                
+                peek().type == TokenType::SIGNED || peek().type == TokenType::UNSIGNED ||
+                (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value))) {
+
                 std::string type;
+                bool sIsSigned = false;
+                int sBasePtrLevel = 0;
                 if (match(TokenType::SIGNED) || match(TokenType::UNSIGNED)) {
+                    if (tokens[pos-1].type == TokenType::SIGNED) sIsSigned = true;
                     if (match(TokenType::INT)) type = "int";
                     else if (match(TokenType::CHAR)) type = "char";
                     else type = "int";
@@ -779,12 +821,21 @@ std::unique_ptr<Expression> Parser::parseUnary() {
                     bool isU = tokens[pos-1].type == TokenType::UNION;
                     type = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
                 }
-                
-                int ptrLevel = 0;
+                else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
+                    std::string sAlias = advance().value;
+                    type = typedefs[sAlias].baseType;
+                    sIsSigned = typedefs[sAlias].isSigned;
+                    sBasePtrLevel = typedefs[sAlias].pointerLevel;
+                }
+
+                int ptrLevel = sBasePtrLevel;
                 while (match(TokenType::STAR)) ptrLevel++;
                 expect(TokenType::CLOSE_PAREN, "Expected ')' after type in sizeof");
-                return setPos(std::make_unique<SizeofExpression>(type, ptrLevel), startToken);
-            } else {
+                auto node = std::make_unique<SizeofExpression>(type, ptrLevel);
+                // SizeofExpression doesn't currently store isSigned, but it's used for getTypeSize
+                return setPos(std::move(node), startToken);
+            }
+ else {
                 auto expr = parseExpression();
                 expect(TokenType::CLOSE_PAREN, "Expected ')' after expression in sizeof");
                 return setPos(std::make_unique<SizeofExpression>(std::move(expr)), startToken);
@@ -909,4 +960,60 @@ std::unique_ptr<Expression> Parser::parseGenericSelection() {
 
     expect(TokenType::CLOSE_PAREN, "Expected ')' at end of _Generic");
     return node;
+}
+
+void Parser::parseTypedef() {
+    std::string baseType;
+    bool isSigned = false;
+    int basePtrLevel = 0;
+
+    if (match(TokenType::SIGNED)) {
+        isSigned = true;
+        if (match(TokenType::INT)) baseType = "int";
+        else if (match(TokenType::CHAR)) baseType = "char";
+        else baseType = "int";
+    }
+    else if (match(TokenType::UNSIGNED)) {
+        if (match(TokenType::INT)) baseType = "int";
+        else if (match(TokenType::CHAR)) baseType = "char";
+        else baseType = "int";
+    }
+    else if (match(TokenType::INT)) baseType = "int";
+    else if (match(TokenType::CHAR)) baseType = "char";
+    else if (match(TokenType::VOID)) baseType = "void";
+    else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
+        bool isU = tokens[pos-1].type == TokenType::UNION;
+        if (peek().type == TokenType::OPEN_BRACE) {
+            auto def = parseStructDefinition(isU);
+            baseType = (isU ? "union " : "struct ") + def->name;
+            pendingDefinitions.push_back(std::move(def));
+            // parseStructDefinition might have consumed a semicolon if it was struct { ... };
+            // but for typedef struct { ... } Name; it shouldn't have.
+            // If it did, we might need to backtrack or adjust.
+            // Currently parseStructDefinition has match(TokenType::SEMICOLON) which is optional.
+        } else {
+            baseType = (isU ? "union " : "struct ") + expect(TokenType::IDENTIFIER, "Expected struct/union name").value;
+        }
+    }
+    else if (peek().type == TokenType::IDENTIFIER && isTypedef(peek().value)) {
+        std::string alias = advance().value;
+        baseType = typedefs[alias].baseType;
+        isSigned = typedefs[alias].isSigned;
+        basePtrLevel = typedefs[alias].pointerLevel;
+    }
+    else {
+        throw std::runtime_error("Expected type in typedef");
+    }
+
+    int ptrLevel = basePtrLevel;
+    while (match(TokenType::STAR)) ptrLevel++;
+
+    std::string newName = expect(TokenType::IDENTIFIER, "Expected alias name in typedef").value;
+    expect(TokenType::SEMICOLON, "Expected ';' after typedef");
+
+    typedefs[newName] = {baseType, ptrLevel, isSigned};
+}
+
+bool Parser::isTypedef(const std::string& name) const {
+    return typedefs.find(name) != typedefs.end();
 }

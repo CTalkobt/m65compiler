@@ -193,6 +193,7 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"goto", TokenType::GOTO},
         {"sizeof", TokenType::SIZEOF},
         {"_Generic", TokenType::_GENERIC},
+        {"typedef", TokenType::TYPEDEF},
         };
 
     auto it = keywords.find(value);

@@ -115,13 +115,16 @@ public:
         std::cout << std::endl;
     }
     void visit(VariableDeclaration& node) override {
-        printIndent(); std::cout << "VariableDeclaration: " << node.name << " (" << (node.isSigned ? "signed " : "") << node.type << ")" << std::endl;
+        printIndent(); std::cout << "VariableDeclaration: " << node.name << " (" << node.type;
+        for (int i = 0; i < node.pointerLevel; ++i) std::cout << "*";
+        std::cout << ")" << std::endl;
         if (node.initializer) {
             indent++;
             node.initializer->accept(*this);
             indent--;
         }
     }
+
     void visit(ReturnStatement& node) override {
         printIndent(); std::cout << "ReturnStatement" << std::endl;
         if (node.expression) {
