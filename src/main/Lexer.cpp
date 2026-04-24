@@ -148,6 +148,7 @@ Token Lexer::lexIdentifierOrKeyword() {
         {"char", TokenType::CHAR},
         {"auto", TokenType::AUTO},
         {"unsigned", TokenType::UNSIGNED},
+        {"signed", TokenType::SIGNED},
         {"return", TokenType::RETURN},
         {"void", TokenType::VOID},
         {"if", TokenType::IF},

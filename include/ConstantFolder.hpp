@@ -2,6 +2,7 @@
 #include "AST.hpp"
 #include <memory>
 #include <map>
+#include <set>
 #include <iostream>
 
 class ConstantFolder : public ASTVisitor {
@@ -10,6 +11,7 @@ public:
     std::unique_ptr<Expression> lastExpr;
     std::unique_ptr<Statement> lastStmt;
     std::map<std::string, int> knownConstants;
+    std::set<std::string> volatileVars;
 
     std::unique_ptr<Expression> fold(std::unique_ptr<Expression> expr) {
         if (!expr) return nullptr;
@@ -51,7 +53,8 @@ public:
         auto expression = fold(std::move(node.expression));
         
         if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
-            if (auto* lit = dynamic_cast<IntegerLiteral*>(expression.get())) {
+            auto* lit = dynamic_cast<IntegerLiteral*>(expression.get());
+            if (lit && volatileVars.find(ref->name) == volatileVars.end()) {
                 knownConstants[ref->name] = lit->value;
             } else {
                 knownConstants.erase(ref->name);
@@ -167,14 +170,20 @@ public:
             }
         }
         auto initializer = node.initializer ? fold(std::move(node.initializer)) : nullptr;
-        if (initializer) {
+        if (node.isVolatile) {
+            volatileVars.insert(node.name);
+            knownConstants.erase(node.name);
+        } else if (initializer) {
             if (auto* lit = dynamic_cast<IntegerLiteral*>(initializer.get())) {
                 knownConstants[node.name] = lit->value;
             } else {
                 knownConstants.erase(node.name);
             }
+        } else {
+            knownConstants.erase(node.name);
         }
         auto decl = copyPos(std::make_unique<VariableDeclaration>(node.type, node.name, node.pointerLevel), node);
+        decl->isSigned = node.isSigned;
         decl->initializer = std::move(initializer);
         decl->alignmentExpr = std::move(alignmentExpr);
         decl->alignment = node.alignment;
@@ -286,13 +295,14 @@ public:
                     alignment = lit->value;
                 }
             }
-            def->members.push_back({m.type, m.pointerLevel, m.name, alignment, std::move(alignmentExpr), m.isAnonymous, m.arraySize});
+            def->members.push_back({m.type, m.pointerLevel, m.isSigned, m.name, alignment, std::move(alignmentExpr), m.isAnonymous, m.arraySize});
         }
         lastStmt = std::move(def);
     }
 
     void visit(CompoundStatement& node) override {
         auto oldConstants = knownConstants;
+        auto oldVolatile = volatileVars;
         // Create a new vector to hold the folded statements
         std::vector<std::unique_ptr<Statement>> newStatements;
         for (auto& stmt : node.statements) {
@@ -303,6 +313,7 @@ public:
         }
         node.statements = std::move(newStatements);
         knownConstants = std::move(oldConstants);
+        volatileVars = std::move(oldVolatile);
         // We don't set lastStmt here, as CompoundStatement is modified in place
     }
 

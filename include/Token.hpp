@@ -7,6 +7,7 @@ enum class TokenType {
     CHAR,
     AUTO,
     UNSIGNED,
+    SIGNED,
     RETURN,
     VOID,
     IF,
@@ -88,6 +89,7 @@ struct Token {
             case TokenType::CHAR: return "CHAR";
             case TokenType::AUTO: return "AUTO";
             case TokenType::UNSIGNED: return "UNSIGNED";
+            case TokenType::SIGNED: return "SIGNED";
             case TokenType::RETURN: return "RETURN";
             case TokenType::VOID: return "VOID";
             case TokenType::IF: return "IF";

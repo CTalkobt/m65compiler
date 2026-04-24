@@ -85,22 +85,24 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                 }
             }
         }
+        
+        bool isSig = false;
 
-        while (tokens[look].type == TokenType::VOLATILE || tokens[look].type == TokenType::AUTO) {
+        while (tokens[look].type == TokenType::VOLATILE || tokens[look].type == TokenType::AUTO ||
+               tokens[look].type == TokenType::SIGNED || tokens[look].type == TokenType::UNSIGNED) {
             if (tokens[look].type == TokenType::VOLATILE) isVol = true;
-            else {
-                // 'auto' is not allowed at top level, but let's handle it for lookahead
-            }
+            else if (tokens[look].type == TokenType::SIGNED) isSig = true;
             look++;
         }
 
         if (look < tokens.size() && (tokens[look].type == TokenType::INT || 
                                      tokens[look].type == TokenType::CHAR || 
                                      tokens[look].type == TokenType::UNSIGNED ||
+                                     tokens[look].type == TokenType::SIGNED ||
                                      tokens[look].type == TokenType::VOID ||
                                      tokens[look].type == TokenType::STRUCT ||
                                      tokens[look].type == TokenType::UNION)) {
-            if (tokens[look].type == TokenType::UNSIGNED) {
+            if (tokens[look].type == TokenType::UNSIGNED || tokens[look].type == TokenType::SIGNED) {
                 look++;
                 if (look < tokens.size() && (tokens[look].type == TokenType::INT || tokens[look].type == TokenType::CHAR)) {
                     look++;
@@ -133,24 +135,25 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
                 look++;
                 if (look < tokens.size() && tokens[look].type == TokenType::OPEN_PAREN) {
                     if (isNR) match(TokenType::_Noreturn);
-                    while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
+                    while (match(TokenType::VOLATILE) || match(TokenType::AUTO) || match(TokenType::SIGNED) || match(TokenType::UNSIGNED));
                     auto decl = parseFunctionDeclaration();
                     decl->isNoreturn = isNR;
                     flushPending(*unit);
                     unit->topLevelDecls.push_back(std::move(decl));
                 } else {
                     if (isNR) match(TokenType::_Noreturn);
-                    while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
+                    while (match(TokenType::VOLATILE) || match(TokenType::AUTO) || match(TokenType::SIGNED) || match(TokenType::UNSIGNED));
                     auto decl = parseVariableDeclaration(isVol);
                     if (auto* vd = dynamic_cast<VariableDeclaration*>(decl.get())) {
                         vd->isGlobal = true;
+                        vd->isSigned = isSig;
                     }
                     flushPending(*unit);
                     unit->topLevelDecls.push_back(std::move(decl));
                 }
             } else {
                 if (isNR) match(TokenType::_Noreturn);
-                while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
+                while (match(TokenType::VOLATILE) || match(TokenType::AUTO) || match(TokenType::SIGNED) || match(TokenType::UNSIGNED));
                 auto decl = parseFunctionDeclaration();
                 decl->isNoreturn = isNR;
                 flushPending(*unit);
@@ -158,7 +161,7 @@ std::unique_ptr<TranslationUnit> Parser::parse() {
             }
         } else {
             if (isNR) match(TokenType::_Noreturn);
-            while (match(TokenType::VOLATILE) || match(TokenType::AUTO));
+            while (match(TokenType::VOLATILE) || match(TokenType::AUTO) || match(TokenType::SIGNED) || match(TokenType::UNSIGNED));
             auto decl = parseFunctionDeclaration();
             decl->isNoreturn = isNR;
             flushPending(*unit);
@@ -172,7 +175,14 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
     const Token& startToken = peek();
     bool isNR = match(TokenType::_Noreturn);
     std::string returnType;
-    if (match(TokenType::UNSIGNED)) {
+    bool isSigned = false;
+    if (match(TokenType::SIGNED)) {
+        isSigned = true;
+        if (match(TokenType::INT)) returnType = "int";
+        else if (match(TokenType::CHAR)) returnType = "char";
+        else returnType = "int";
+    }
+    else if (match(TokenType::UNSIGNED)) {
         if (match(TokenType::INT)) returnType = "int";
         else if (match(TokenType::CHAR)) returnType = "char";
         else returnType = "int"; // bare 'unsigned' is 'unsigned int'
@@ -202,7 +212,14 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
                 pIsVolatile = true;
             }
             std::string pType;
-            if (match(TokenType::UNSIGNED)) {
+            bool pIsSigned = false;
+            if (match(TokenType::SIGNED)) {
+                pIsSigned = true;
+                if (match(TokenType::INT)) pType = "int";
+                else if (match(TokenType::CHAR)) pType = "char";
+                else pType = "int";
+            }
+            else if (match(TokenType::UNSIGNED)) {
                 if (match(TokenType::INT)) pType = "int";
                 else if (match(TokenType::CHAR)) pType = "char";
                 else pType = "int";
@@ -222,13 +239,14 @@ std::unique_ptr<FunctionDeclaration> Parser::parseFunctionDeclaration() {
             while (match(TokenType::STAR)) pPtrLevel++;
 
             std::string pName = expect(TokenType::IDENTIFIER, "Expected parameter name").value;
-            params.push_back({pType, pPtrLevel, pName, pIsVolatile});
+            params.push_back({pType, pPtrLevel, pIsSigned, pName, pIsVolatile});
         } while (match(TokenType::COMMA));
     }
     expect(TokenType::CLOSE_PAREN, "Expected ')'");
     
     auto body = parseCompoundStatement();
     auto func = setPos(std::make_unique<FunctionDeclaration>(name, returnType), startToken);
+    func->isSigned = isSigned;
     func->parameters = std::move(params);
     func->body = std::move(body);
     func->isNoreturn = isNR;
@@ -253,6 +271,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
             isVolatile = true;
         } else if (match(TokenType::AUTO)) {
             isAuto = true;
+        } else if (peek().type == TokenType::SIGNED || peek().type == TokenType::UNSIGNED) {
+            break;
         } else {
             break;
         }
@@ -267,7 +287,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return parseVariableDeclaration(isVolatile);
     }
 
-    if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::UNSIGNED) {
+    if (peek().type == TokenType::INT || peek().type == TokenType::CHAR || peek().type == TokenType::UNSIGNED || peek().type == TokenType::SIGNED) {
         return parseVariableDeclaration(isVolatile);
     }
 
@@ -424,7 +444,14 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
 
     const Token& typeToken = peek();
     std::string type;
-    if (match(TokenType::UNSIGNED)) {
+    bool isSigned = false;
+    if (match(TokenType::SIGNED)) {
+        isSigned = true;
+        if (match(TokenType::INT)) type = "int";
+        else if (match(TokenType::CHAR)) type = "char";
+        else type = "int";
+    }
+    else if (match(TokenType::UNSIGNED)) {
         if (match(TokenType::INT)) type = "int";
         else if (match(TokenType::CHAR)) type = "char";
         else type = "int";
@@ -449,6 +476,7 @@ std::unique_ptr<Statement> Parser::parseVariableDeclaration(bool isVolatile) {
         expect(TokenType::CLOSE_SQUARE, "Expected ']' after array size");
     }
     auto decl = setPos(std::make_unique<VariableDeclaration>(type, name, ptrLevel), typeToken);
+    decl->isSigned = isSigned;
     decl->isVolatile = isVolatile;
     decl->alignmentExpr = std::move(alignmentExpr);
     decl->arraySize = arraySize;
@@ -511,14 +539,26 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
                 advance(); // struct/union
                 auto nestedDef = parseStructDefinition(isNestedUnion);
                 std::string nestedTypeName = (isNestedUnion ? "union " : "struct ") + nestedDef->name;
-                def->members.push_back({nestedTypeName, 0, "", 0, nullptr, true});
+                def->members.push_back({nestedTypeName, 0, false, "", 0, nullptr, true, -1});
                 pendingDefinitions.push_back(std::move(nestedDef));
                 continue; 
             }
         }
 
         std::string type;
-        if (match(TokenType::INT)) type = "int";
+        bool mIsSigned = false;
+        if (match(TokenType::SIGNED)) {
+            mIsSigned = true;
+            if (match(TokenType::INT)) type = "int";
+            else if (match(TokenType::CHAR)) type = "char";
+            else type = "int";
+        }
+        else if (match(TokenType::UNSIGNED)) {
+            if (match(TokenType::INT)) type = "int";
+            else if (match(TokenType::CHAR)) type = "char";
+            else type = "int";
+        }
+        else if (match(TokenType::INT)) type = "int";
         else if (match(TokenType::CHAR)) type = "char";
         else if (match(TokenType::STRUCT) || match(TokenType::UNION)) {
             bool isU = tokens[pos-1].type == TokenType::UNION;
@@ -542,7 +582,7 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
             arraySize = std::stoi(sizeToken.value);
             expect(TokenType::CLOSE_SQUARE, "Expected ']' after array size");
         }
-        def->members.push_back({type, ptrLevel, memberName, 0, std::move(mAlignmentExpr), false, arraySize});
+        def->members.push_back({type, ptrLevel, mIsSigned, memberName, 0, std::move(mAlignmentExpr), false, arraySize});
         expect(TokenType::SEMICOLON, "Expected ';'");
     }
     expect(TokenType::CLOSE_BRACE, "Expected '}'");

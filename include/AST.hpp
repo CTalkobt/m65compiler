@@ -120,6 +120,7 @@ class AlignofExpression : public Expression {
 public:
     std::string typeName;
     int pointerLevel;
+    bool isSigned = false;
     AlignofExpression(const std::string& t, int p = 0) : typeName(t), pointerLevel(p) {}
     void accept(ASTVisitor& visitor) override;
 };
@@ -128,6 +129,7 @@ class VariableDeclaration : public Statement {
 public:
     std::string type;
     int pointerLevel;
+    bool isSigned = false;
     std::string name;
     bool isVolatile = false;
     bool isGlobal = false;
@@ -258,6 +260,7 @@ public:
 struct StructMember {
     std::string type;
     int pointerLevel;
+    bool isSigned = false;
     std::string name;
     int alignment = 0;
     std::unique_ptr<Expression> alignmentExpr;
@@ -277,6 +280,7 @@ public:
 struct Parameter {
     std::string type;
     int pointerLevel;
+    bool isSigned = false;
     std::string name;
     bool isVolatile = false; // New: volatile qualifier
 };
@@ -285,6 +289,7 @@ class FunctionDeclaration : public Statement {
 public:
     std::string name;
     std::string returnType;
+    bool isSigned = false;
     std::vector<Parameter> parameters;
     std::unique_ptr<CompoundStatement> body;
     bool isNoreturn = false;

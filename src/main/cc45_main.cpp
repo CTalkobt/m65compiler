@@ -115,7 +115,7 @@ public:
         std::cout << std::endl;
     }
     void visit(VariableDeclaration& node) override {
-        printIndent(); std::cout << "VariableDeclaration: " << node.name << " (" << node.type << ")" << std::endl;
+        printIndent(); std::cout << "VariableDeclaration: " << node.name << " (" << (node.isSigned ? "signed " : "") << node.type << ")" << std::endl;
         if (node.initializer) {
             indent++;
             node.initializer->accept(*this);
@@ -270,14 +270,14 @@ public:
         indent--;
     }
     void visit(FunctionDeclaration& node) override {
-        printIndent(); std::cout << "FunctionDeclaration: " << node.name << " (" << node.returnType << ")";
+        printIndent(); std::cout << "FunctionDeclaration: " << node.name << " (" << (node.isSigned ? "signed " : "") << node.returnType << ")";
         if (node.isNoreturn) std::cout << " [noreturn]";
         std::cout << std::endl;
         indent++;
         for (const auto& param : node.parameters) {
             std::string ptrs = "";
             for (int i = 0; i < param.pointerLevel; i++) ptrs += "*";
-            printIndent(); std::cout << "Parameter: " << param.name << " (" << param.type << ptrs << ")" << std::endl;
+            printIndent(); std::cout << "Parameter: " << param.name << " (" << (param.isSigned ? "signed " : "") << param.type << ptrs << ")" << std::endl;
         }
         node.body->accept(*this);
         indent--;

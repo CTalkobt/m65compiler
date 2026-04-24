@@ -19,16 +19,19 @@ public:
     struct VarInfo {
         std::string type;
         int pointerLevel;
+        bool isSigned = false;
         bool isVolatile = false; // New: volatile qualifier
         int arraySize = -1;
     };
     struct ExpressionType {
         std::string type;
         int pointerLevel;
+        bool isSigned = false;
     };
     struct MemberInfo {
         std::string type;
         int pointerLevel;
+        bool isSigned = false;
         int offset;
         int alignment = 1;
         int arraySize = -1;

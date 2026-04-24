@@ -30,7 +30,7 @@ Steps required to bring the C compiler closer to C11 standards.
 ### 1. Keyword & Syntax Support
 - [X] **Control Flow**: Implement `if`, `else`, `while`, `do-while`, and `for` statements.
 - [X] **Logical Operators**: Full support for `&&`, `||`, `!` with short-circuiting.
-- [X] **Comparison Operators**: Support `==`, `!=`, `<`, `>`, `<=`, `>=`.
+- [X] **Comparison Operators**: Support `==`, `!=`, `<`, `>`, `<=`, `>=` (signed/unsigned aware).
 - [X] **Regression Testing**: Implement automated build and test runner (`test_compiler.sh`).
 - [X] **Static Assertions**: Implement `_Static_assert(const-expr, string)` parsing and validation.
 - [X] **Generic Selections**: Implement `_Generic` expressions for type-based dispatch.
@@ -75,7 +75,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [ ] **Variable Length Arrays**: Support C99/C11 VLAs (requires dynamic stack allocation logic).
 - [X] **Global Variables**: Support top-level variable declarations.
 - [ ] **Type Definitions**: Implement `typedef`.
-- [ ] **Signed Integers**: Support `signed` types and signed arithmetic/comparisons.
+- [X] **Signed Integers**: Support `signed` types and signed comparisons.
 - [X] **`unsigned` Keyword**: Support the explicit `unsigned` type specifier for variables and return types.
 - [ ] **`short` Type**: Support 16-bit `short` integer type.
 - [ ] **`long` Type**: Support 32-bit `long` integer type.

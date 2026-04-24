@@ -75,7 +75,7 @@ bool CodeGenerator::matchType(const ExpressionType& t1, const std::string& t2Nam
 }
 
 CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
-    if (!expr) return {"int", 0};
+    if (!expr) return {"int", 0, false};
     if (auto* gs = dynamic_cast<GenericSelection*>(expr)) {
         // Resolve based on control type
         ExpressionType controlType = getExprType(gs->control.get());
@@ -90,32 +90,38 @@ CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
         throw std::runtime_error("No matching association in _Generic selection");
     }
     if (auto* ref = dynamic_cast<VariableReference*>(expr)) {
-        std::string rName = resolveVarName(ref->name);
+        std::string rName = "_l_" + ref->name;
         if (variableTypes.count(rName)) {
             VarInfo& vi = variableTypes.at(rName);
-            if (vi.arraySize >= 0) return {vi.type, vi.pointerLevel + 1};
-            return {vi.type, vi.pointerLevel};
+            return {vi.type, vi.pointerLevel, vi.isSigned};
         }
         if (globalVariableTypes.count("_g_" + ref->name)) {
             VarInfo& vi = globalVariableTypes.at("_g_" + ref->name);
-            if (vi.arraySize >= 0) return {vi.type, vi.pointerLevel + 1};
-            return {vi.type, vi.pointerLevel};
+            return {vi.type, vi.pointerLevel, vi.isSigned};
         }
+    }
+    if (auto* vd = dynamic_cast<VariableDeclaration*>(expr)) {
+        return {vd->type, vd->pointerLevel, vd->isSigned};
     }
     if (auto* aa = dynamic_cast<ArrayAccess*>(expr)) {
         ExpressionType base = getExprType(aa->arrayExpr.get());
-        if (base.pointerLevel > 0) return {base.type, base.pointerLevel - 1};
-        return {base.type, 0};
+        if (base.pointerLevel > 0) return {base.type, base.pointerLevel - 1, base.isSigned};
+        return {base.type, 0, base.isSigned};
     }
     if (auto* cond = dynamic_cast<ConditionalExpression*>(expr)) {
         return getExprType(cond->thenExpr.get());
     }
-    if (auto* bin = dynamic_cast<BinaryOperation*>(expr)) { return getExprType(bin->left.get()); }
+    if (auto* bin = dynamic_cast<BinaryOperation*>(expr)) { 
+        ExpressionType lhs = getExprType(bin->left.get());
+        ExpressionType rhs = getExprType(bin->right.get());
+        bool resSigned = lhs.isSigned || rhs.isSigned;
+        return {lhs.type, lhs.pointerLevel, resSigned};
+    }
     if (auto* un = dynamic_cast<UnaryOperation*>(expr)) {
-        if (un->op == "!") return {"char", 0};
+        if (un->op == "!") return {"char", 0, false};
         CodeGenerator::ExpressionType sub = getExprType(un->operand.get());
-        if (un->op == "*") return {sub.type, sub.pointerLevel > 0 ? sub.pointerLevel - 1 : 0};
-        if (un->op == "&") return {sub.type, sub.pointerLevel + 1};
+        if (un->op == "*") return {sub.type, sub.pointerLevel > 0 ? sub.pointerLevel - 1 : 0, sub.isSigned};
+        if (un->op == "&") return {sub.type, sub.pointerLevel + 1, sub.isSigned};
         return sub;
     }
     if (auto* ma = dynamic_cast<MemberAccess*>(expr)) {
@@ -123,7 +129,8 @@ CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
         if (!isStruct(baseType.type)) {
              if (auto* ref = dynamic_cast<VariableReference*>(ma->structExpr.get())) {
                  if (globalVariableTypes.count("_g_" + ref->name)) {
-                     baseType = {globalVariableTypes.at("_g_" + ref->name).type, globalVariableTypes.at("_g_" + ref->name).pointerLevel};
+                     VarInfo& gv = globalVariableTypes.at("_g_" + ref->name);
+                     baseType = {gv.type, gv.pointerLevel, gv.isSigned};
                  }
              }
         }
@@ -133,13 +140,13 @@ CodeGenerator::ExpressionType CodeGenerator::getExprType(Expression* expr) {
                 auto& sInfo = *structs[sName];
                 if (sInfo.members.count(ma->memberName)) {
                     MemberInfo& mInfo = sInfo.members[ma->memberName];
-                    if (mInfo.arraySize >= 0) return {mInfo.type, mInfo.pointerLevel + 1};
-                    return {mInfo.type, mInfo.pointerLevel};
+                    if (mInfo.arraySize >= 0) return {mInfo.type, mInfo.pointerLevel + 1, mInfo.isSigned};
+                    return {mInfo.type, mInfo.pointerLevel, mInfo.isSigned};
                 }
             }
         }
     }
-    return {"int", 0};
+    return {"int", 0, false};
 }
 
 void CodeGenerator::emitAddress(Expression* expr) {
@@ -281,7 +288,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
 
     if (node.isGlobal || currentFunction == nullptr) {
         std::string gName = "_g_" + node.name;
-        globalVariableTypes[gName] = {node.type, node.pointerLevel, node.isVolatile, node.arraySize};
+        globalVariableTypes[gName] = {node.type, node.pointerLevel, node.isSigned, node.isVolatile, node.arraySize};
         if (node.isGlobal) {
             globalVars.push_back(&node);
             return;
@@ -289,7 +296,7 @@ void CodeGenerator::visit(VariableDeclaration& node) {
     }
 
     std::string lName = "_l_" + node.name;
-    variableTypes[lName] = {node.type, node.pointerLevel, node.isVolatile, node.arraySize};
+    variableTypes[lName] = {node.type, node.pointerLevel, node.isSigned, node.isVolatile, node.arraySize};
     int size = 0;
     if (node.pointerLevel > 0) size = 2;
     else if (node.type == "char") size = 1;
@@ -758,10 +765,32 @@ void CodeGenerator::visit(BinaryOperation& node) {
     } else if (node.op == "^") {
         std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
         emit("eor.16 .ax, $" + ss2.str());
-    } else if (node.op == "==" || node.op == "!=") {
+    } else if (node.op == "==" || node.op == "!=" || node.op == "<" || node.op == ">" || node.op == "<=" || node.op == ">=") {
         std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("cmp.16 .ax, $" + ss2.str());
-        std::string labelFalse = newDontCareLabel(); std::string labelEnd = newDontCareLabel();        if (node.op == "==") emit("bne " + labelFalse); else emit("beq " + labelFalse);
+        bool eitherSigned = lhsType.isSigned || rhsType.isSigned;
+        if (eitherSigned) {
+            emit("cmp.s16 .ax, $" + ss2.str());
+        } else {
+            emit("cmp.16 .ax, $" + ss2.str());
+        }
+        std::string labelFalse = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+        if (node.op == "==") emit("bne " + labelFalse);
+        else if (node.op == "!=") emit("beq " + labelFalse);
+        else if (node.op == "<") emit("bcs " + labelFalse);
+        else if (node.op == ">") {
+            emit("beq " + labelFalse); // If equal, not greater
+            emit("bcc " + labelFalse); // If less, not greater
+        }
+        else if (node.op == "<=") {
+             // True if less or equal. False if greater.
+             // We can check equality first, then use BCS for greater.
+             std::string labelTrue = newDontCareLabel();
+             emit("beq " + labelTrue);
+             emit("bcs " + labelFalse);
+             out << labelTrue << ":" << std::endl;
+        }
+        else if (node.op == ">=") emit("bcc " + labelFalse);
+
         emitter->lda_imm(1); emitter->bra(0x02); out << labelFalse << ":" << std::endl; emitter->lda_imm(0); out << labelEnd << ":" << std::endl;
         emitter->ldx_imm(0); updateRegX(0);
     }
