@@ -47,9 +47,11 @@ public:
 
 class Assignment : public Expression {
 public:
+    std::string op;
     std::unique_ptr<Expression> target;
     std::unique_ptr<Expression> expression;
-    Assignment(std::unique_ptr<Expression> t, std::unique_ptr<Expression> e) : target(std::move(t)), expression(std::move(e)) {}
+    Assignment(std::unique_ptr<Expression> t, std::unique_ptr<Expression> e, const std::string& o = "=") 
+        : op(o), target(std::move(t)), expression(std::move(e)) {}
     void accept(ASTVisitor& visitor) override;
 };
 

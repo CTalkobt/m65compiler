@@ -392,8 +392,108 @@ void CodeGenerator::visit(VariableDeclaration& node) {
     invalidateRegs();
 }
 
+void CodeGenerator::emitOperation(const std::string& op, int zpLeft, ExpressionType lhsType, ExpressionType rhsType) {
+    int scale = 1;
+    if (lhsType.pointerLevel > 0 && rhsType.pointerLevel == 0 && (op == "+" || op == "-")) {
+        scale = (lhsType.type == "char" && lhsType.pointerLevel == 1) ? 1 : 2;
+    }
+    if (scale > 1) {
+        emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
+    }
+
+    std::stringstream ssLeft;
+    ssLeft << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpLeft);
+
+    if (op == "+" || op == "&" || op == "|" || op == "^") {
+        if (op == "+") emit("add.16 .ax, $" + ssLeft.str());
+        else if (op == "&") emit("and.16 .ax, $" + ssLeft.str());
+        else if (op == "|") emit("ora.16 .ax, $" + ssLeft.str());
+        else if (op == "^") emit("eor.16 .ax, $" + ssLeft.str());
+    } else {
+        int zpRight = allocateZP(2);
+        std::stringstream ssRight;
+        ssRight << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpRight);
+        emit("stax $" + ssRight.str());
+        emit("ldax $" + ssLeft.str());
+
+        if (op == "-") emit("sub.16 .ax, $" + ssRight.str());
+        else if (op == "*") emit("mul.16 .ax, $" + ssRight.str());
+        else if (op == "/" || op == "%") {
+            emit("div.16 .ax, $" + ssRight.str());
+            if (op == "%") { emit("lda $D770"); emit("ldx $D771"); }
+        } else if (op == "<<") {
+            std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+            int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+            emit("lda $" + ssRight.str()); emit("sta $" + ssSh.str());
+            out << labelStart << ":" << std::endl;
+            emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
+            emit("lsl.16 .ax");
+            emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
+            freeZP(shiftZp, 1);
+        } else if (op == ">>") {
+            std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+            int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+            emit("lda $" + ssRight.str()); emit("sta $" + ssSh.str());
+            out << labelStart << ":" << std::endl;
+            emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
+            emit("lsr.16 .ax");
+            emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
+            freeZP(shiftZp, 1);
+        }
+        freeZP(zpRight, 2);
+    }
+}
+
 void CodeGenerator::visit(Assignment& node) {
     embedSource(node);
+
+    if (node.op != "=") {
+        std::string actualOp = node.op.substr(0, node.op.length() - 1);
+        ExpressionType targetType = getExprType(node.target.get());
+        bool is16 = (targetType.pointerLevel > 0 || targetType.type == "int");
+        if (isStruct(targetType.type)) {
+            std::string sName = getAggregateName(targetType.type);
+            if (structs.count(sName) && structs[sName]->totalSize > 1) is16 = true;
+        }
+
+        emitAddress(node.target.get());
+        int zpAddr = allocateZP(2);
+        std::stringstream ssAddr;
+        ssAddr << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpAddr);
+        emit("stax $" + ssAddr.str());
+
+        if (is16) {
+            emit("ptrderef $" + ssAddr.str());
+        } else {
+            emitter->lda_ind_z(emitter->getZP(zpAddr), false);
+            updateRegY(0); emitter->ldx_imm(0); updateRegX(0);
+        }
+
+        int zpLeft = allocateZP(2);
+        std::stringstream ssLeft;
+        ssLeft << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpLeft);
+        emit("stax $" + ssLeft.str());
+
+        bool oldNeeded = resultNeeded;
+        resultNeeded = true;
+        node.expression->accept(*this);
+        resultNeeded = oldNeeded;
+
+        emitOperation(actualOp, zpLeft, targetType, getExprType(node.expression.get()));
+
+        emitter->sta_ind_z(emitter->getZP(zpAddr), false);
+        if (is16) {
+            emitter->txa();
+            emitter->ldy_imm(1);
+            emit("sta ($" + ssAddr.str() + "),y");
+        }
+        
+        freeZP(zpLeft, 2);
+        freeZP(zpAddr, 2);
+        invalidateRegs();
+        return;
+    }
+
     if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
         std::string rName = resolveVarName(ref->name);
         bool isGlobal = (rName.length() >= 3 && rName.substr(0, 3) == "_g_");
@@ -739,74 +839,74 @@ void CodeGenerator::visit(BinaryOperation& node) {
     if (scale > 1) {
         emitter->asl_a(); emitter->pha(); emitter->txa(); emitter->rol_a(); emitter->tax(); emitter->pla();
     }
-    if (node.op == "+") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("add.16 .ax, $" + ss2.str());
-    } else if (node.op == "-") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("sub.16 .ax, $" + ss2.str());
-    } else if (node.op == "*") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("mul.16 .ax, $" + ss2.str());
-    } else if (node.op == "/" || node.op == "%") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("div.16 .ax, $" + ss2.str());
-        if (node.op == "%") { emit("lda $D770"); emit("ldx $D771"); }
-    } else if (node.op == "<<") {
-        std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
-        int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
-        emit("sta $" + ssSh.str()); std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("ldax $" + ssVal.str()); out << labelStart << ":" << std::endl;
-        emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
-        emit("lsl.16 .ax");
-        emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
-        freeZP(shiftZp, 1);
-    } else if (node.op == ">>") {
-        std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
-        int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
-        emit("sta $" + ssSh.str()); std::stringstream ssVal; ssVal << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("ldax $" + ssVal.str()); out << labelStart << ":" << std::endl;
-        emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
-        emit("lsr.16 .ax");
-        emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
-        freeZP(shiftZp, 1);
-    } else if (node.op == "&") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("and.16 .ax, $" + ss2.str());
-    } else if (node.op == "|") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("ora.16 .ax, $" + ss2.str());
-    } else if (node.op == "^") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        emit("eor.16 .ax, $" + ss2.str());
-    } else if (node.op == "==" || node.op == "!=" || node.op == "<" || node.op == ">" || node.op == "<=" || node.op == ">=") {
-        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
-        bool eitherSigned = lhsType.isSigned || rhsType.isSigned;
-        if (eitherSigned) {
-            emit("cmp.s16 .ax, $" + ss2.str());
-        } else {
-            emit("cmp.16 .ax, $" + ss2.str());
-        }
-        std::string labelFalse = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
-        if (node.op == "==") emit("bne " + labelFalse);
-        else if (node.op == "!=") emit("beq " + labelFalse);
-        else if (node.op == "<") emit("bcs " + labelFalse);
-        else if (node.op == ">") {
-            emit("beq " + labelFalse); // If equal, not greater
-            emit("bcc " + labelFalse); // If less, not greater
-        }
-        else if (node.op == "<=") {
-             // True if less or equal. False if greater.
-             // We can check equality first, then use BCS for greater.
-             std::string labelTrue = newDontCareLabel();
-             emit("beq " + labelTrue);
-             emit("bcs " + labelFalse);
-             out << labelTrue << ":" << std::endl;
-        }
-        else if (node.op == ">=") emit("bcc " + labelFalse);
 
-        emitter->lda_imm(1); emitter->bra(0x02); out << labelFalse << ":" << std::endl; emitter->lda_imm(0); out << labelEnd << ":" << std::endl;
-        emitter->ldx_imm(0); updateRegX(0);
+    if (node.op == "+" || node.op == "&" || node.op == "|" || node.op == "^") {
+        std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpIdx);
+        if (node.op == "+") emit("add.16 .ax, $" + ss2.str());
+        else if (node.op == "&") emit("and.16 .ax, $" + ss2.str());
+        else if (node.op == "|") emit("ora.16 .ax, $" + ss2.str());
+        else if (node.op == "^") emit("eor.16 .ax, $" + ss2.str());
+    } else if (node.op == "-" || node.op == "*" || node.op == "/" || node.op == "%" || node.op == "<<" || node.op == ">>" || 
+               node.op == "==" || node.op == "!=" || node.op == "<" || node.op == ">" || node.op == "<=" || node.op == ">=") {
+        int zpRight = allocateZP(2);
+        std::stringstream ssRight; ssRight << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpRight);
+        emit("stax $" + ssRight.str());
+        emit("ldax $" + ss.str()); // Load left back into AX
+
+        if (node.op == "-") {
+            emit("sub.16 .ax, $" + ssRight.str());
+        } else if (node.op == "*") {
+            emit("mul.16 .ax, $" + ssRight.str());
+        } else if (node.op == "/" || node.op == "%") {
+            emit("div.16 .ax, $" + ssRight.str());
+            if (node.op == "%") { emit("lda $D770"); emit("ldx $D771"); }
+        } else if (node.op == "<<") {
+            std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+            int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+            emit("lda $" + ssRight.str()); emit("sta $" + ssSh.str());
+            out << labelStart << ":" << std::endl;
+            emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
+            emit("lsl.16 .ax");
+            emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
+            freeZP(shiftZp, 1);
+        } else if (node.op == ">>") {
+            std::string labelStart = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+            int shiftZp = allocateZP(1); std::stringstream ssSh; ssSh << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(shiftZp);
+            emit("lda $" + ssRight.str()); emit("sta $" + ssSh.str());
+            out << labelStart << ":" << std::endl;
+            emit("lda $" + ssSh.str()); emit("beq " + labelEnd); emit("dec $" + ssSh.str());
+            emit("lsr.16 .ax");
+            emit("bra " + labelStart); out << labelEnd << ":" << std::endl;
+            freeZP(shiftZp, 1);
+        } else {
+            // Relational
+            std::stringstream ss2; ss2 << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << (int)emitter->getZP(zpRight);
+            bool eitherSigned = lhsType.isSigned || rhsType.isSigned;
+            if (eitherSigned) {
+                emit("cmp.s16 .ax, $" + ss2.str());
+            } else {
+                emit("cmp.16 .ax, $" + ss2.str());
+            }
+            std::string labelFalse = newDontCareLabel(); std::string labelEnd = newDontCareLabel();
+            if (node.op == "==") emit("bne " + labelFalse);
+            else if (node.op == "!=") emit("beq " + labelFalse);
+            else if (node.op == "<") emit("bcs " + labelFalse);
+            else if (node.op == ">") {
+                emit("beq " + labelFalse);
+                emit("bcc " + labelFalse);
+            }
+            else if (node.op == "<=") {
+                 std::string labelTrue = newDontCareLabel();
+                 emit("beq " + labelTrue);
+                 emit("bcs " + labelFalse);
+                 out << labelTrue << ":" << std::endl;
+            }
+            else if (node.op == ">=") emit("bcc " + labelFalse);
+
+            emitter->lda_imm(1); emitter->bra(0x02); out << labelFalse << ":" << std::endl; emitter->lda_imm(0); out << labelEnd << ":" << std::endl;
+            emitter->ldx_imm(0); updateRegX(0);
+        }
+        freeZP(zpRight, 2);
     }
     invalidateFlags();
     freeZP(zpIdx, 2);

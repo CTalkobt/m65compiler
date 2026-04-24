@@ -57,12 +57,18 @@ public:
         if (auto* ref = dynamic_cast<VariableReference*>(node.target.get())) {
             auto* lit = dynamic_cast<IntegerLiteral*>(expression.get());
             if (lit && volatileVars.find(ref->name) == volatileVars.end()) {
-                knownConstants[ref->name] = lit->value;
+                // For compound assignment, we can't easily fold into a known constant 
+                // unless we know the previous value. For now, only fold simple assignment.
+                if (node.op == "=") {
+                    knownConstants[ref->name] = lit->value;
+                } else {
+                    knownConstants.erase(ref->name);
+                }
             } else {
                 knownConstants.erase(ref->name);
             }
         }
-        lastExpr = copyPos(std::make_unique<Assignment>(std::move(node.target), std::move(expression)), node);
+        lastExpr = copyPos(std::make_unique<Assignment>(std::move(node.target), std::move(expression), node.op), node);
     }
 
     void visit(BinaryOperation& node) override {

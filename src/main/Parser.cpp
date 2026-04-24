@@ -605,9 +605,13 @@ std::unique_ptr<StructDefinition> Parser::parseStructDefinition(bool isUnion) {
 
 std::unique_ptr<Expression> Parser::parseExpression() {
     auto expr = parseConditional();
-    if (match(TokenType::EQUALS)) {
+    if (match(TokenType::EQUALS) || match(TokenType::PLUS_EQUALS) || match(TokenType::MINUS_EQUALS) ||
+        match(TokenType::STAR_EQUALS) || match(TokenType::SLASH_EQUALS) || match(TokenType::PERCENT_EQUALS) ||
+        match(TokenType::AMPERSAND_EQUALS) || match(TokenType::PIPE_EQUALS) || match(TokenType::CARET_EQUALS) ||
+        match(TokenType::LSHIFT_EQUALS) || match(TokenType::RSHIFT_EQUALS)) {
         const Token& opToken = tokens[pos-1];
-        return setPos(std::make_unique<Assignment>(std::move(expr), parseExpression()), opToken);
+        std::string op = opToken.value;
+        return setPos(std::make_unique<Assignment>(std::move(expr), parseExpression(), op), opToken);
     }
     return expr;
 }

@@ -70,6 +70,16 @@ enum class TokenType {
     ARROW,         // ->
     PLUS_PLUS,     // ++
     MINUS_MINUS,   // --
+    PLUS_EQUALS,   // +=
+    MINUS_EQUALS,  // -=
+    STAR_EQUALS,   // *=
+    SLASH_EQUALS,  // /=
+    PERCENT_EQUALS,// %=
+    AMPERSAND_EQUALS, // &=
+    PIPE_EQUALS,   // |=
+    CARET_EQUALS,  // ^=
+    LSHIFT_EQUALS, // <<=
+    RSHIFT_EQUALS, // >>=
     QUESTION_MARK, // ?
     OPEN_SQUARE,   // [
     CLOSE_SQUARE,  // ]
@@ -153,6 +163,16 @@ struct Token {
             case TokenType::ARROW: return "ARROW";
             case TokenType::PLUS_PLUS: return "PLUS_PLUS";
             case TokenType::MINUS_MINUS: return "MINUS_MINUS";
+            case TokenType::PLUS_EQUALS: return "PLUS_EQUALS";
+            case TokenType::MINUS_EQUALS: return "MINUS_EQUALS";
+            case TokenType::STAR_EQUALS: return "STAR_EQUALS";
+            case TokenType::SLASH_EQUALS: return "SLASH_EQUALS";
+            case TokenType::PERCENT_EQUALS: return "PERCENT_EQUALS";
+            case TokenType::AMPERSAND_EQUALS: return "AMPERSAND_EQUALS";
+            case TokenType::PIPE_EQUALS: return "PIPE_EQUALS";
+            case TokenType::CARET_EQUALS: return "CARET_EQUALS";
+            case TokenType::LSHIFT_EQUALS: return "LSHIFT_EQUALS";
+            case TokenType::RSHIFT_EQUALS: return "RSHIFT_EQUALS";
             case TokenType::END_OF_FILE: return "EOF";
             default: return "UNKNOWN";
         }

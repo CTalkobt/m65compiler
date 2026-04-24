@@ -50,7 +50,7 @@ Steps required to bring the C compiler closer to C11 standards.
 - [X] **`goto` Statement**: Implement `goto` and labeled statements for unconditional jumps within a function.
 - [X] **Ternary Operator**: Implement the `? :` conditional expression operator.
 - [X] **`sizeof` Operator**: Implement `sizeof(type)` and `sizeof expr` to return the byte size of a type or expression at compile time.
-- [ ] **Compound Assignment Operators**: Support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
+- [X] **Compound Assignment Operators**: Support `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`.
 - [X] **Bitwise Binary Operators**: Support binary `&`, `|`, `^`, `<<`, `>>` as user-level expression operators.
 - [ ] **Modulo Operator**: Support `%` for integer remainder in expressions.
 - [ ] **`for` Loop Declarations**: Support variable declarations in the `for` loop initializer clause (C99: `for (int i = 0; ...)`).

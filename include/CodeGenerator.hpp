@@ -84,6 +84,7 @@ public:
     void visit(FunctionDeclaration& node) override;
     void visit(TranslationUnit& node) override;
     void emitAddress(Expression* expr);
+    void emitOperation(const std::string& op, int zpLeft, ExpressionType lhsType, ExpressionType rhsType);
     void embedSource(ASTNode& node);
     ExpressionType getExprType(Expression* expr);
     bool isStruct(const std::string& type);

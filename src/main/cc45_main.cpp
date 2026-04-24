@@ -23,7 +23,7 @@ public:
     void visit(StringLiteral& node) override { printIndent(); std::cout << "StringLiteral: \"" << node.value << "\"" << std::endl; }
     void visit(VariableReference& node) override { printIndent(); std::cout << "VariableReference: " << node.name << std::endl; }
     void visit(Assignment& node) override {
-        printIndent(); std::cout << "Assignment: " << std::endl;
+        printIndent(); std::cout << "Assignment: " << node.op << std::endl;
         indent++;
         node.target->accept(*this);
         node.expression->accept(*this);
